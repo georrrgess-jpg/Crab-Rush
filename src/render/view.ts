@@ -8,7 +8,7 @@ import { CAMERA_ELEVATION } from './camera';
 import { EntityViews } from './entities';
 import { BlobShadows, Footprints, Particles } from './fx';
 import { Materials } from './materials';
-import { CRAB_SKINS, CrabModel, type CrabSkin } from './models/crab';
+import { CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, IDLE_DRIVE } from './models/crab';
 import { powerupIcon, riderWave } from './models/obstacles';
 import { Ocean } from './ocean';
 import { NIGHT_PALETTE, ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
@@ -47,9 +47,7 @@ export class GameView {
   private world = new THREE.Group();
 
   // crab animation state
-  private legPhase = 0;
-  private squash = 1;
-  private squashV = 0;
+  private drive: CrabDrive = { running: false, grounded: true, vy: 0, vx: 0, speed: 0, crashT: -1, rider: false };
   private dustT = 0;
   private feet = new Footprints();
   /** track distance of the last footprint */
@@ -72,6 +70,8 @@ export class GameView {
   private vTitleLook = new THREE.Vector3();
   private titleSpin = 0;
   shopSpin = 0;
+  /** test hook: close-up camera offset from the crab, or null */
+  debugCam: THREE.Vector3 | null = null;
 
   constructor(canvas: HTMLCanvasElement, quality: QualityPreset) {
     this.renderer = new Renderer(canvas, quality);
@@ -166,6 +166,7 @@ export class GameView {
     this.scenery.glowOn = full;
     this.backdrop.setDetail(full);
     this.entities.lite = !full;
+    this.crab.setDetail(full);
     this.feet.mesh.visible = full;
   }
 
@@ -190,8 +191,7 @@ export class GameView {
     this.footT = 0;
     this.sparks.clear();
     this.entities.setBest(best);
-    this.squash = 1;
-    this.squashV = 0;
+    this.crab.reset();
     this.shakeAmp = 0;
   }
 
@@ -233,20 +233,23 @@ export class GameView {
           }
           break;
         case 'laneChange':
+          this.crab.lane(ev.dir);
           this.puff(p.x - ev.dir * 0.5, w.dist, 4, 0.35);
           break;
         case 'hop':
-          this.squash = 0.78;
-          this.squashV = 6;
+          this.crab.hop();
           this.puff(p.x, w.dist, 6, 0.4);
           break;
         case 'land':
-          this.squash = ev.hard ? 0.66 : 0.8;
-          this.squashV = 0;
+          this.crab.land(ev.hard);
           this.puff(p.x, w.dist, ev.hard ? 12 : 8, ev.hard ? 0.55 : 0.4);
           if (ev.hard) this.shake(0.08, 0.12);
           break;
+        case 'slam':
+          this.crab.slam();
+          break;
         case 'bump':
+          this.crab.bump();
           this.shake(0.14, 0.2);
           for (let i = 0; i < 6; i++) this.sparks.spawn(ev.x, 0.7, w.dist, (Math.random() - 0.5) * 4, Math.random() * 3, 0, 0.3, 0.22, 0xffffff, 6);
           break;
@@ -336,18 +339,19 @@ export class GameView {
     // crab
     const crashT = w.mode === 'crashing' ? w.crashT : -1;
     const speed = running ? w.speed : 0;
-    this.legPhase += dt * (running && w.mode === 'running' ? 5 + speed * 0.9 : 3.2);
-    // squash spring
-    const airborne = running && !p.grounded && w.power.kind !== 'rider';
-    const target = airborne ? (p.vy > 0 ? 1.12 : 1.04) : 1;
-    this.squashV += ((target - this.squash) * 220 - this.squashV * 16) * dt;
-    this.squash += this.squashV * dt;
-    const lean = running ? Math.max(-1, Math.min(1, p.vx / 16)) : 0;
+    const dv = this.drive;
+    dv.running = running && mode === 'run' && w.mode !== 'idle';
+    dv.grounded = !running || p.grounded;
+    dv.vy = running ? p.vy : 0;
+    dv.vx = running ? p.vx : 0;
+    dv.speed = speed;
+    dv.crashT = crashT;
+    dv.rider = running && w.power.kind === 'rider';
     this.crab.root.position.set(px, py, 0);
     this.crab.root.rotation.y = mode === 'shop' ? this.shopSpin : 0;
     const blink = running && p.invuln > 0 && w.mode === 'running' ? Math.floor(this.time * 16) % 2 === 0 : false;
     this.crab.root.visible = !blink;
-    this.crab.pose(dt, this.legPhase, lean, this.squash, airborne, crashT, running ? p.bumpT : 0, !running || mode !== 'run');
+    this.crab.update(dt, dv);
     // shadow under the crab shrinks as it rises
     const sh = 1 / (1 + py * 0.5);
     if (!this.shadowMap) this.shadows.add(px, 0, 0, 1.7 * sh, 1.3 * sh, py);
@@ -429,6 +433,12 @@ export class GameView {
       this.camPos.x += (Math.random() - 0.5) * a;
       this.camPos.y += (Math.random() - 0.5) * a;
       if (this.shakeT <= 0) this.shakeAmp = 0;
+    }
+    if (this.debugCam) {
+      // test hook: a fixed close-up relative to the crab (animation strips)
+      const r = this.crab.root.position;
+      this.camPos.set(r.x + this.debugCam.x, this.debugCam.y, this.debugCam.z);
+      this.camLook.set(r.x, 0.6, 0);
     }
     cam.position.copy(this.camPos);
     cam.lookAt(this.camLook);
@@ -519,7 +529,9 @@ export class GameView {
       this.mats.lighting.fromPalette(ZONE_PALETTES[0]!);
       this.mats.lighting.update(cam);
       crab.setSkin(skin);
-      crab.pose(0, 0.9, 0, 1, false, -1, 0, true);
+      crab.reset();
+      crab.look(0.1, 0.05);
+      crab.update(1 / 60, IDLE_DRIVE);
       crab.root.rotation.y = -0.25;
       gl.setRenderTarget(rt);
       gl.setClearColor(0x000000, 0);

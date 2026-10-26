@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { CFG, QUALITY, type QualityPreset } from './config';
 import { Audio } from './core/audio';
 import { DebugOverlay, parseFlags, type Flags } from './core/debug';
@@ -753,6 +754,17 @@ export class Game {
       },
       act(a: Action) {
         g.onAction(a, false);
+      },
+      /** close-up camera at an offset from the crab (null restores the game camera) */
+      cam(x: number | null, y = 1.6, z = 4.2) {
+        g.view.debugCam = x === null ? null : new THREE.Vector3(x, y, z);
+      },
+      /** drive crab animations directly: emote(id), celebrate() */
+      crabEmote(id?: string) {
+        g.view.crab.emote(id);
+      },
+      crabCelebrate() {
+        g.view.crab.celebrate();
       },
       manual(on: boolean) {
         g.loop.manual = on;

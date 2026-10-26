@@ -14,6 +14,17 @@ const _c = new THREE.Color();
  */
 export class GeoBuilder {
   private parts: THREE.BufferGeometry[] = [];
+  /** bone index per part (rigid skinning); only emitted when bone() was called */
+  private boneOf: number[] = [];
+  private curBone = 0;
+  private skinned = false;
+
+  /** Parts pushed after this call are bound rigidly to bone `i` (UPDATE2_PLAN.md §3.1 pose rig). */
+  bone(i: number): this {
+    this.curBone = i;
+    this.skinned = true;
+    return this;
+  }
 
   private push(g: THREE.BufferGeometry, color: number | THREE.Color, pos: Vec3, rot: Vec3, scale: Vec3, gradient?: { top: number; bottom: number }): this {
     _e.set(rot[0], rot[1], rot[2]);
@@ -47,6 +58,59 @@ export class GeoBuilder {
     // keep attribute sets identical so merging never fails
     for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'color') g.deleteAttribute(k);
     this.parts.push(g);
+    this.boneOf.push(this.curBone);
+    return this;
+  }
+
+  /** Repaint the most recently added part: `fn` gets its model-space vertex position and sets `c`. */
+  paint(fn: (x: number, y: number, z: number, c: THREE.Color) => void): this {
+    const g = this.parts[this.parts.length - 1];
+    if (!g) return this;
+    const pa = g.attributes.position as THREE.BufferAttribute;
+    const ca = g.attributes.color as THREE.BufferAttribute;
+    for (let i = 0; i < pa.count; i++) {
+      _c.setRGB(ca.getX(i), ca.getY(i), ca.getZ(i));
+      fn(pa.getX(i), pa.getY(i), pa.getZ(i), _c);
+      ca.setXYZ(i, _c.r, _c.g, _c.b);
+    }
+    return this;
+  }
+
+  /** Surface of revolution around +y from a [radius, y] profile (bottom to top). */
+  lathe(color: number, profile: [number, number][], segs = 24, pos: Vec3 = [0, 0, 0], rot: Vec3 = [0, 0, 0], scale: Vec3 = [1, 1, 1]): this {
+    const g = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(Math.max(r, 1e-4), y)), segs);
+    return this.push(g, color, pos, rot, scale);
+  }
+
+  /**
+   * Tapered tube swept along a smooth curve through `pts` (legs, claws, antennae, logs, rope). The
+   * radius follows `r(t)` for t in 0..1; ends are closed with small spheres when `caps` is set.
+   */
+  tube(color: number, pts: Vec3[], r: number | ((t: number) => number), radial = 6, tubular = 10, caps: boolean | 'start' | 'end' = true): this {
+    const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(p[0], p[1], p[2])), false, 'centripetal');
+    const r0 = typeof r === 'number' ? r : 1;
+    const g = new THREE.TubeGeometry(curve, tubular, r0, radial, false);
+    if (typeof r === 'function') {
+      const pa = g.attributes.position as THREE.BufferAttribute;
+      const c = new THREE.Vector3();
+      for (let i = 0; i <= tubular; i++) {
+        const t = i / tubular;
+        curve.getPointAt(t, c);
+        const k = r(t) / r0;
+        for (let j = 0; j <= radial; j++) {
+          const idx = i * (radial + 1) + j;
+          pa.setXYZ(idx, c.x + (pa.getX(idx) - c.x) * k, c.y + (pa.getY(idx) - c.y) * k, c.z + (pa.getZ(idx) - c.z) * k);
+        }
+      }
+      g.computeVertexNormals();
+    }
+    this.push(g, color, [0, 0, 0], [0, 0, 0], [1, 1, 1]);
+    // low-res cap spheres (they mostly hide joints)
+    const cap = (rad: number, p: Vec3): void => {
+      this.push(new THREE.SphereGeometry(rad, radial, Math.max(3, Math.ceil(radial / 2))), color, p, [0, 0, 0], [1, 1, 1]);
+    };
+    if (caps === true || caps === 'start') cap(typeof r === 'number' ? r : r(0), pts[0] as Vec3);
+    if (caps === true || caps === 'end') cap(typeof r === 'number' ? r : r(1), pts[pts.length - 1] as Vec3);
     return this;
   }
 
@@ -105,6 +169,7 @@ export class GeoBuilder {
     for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'color') g.deleteAttribute(k);
     if (!g.attributes.normal) g.computeVertexNormals();
     this.parts.push(g);
+    this.boneOf.push(this.curBone);
     return this;
   }
   /** Any ready geometry (e.g. extrusions) */
@@ -118,9 +183,28 @@ export class GeoBuilder {
       if (!p.attributes.normal) p.computeVertexNormals();
     }
     const merged = mergeGeometries(norm, false);
+    if (!merged) throw new Error('GeoBuilder: merge failed');
+    if (this.skinned) {
+      const n = merged.attributes.position!.count;
+      const si = new Uint16Array(n * 4);
+      const sw = new Float32Array(n * 4);
+      let o = 0;
+      for (let i = 0; i < norm.length; i++) {
+        const cnt = (norm[i] as THREE.BufferGeometry).attributes.position!.count;
+        const b = this.boneOf[i] as number;
+        for (let k = 0; k < cnt; k++, o++) {
+          si[o * 4] = b;
+          sw[o * 4] = 1;
+        }
+      }
+      merged.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+      merged.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+    }
     for (const p of this.parts) p.dispose();
     this.parts = [];
-    if (!merged) throw new Error('GeoBuilder: merge failed');
+    this.boneOf = [];
+    this.skinned = false;
+    this.curBone = 0;
     merged.computeBoundingSphere();
     return merged;
   }

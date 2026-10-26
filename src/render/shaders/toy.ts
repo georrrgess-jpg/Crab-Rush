@@ -29,14 +29,18 @@ const vert = /* glsl */ `
 #include <uv_pars_vertex>
 #include <color_pars_vertex>
 #include <fog_pars_vertex>
+#include <skinning_pars_vertex>
 varying vec3 vNormalV;
 varying vec3 vViewPos;
 void main() {
   #include <uv_vertex>
   #include <color_vertex>
   #include <beginnormal_vertex>
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
   #include <defaultnormal_vertex>
   #include <begin_vertex>
+  #include <skinning_vertex>
   #include <project_vertex>
   #include <fog_vertex>
   vNormalV = normalize(transformedNormal);
@@ -115,11 +119,15 @@ const outlineVert = /* glsl */ `
 #include <common>
 #include <color_pars_vertex>
 #include <fog_pars_vertex>
+#include <skinning_pars_vertex>
 uniform float uThickness;
 void main() {
   #include <color_vertex>
   #include <beginnormal_vertex>
+  #include <skinbase_vertex>
+  #include <skinnormal_vertex>
   #include <begin_vertex>
+  #include <skinning_vertex>
   transformed += normalize(objectNormal) * uThickness;
   #include <project_vertex>
   #include <fog_vertex>
