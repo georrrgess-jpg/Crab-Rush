@@ -39,6 +39,7 @@ export class Game {
   private crashClock = 0;
   private hitStop = 0;
   private countdownT = 0;
+  private lastCount = 0;
   private resultsAt = 0;
   private clock = 0;
   private skipRender = false;
@@ -121,6 +122,7 @@ export class Game {
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
     if (this.flags.debug) this.debug = new DebugOverlay(app);
 
+    this.audio.setVolumes(this.save.data.settings.music, this.save.data.settings.sfx);
     const skin = CRAB_SKINS.find((s) => s.id === this.save.data.crabs.selected) ?? CRAB_SKINS[0]!;
     this.view.setSkin(skin);
     this.view.setReduceMotion(this.reduceMotion);
@@ -145,14 +147,12 @@ export class Game {
     });
     window.addEventListener('blur', () => this.pause());
     window.addEventListener('pagehide', () => this.save.save());
-    // audio unlock on the first gesture
+    // audio unlock on user gestures (iOS needs it inside the gesture; unlock() is idempotent and
+    // also resumes a context the OS suspended)
     const unlock = (): void => {
-      this.audio.unlock();
-      window.removeEventListener('pointerdown', unlock, true);
-      window.removeEventListener('keydown', unlock, true);
+      if (!this.flags.shots) this.audio.unlock();
     };
-    window.addEventListener('pointerdown', unlock, true);
-    window.addEventListener('keydown', unlock, true);
+    for (const ev of ['pointerdown', 'keydown', 'touchend', 'click']) window.addEventListener(ev, unlock, true);
     this.view.renderer.onContextLost = () => {
       this.pause();
       this.ui.toast('Graphics were reset', { sub: 'Tap to reload', life: 60 });
@@ -198,7 +198,7 @@ export class Game {
 
   private onPlay(): void {
     if (this.state !== 'title') return;
-    this.audio.unlock();
+    if (!this.flags.shots) this.audio.unlock();
     this.audio.play('tap');
     this.startRun(true);
   }
@@ -283,8 +283,8 @@ export class Game {
     this.ui.show('hud');
     this.state = 'countdown';
     this.countdownT = COUNTDOWN_STEP * 3;
+    this.lastCount = 0;
     this.ui.showCountdown(3);
-    this.audio.play('countdown');
     this.input.setPointerEnabled(true);
   }
 
@@ -417,6 +417,10 @@ export class Game {
       case 'countdown': {
         this.countdownT -= dt;
         const n = Math.ceil(this.countdownT / COUNTDOWN_STEP);
+        if (n !== this.lastCount && n > 0) {
+          this.lastCount = n;
+          this.audio.play('countdown');
+        }
         this.ui.showCountdown(Math.max(0, n));
         if (this.countdownT <= 0) {
           this.state = 'running';

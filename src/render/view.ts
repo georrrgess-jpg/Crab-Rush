@@ -212,6 +212,7 @@ export class GameView {
           for (let i = 0; i < 10; i++) this.dust.spawn(p.x + (Math.random() - 0.5) * 1.6, 0.3, w.dist - 0.5, (Math.random() - 0.5) * 3, 2 + Math.random() * 3, 0, 0.45, 0.35, 0xe8fbff, 9, 0.5);
           break;
         case 'newBest':
+          if (this.reduceMotion) break;
           for (let i = 0; i < 40; i++) {
             const cols = [0xff5a4a, 0xffd23a, 0x3fd6d0, 0x6f8bff, 0xff7ad0];
             this.sparks.spawn((Math.random() - 0.5) * 6, 3 + Math.random() * 2, w.dist + 6 + Math.random() * 8, (Math.random() - 0.5) * 4, 2 + Math.random() * 3, 0, 1.2, 0.25, cols[i % 5] as number, 4);
