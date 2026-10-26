@@ -1,0 +1,376 @@
+import * as THREE from 'three';
+import { CFG, type QualityPreset, zoneAt } from '../config';
+import type { GameEvent, PowerKind } from '../sim/events';
+import type { World } from '../sim/world';
+import { zoneBlend } from '../sim/zones';
+import { Backdrop } from './backdrop';
+import { CAMERA_ELEVATION } from './camera';
+import { EntityViews } from './entities';
+import { BlobShadows, Particles } from './fx';
+import { Materials } from './materials';
+import { CRAB_SKINS, CrabModel, type CrabSkin } from './models/crab';
+import { powerupIcon, waveSweep } from './models/obstacles';
+import { Ocean } from './ocean';
+import { ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
+import { Renderer } from './renderer';
+import { Scenery } from './scenery';
+import { ShellRenderer } from './shells';
+import { Sky } from './sky';
+
+export type CamMode = 'title' | 'intro' | 'run' | 'shop';
+
+const POWER_COLORS: Record<PowerKind, number> = { magnet: 0xff5a4a, shield: 0x6fd0ff, rider: 0x3fd6d0 };
+
+/** Everything visual. Reads the sim; never writes to it. */
+export class GameView {
+  readonly renderer: Renderer;
+  readonly mats = new Materials();
+  private sky = new Sky();
+  private ocean: Ocean;
+  private scenery: Scenery;
+  private backdrop = new Backdrop();
+  readonly crab: CrabModel;
+  private shells: ShellRenderer;
+  private shadows: BlobShadows;
+  private dust: Particles;
+  private sparks: Particles;
+  readonly entities: EntityViews;
+  private palette = clonePalette(ZONE_PALETTES[0]!);
+  private world = new THREE.Group();
+
+  // crab animation state
+  private legPhase = 0;
+  private squash = 1;
+  private squashV = 0;
+  private dustT = 0;
+  private time = 0;
+  private shakeAmp = 0;
+  private shakeT = 0;
+  private camX = 0;
+  private reduceMotion = false;
+  private shieldMesh: THREE.Mesh;
+  private boardGroup = new THREE.Group();
+  private magnetRing: THREE.Mesh;
+  private lastZone = 0;
+  private camPos = new THREE.Vector3();
+  private camLook = new THREE.Vector3();
+  private titleSpin = 0;
+  shopSpin = 0;
+
+  constructor(canvas: HTMLCanvasElement, quality: QualityPreset) {
+    this.renderer = new Renderer(canvas, quality);
+    const scene = this.renderer.scene;
+    scene.background = null;
+    scene.add(this.sky.mesh);
+    this.ocean = new Ocean(quality.oceanWaves);
+    scene.add(this.ocean.mesh);
+    scene.add(this.backdrop.group);
+    this.scenery = new Scenery(this.mats, quality.sceneryDensity);
+    scene.add(this.scenery.group);
+    scene.add(this.world);
+    this.entities = new EntityViews(this.mats);
+    this.world.add(this.entities.group);
+    this.shadows = new BlobShadows(this.mats);
+    this.world.add(this.shadows.mesh);
+    this.shells = new ShellRenderer(this.mats);
+    this.world.add(this.shells.mesh, this.shells.glow);
+    this.dust = new Particles(this.mats.dustTex, false, 160);
+    this.sparks = new Particles(this.mats.sparkTex, true, 160);
+    this.dust.limit = Math.floor(quality.maxParticles * 0.6);
+    this.sparks.limit = Math.floor(quality.maxParticles * 0.6);
+    this.world.add(this.dust.mesh, this.sparks.mesh);
+
+    this.crab = new CrabModel(this.mats);
+    this.world.add(this.crab.root);
+    this.shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1.05, 20, 14), this.mats.bubble);
+    this.shieldMesh.position.y = 0.65;
+    this.shieldMesh.visible = false;
+    this.crab.root.add(this.shieldMesh);
+    this.magnetRing = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.035, 6, 32), new THREE.MeshBasicMaterial({ color: 0xff7a6a, transparent: true, opacity: 0.6, depthWrite: false }));
+    this.magnetRing.rotation.x = Math.PI / 2;
+    this.magnetRing.position.y = 0.3;
+    this.magnetRing.visible = false;
+    this.crab.root.add(this.magnetRing);
+    // Wave Rider: little wave + surfboard under the crab
+    const wave = new THREE.Mesh(waveSweep(), this.mats.gloss);
+    wave.scale.set(0.42, 1.2, 1.1);
+    wave.position.set(0, -1.15, 0.2);
+    const board = new THREE.Mesh(powerupIcon('rider'), this.mats.clay);
+    board.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    board.scale.set(2.6, 2.6, 2.6);
+    board.position.y = -0.05;
+    this.boardGroup.add(wave, board);
+    this.boardGroup.visible = false;
+    this.crab.root.add(this.boardGroup);
+
+    this.renderer.camera.far = 260;
+    this.renderer.camera.updateProjectionMatrix();
+    this.applyPalette(0);
+  }
+
+  setReduceMotion(on: boolean): void {
+    this.reduceMotion = on;
+  }
+
+  setSkin(skin: CrabSkin): void {
+    this.crab.setSkin(skin);
+  }
+
+  setQuality(q: QualityPreset): void {
+    this.renderer.setQuality(q);
+    this.ocean.setQualityWaves(q.oceanWaves);
+    this.scenery.setDensity(q.sceneryDensity);
+    this.dust.limit = Math.floor(q.maxParticles * 0.6);
+    this.sparks.limit = Math.floor(q.maxParticles * 0.6);
+  }
+
+  resize(w: number, h: number): void {
+    this.renderer.resize(w, h);
+  }
+
+  /** Clear transient visuals for a new run. */
+  resetRun(best: number): void {
+    this.entities.clear();
+    this.dust.clear();
+    this.sparks.clear();
+    this.entities.setBest(best);
+    this.squash = 1;
+    this.squashV = 0;
+    this.shakeAmp = 0;
+  }
+
+  shake(amp: number, t: number): void {
+    if (this.reduceMotion) return;
+    this.shakeAmp = Math.max(this.shakeAmp, amp);
+    this.shakeT = Math.max(this.shakeT, t);
+  }
+
+  private applyPalette(dist: number): void {
+    const z = zoneAt(dist);
+    const t = zoneBlend(dist, z);
+    if (z === 0) lerpPalette(this.palette, ZONE_PALETTES[0]!, ZONE_PALETTES[0]!, 0);
+    else lerpPalette(this.palette, ZONE_PALETTES[z - 1]!, ZONE_PALETTES[z]!, t);
+    this.sky.apply(this.palette);
+    const fog = this.renderer.scene.fog as THREE.Fog;
+    fog.color.copy(this.palette.fog);
+  }
+
+  /** Feed sim events into effects. */
+  onEvents(events: readonly GameEvent[], w: World): void {
+    const p = w.player;
+    for (const ev of events) {
+      switch (ev.t) {
+        case 'shell':
+          for (let i = 0; i < (ev.big ? 12 : 4); i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 1.2 + Math.random() * 1.8;
+            this.sparks.spawn(ev.x + Math.cos(a) * 0.4, ev.y + 0.7, w.dist - 0.3, Math.cos(a) * sp, 2.5 + Math.random() * 2, -1.5, 0.35 + Math.random() * 0.15, ev.big ? 0.3 : 0.18, ev.big ? 0xfff0a0 : 0xffd84a, 6);
+          }
+          break;
+        case 'laneChange':
+          this.puff(p.x - ev.dir * 0.5, w.dist, 4, 0.35);
+          break;
+        case 'hop':
+          this.squash = 0.78;
+          this.squashV = 6;
+          this.puff(p.x, w.dist, 6, 0.4);
+          break;
+        case 'land':
+          this.squash = ev.hard ? 0.66 : 0.8;
+          this.squashV = 0;
+          this.puff(p.x, w.dist, ev.hard ? 12 : 8, ev.hard ? 0.55 : 0.4);
+          if (ev.hard) this.shake(0.08, 0.12);
+          break;
+        case 'bump':
+          this.shake(0.14, 0.2);
+          for (let i = 0; i < 6; i++) this.sparks.spawn(ev.x, 0.7, w.dist, (Math.random() - 0.5) * 4, Math.random() * 3, 0, 0.3, 0.22, 0xffffff, 6);
+          break;
+        case 'crash':
+          this.shake(0.38, 0.35);
+          this.puff(p.x, w.dist, 16, 0.7);
+          for (let i = 0; i < 10; i++) this.sparks.spawn(p.x, 0.8, w.dist, (Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 3, 0.5, 0.3, 0xffe14a, 8);
+          break;
+        case 'closeShave':
+          for (let i = 0; i < 8; i++) this.sparks.spawn(p.x + (Math.random() - 0.5), 0.4 + Math.random() * 0.8, w.dist, 0, 0, 6 + Math.random() * 4, 0.25, 0.18, 0xffffff, 0, 2);
+          break;
+        case 'powerup':
+          for (let i = 0; i < 18; i++) {
+            const a = (i / 18) * Math.PI * 2;
+            this.sparks.spawn(p.x + Math.cos(a) * 0.4, 0.7, w.dist + Math.sin(a) * 0.4, Math.cos(a) * 4, 1.5, Math.sin(a) * 4, 0.45, 0.3, POWER_COLORS[ev.kind], 2);
+          }
+          break;
+        case 'powerupEnd':
+          if (ev.popped) {
+            this.shake(0.12, 0.15);
+            for (let i = 0; i < 16; i++) {
+              const a = Math.random() * Math.PI * 2;
+              this.sparks.spawn(p.x, 0.7, w.dist, Math.cos(a) * 5, Math.sin(a) * 4 + 1, (Math.random() - 0.5) * 4, 0.4, 0.25, 0xbff0ff, 4);
+            }
+          }
+          break;
+        case 'waveHopped':
+          for (let i = 0; i < 10; i++) this.dust.spawn(p.x + (Math.random() - 0.5) * 1.6, 0.3, w.dist - 0.5, (Math.random() - 0.5) * 3, 2 + Math.random() * 3, 0, 0.45, 0.35, 0xe8fbff, 9, 0.5);
+          break;
+        case 'newBest':
+          for (let i = 0; i < 40; i++) {
+            const cols = [0xff5a4a, 0xffd23a, 0x3fd6d0, 0x6f8bff, 0xff7ad0];
+            this.sparks.spawn((Math.random() - 0.5) * 6, 3 + Math.random() * 2, w.dist + 6 + Math.random() * 8, (Math.random() - 0.5) * 4, 2 + Math.random() * 3, 0, 1.2, 0.25, cols[i % 5] as number, 4);
+          }
+          break;
+        case 'knock':
+          this.entities.knock(ev.id, w.dist);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  private puff(x: number, wz: number, n: number, size: number): void {
+    const col = this.crab.skin.dust;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.dust.spawn(x + Math.cos(a) * 0.3, 0.1, wz + Math.sin(a) * 0.3, Math.cos(a) * 1.5, 0.6 + Math.random() * 0.8, Math.sin(a) * 1.5, 0.45 + Math.random() * 0.2, size, col, 1.2, 1.4);
+    }
+  }
+
+  /**
+   * Draw a frame. `alpha` interpolates between sim steps; `introT` (0..1) blends title → run camera.
+   */
+  frame(w: World, alpha: number, dt: number, mode: CamMode, introT = 1): void {
+    this.time += dt;
+    const running = w.mode !== 'idle' && mode !== 'title' && mode !== 'shop';
+    const dist = running ? w.prevDist + (w.dist - w.prevDist) * alpha : w.dist;
+    const p = w.player;
+    const px = running ? p.prevX + (p.x - p.prevX) * alpha : 0;
+    const py = running ? p.prevY + (p.y - p.prevY) * alpha : 0;
+
+    // palette & environment
+    this.applyPalette(dist);
+    const zone = zoneAt(dist);
+    if (zone !== this.lastZone) this.lastZone = zone;
+    const q = this.renderer.quality;
+    const fogNear = q.fogFar * 0.5;
+    this.ocean.update(this.time, dist, this.palette, fogNear, q.fogFar);
+    const fog = this.renderer.scene.fog as THREE.Fog;
+    fog.near = fogNear;
+    fog.far = q.fogFar;
+    this.backdrop.update(this.time, zone, this.palette);
+    this.scenery.update(dist, this.palette.groundTint);
+    this.scenery.glowFlicker(this.time);
+
+    // entities & shells
+    this.shadows.begin();
+    if (running || mode === 'title') {
+      this.entities.group.visible = true;
+      this.entities.sync(w.entities, dist, this.time, dt, this.shadows);
+    }
+    this.shells.update(running ? w.shells : [], dist, this.time, this.renderer.camera.quaternion, q.fogFar + 5);
+
+    // crab
+    const crashT = w.mode === 'crashing' ? w.crashT : -1;
+    const speed = running ? w.speed : 0;
+    this.legPhase += dt * (running && w.mode === 'running' ? 5 + speed * 0.9 : 3.2);
+    // squash spring
+    const airborne = running && !p.grounded && w.power.kind !== 'rider';
+    const target = airborne ? (p.vy > 0 ? 1.12 : 1.04) : 1;
+    this.squashV += ((target - this.squash) * 220 - this.squashV * 16) * dt;
+    this.squash += this.squashV * dt;
+    const lean = running ? Math.max(-1, Math.min(1, p.vx / 16)) : 0;
+    this.crab.root.position.set(px, py, 0);
+    this.crab.root.rotation.y = mode === 'shop' ? this.shopSpin : 0;
+    const blink = running && p.invuln > 0 && w.mode === 'running' ? Math.floor(this.time * 16) % 2 === 0 : false;
+    this.crab.root.visible = !blink;
+    this.crab.pose(dt, this.legPhase, lean, this.squash, airborne, crashT, running ? p.bumpT : 0, !running || mode !== 'run');
+    // shadow under the crab shrinks as it rises
+    const sh = 1 / (1 + py * 0.5);
+    this.shadows.add(px, 0, 0, 1.7 * sh, 1.3 * sh);
+    this.shadows.end();
+
+    // power-up visuals
+    const pk = running ? w.power.kind : null;
+    this.shieldMesh.visible = pk === 'shield' && (w.power.t > 2 || Math.floor(this.time * 8) % 2 === 0);
+    if (this.shieldMesh.visible) this.shieldMesh.scale.setScalar(1 + Math.sin(this.time * 6) * 0.04);
+    this.magnetRing.visible = pk === 'magnet';
+    if (this.magnetRing.visible) {
+      this.magnetRing.rotation.z = this.time * 3;
+      this.magnetRing.scale.setScalar(1 + Math.sin(this.time * 8) * 0.08);
+    }
+    this.boardGroup.visible = pk === 'rider';
+    if (pk === 'rider') {
+      this.boardGroup.rotation.z = Math.sin(this.time * 3) * 0.06;
+      if (Math.random() < 0.6) this.dust.spawn(px + (Math.random() - 0.5) * 1.5, 0.3, dist - 0.8, (Math.random() - 0.5) * 3, 2 + Math.random() * 2, 4, 0.4, 0.4, 0xe8fbff, 8, 0.6);
+    }
+
+    // running dust
+    if (running && w.mode === 'running' && p.grounded && pk !== 'rider') {
+      this.dustT -= dt;
+      if (this.dustT <= 0) {
+        this.dustT = 0.07;
+        this.dust.spawn(px + (Math.random() - 0.5) * 0.8, 0.08, dist - 0.3, (Math.random() - 0.5) * 0.8, 0.4 + Math.random() * 0.5, 0, 0.4, 0.28, this.crab.skin.dust, 0.5, 1.6);
+      }
+      // speed streaks along the berms at high speed
+      if (speed > 16 && Math.random() < (speed - 16) * 0.08 && !this.reduceMotion) {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        this.dust.spawn(side * (2.5 + Math.random() * 2), 0.2 + Math.random() * 0.4, dist + 25 + Math.random() * 20, 0, 0, 0, 0.6, 0.18, 0xffffff, 0, 0);
+      }
+    }
+
+    // camera
+    const cam = this.renderer.camera;
+    this.renderer.setFovBoost(running ? Math.min(1, Math.max(0, (speed - 10) / 14)) : 0, pk === 'rider' ? 4 : 0);
+    const followX = running ? px : 0;
+    this.camX += (followX - this.camX) * Math.min(1, dt * 10);
+    const d = this.renderer.fitDist;
+    const el = CAMERA_ELEVATION;
+    const runPos = new THREE.Vector3(this.camX * 0.4, 0.5 + Math.sin(el) * d, Math.cos(el) * d);
+    const runLook = new THREE.Vector3(this.camX * 0.6, CFG.camera.lookY, -CFG.camera.lookAhead);
+    let pos: THREE.Vector3;
+    let look: THREE.Vector3;
+    if (mode === 'title' || mode === 'intro') {
+      this.titleSpin += dt;
+      const aspect = cam.aspect;
+      const portrait = aspect < 1;
+      const r = portrait ? 5.2 : 4.4;
+      const a = Math.sin(this.titleSpin * 0.18) * 0.35 + 0.28;
+      const titlePos = new THREE.Vector3(Math.sin(a) * r, portrait ? 2.3 : 1.7, Math.cos(a) * r);
+      const titleLook = new THREE.Vector3(-0.4, portrait ? 1.6 : 1.3, -3);
+      if (mode === 'title') {
+        pos = titlePos;
+        look = titleLook;
+      } else {
+        const e = introT * introT * (3 - 2 * introT);
+        pos = titlePos.lerp(runPos, e);
+        look = titleLook.lerp(runLook, e);
+      }
+    } else if (mode === 'shop') {
+      const portrait = cam.aspect < 1;
+      pos = new THREE.Vector3(0, portrait ? 2.0 : 1.5, portrait ? 4.6 : 3.4);
+      look = new THREE.Vector3(portrait ? 0 : 1.1, portrait ? -0.25 : 0.6, 0);
+    } else {
+      pos = runPos;
+      look = runLook;
+    }
+    this.camPos.copy(pos);
+    this.camLook.copy(look);
+    if (this.shakeT > 0) {
+      this.shakeT -= dt;
+      const a = this.shakeAmp * Math.max(0, this.shakeT) * 3;
+      this.camPos.x += (Math.random() - 0.5) * a;
+      this.camPos.y += (Math.random() - 0.5) * a;
+      if (this.shakeT <= 0) this.shakeAmp = 0;
+    }
+    cam.position.copy(this.camPos);
+    cam.lookAt(this.camLook);
+    this.sky.mesh.position.copy(cam.position);
+    this.ocean.mesh.position.x = 0;
+
+    this.dust.update(dt, dist, cam.quaternion);
+    this.sparks.update(dt, dist, cam.quaternion);
+    this.renderer.render();
+  }
+
+  get skins(): CrabSkin[] {
+    return CRAB_SKINS;
+  }
+}
