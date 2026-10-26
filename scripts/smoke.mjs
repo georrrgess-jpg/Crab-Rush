@@ -112,7 +112,16 @@ try {
   await page.click('.crab-detail .btn');
   const afterBuy = await page.evaluate(() => window.__crab.game.save.data);
   check(afterBuy.crabs.owned.includes('chill') && afterBuy.crabs.selected === 'chill' && afterBuy.shells === 550, 'buying Chill spends 450 shells and wears it');
-  await page.click('.tabs button:nth-child(2)');
+  // wardrobe: equip an owned hat and a trail, mix them with the body
+  await page.evaluate(() => { const w = window.__crab.game.save.data.wardrobe; w.owned.hats.push('beanie'); w.owned.trails.push('bubbles'); window.__crab.game.shop.render(window.__crab.game.save.data); });
+  await page.click('#shop [data-tab="hats"]');
+  await page.click('#shop [data-item="hats:beanie"]');
+  await page.click('#shop [data-tab="trails"]');
+  await page.click('#shop [data-item="trails:bubbles"]');
+  const eq = await page.evaluate(() => window.__crab.game.save.data.wardrobe.equipped);
+  check(eq.hat === 'beanie' && eq.trail === 'bubbles' && eq.body === 'chill', 'wardrobe equips a hat and a trail on the chosen body');
+  check(await page.isVisible('#shop [data-item="trails:rainbow"].locked'), 'locked wardrobe items show as locked');
+  await page.click('#shop [data-tab="upgrades"]');
   await page.click('.up-card .btn');
   check((await page.evaluate(() => window.__crab.game.save.data.upgrades.magnet)) === 1, 'buying a magnet upgrade raises its level');
   await page.keyboard.press('Escape');
@@ -156,8 +165,59 @@ try {
   await page.evaluate(() => { window.__crab.game.flags.autopilot = false; });
   await fr(60);
   await page.keyboard.press('Escape');
-  await page.waitForTimeout(350);
-  check((await st()).state === 'map', 'Escape from level end goes back to the map');
+  await page.waitForFunction(() => window.__crab.game.state === 'map', null, { timeout: 2000 }).catch(() => {});
+  const afterEsc = (await st()).state;
+  check(afterEsc === 'map', `Escape from level end goes back to the map (${afterEsc})`);
+  // ---------------- Sunny Pass: claim
+  await page.evaluate(() => { window.__crab.xp(400); window.__crab.setState('pass'); });
+  await fr(3);
+  check((await st()).state === 'pass' && (await page.locator('.pt.ready').count()) >= 2, 'Sunny Pass opens with reached tiers ready to claim');
+  const before = await page.evaluate(() => ({ claimed: window.__crab.game.save.data.passClaimed.length, owned: window.__crab.game.save.data.wardrobe.owned.trails.length }));
+  await page.click('.pass-all');
+  const after = await page.evaluate(() => ({ claimed: window.__crab.game.save.data.passClaimed.length, ready: document.querySelectorAll('.pt.ready').length, trails: window.__crab.game.save.data.wardrobe.owned.trails }));
+  check(after.claimed > before.claimed && after.ready === 0, 'Claim all claims every reached tier');
+  check(after.trails.includes('bubbles'), 'a claimed item lands in the wardrobe');
+  await page.keyboard.press('Escape');
+  await fr(2);
+  check((await st()).state === 'title', 'Escape leaves the Sunny Pass');
+
+  // ---------------- Daily Tide: start, finish, streak (faked dates)
+  await page.evaluate(() => { window.__crab.setDate('2026-03-10T12:00:00'); window.__crab.setState('daily'); });
+  await fr(3);
+  check((await st()).state === 'daily' && (await page.isVisible('#daily .dt-name')), 'Daily Tide opens with today\'s modifier');
+  await page.click('#daily .daily-play');
+  await fr(10);
+  const dk = await page.evaluate(() => ({ kind: window.__crab.game.world.kind, mod: window.__crab.game.world.modifier }));
+  check(dk.kind === 'daily' && !!dk.mod, 'Play starts a Daily Tide run with a modifier');
+  const shellsBefore = await page.evaluate(() => window.__crab.game.save.data.shells);
+  await page.evaluate(() => { window.__crab.frames(60 * 3); window.__crab.crash(); window.__crab.frames(60 * 2); });
+  const d1 = await page.evaluate(() => ({ state: window.__crab.game.state, daily: window.__crab.game.save.data.daily, shells: window.__crab.game.save.data.shells }));
+  check(d1.state === 'results' && d1.daily.streak === 1 && d1.daily.lastDate === '2026-03-10' && d1.shells >= shellsBefore + 100, 'finishing records the day, starts a streak and pays the first-finish reward');
+  await page.evaluate(() => { window.__crab.setDate('2026-03-11T09:00:00'); window.__crab.daily(); window.__crab.frames(60); window.__crab.crash(); window.__crab.frames(60 * 2); });
+  check((await page.evaluate(() => window.__crab.game.save.data.daily.streak)) === 2, 'playing the next day extends the streak');
+  await page.evaluate(() => { window.__crab.setDate('2026-03-14T09:00:00'); window.__crab.daily(); window.__crab.frames(60); window.__crab.crash(); window.__crab.frames(60 * 2); });
+  check((await page.evaluate(() => window.__crab.game.save.data.daily.streak)) === 1, 'missing days without savers resets the streak');
+  // mirror day swaps left and right
+  await page.evaluate(() => { window.__crab.setDate('2026-01-04T09:00:00'); window.__crab.daily(); window.__crab.frames(70); });
+  check((await page.evaluate(() => window.__crab.game.world.modifier)) === 'mirror' && (await page.evaluate(() => document.getElementById('gl').classList.contains('mirrored'))), 'Mirror Beach flips the view');
+  await page.keyboard.press('ArrowLeft');
+  await fr(30);
+  check((await st()).lane === 2, 'Mirror Beach swaps left and right');
+  await page.evaluate(() => { window.__crab.setDate(null); window.__crab.setState('title'); });
+  check(!(await page.evaluate(() => document.getElementById('gl').classList.contains('mirrored'))), 'leaving a mirror run restores the view');
+
+  // ---------------- Golden Shell boost
+  await page.evaluate(() => { window.__crab.xp(0, 1); window.__crab.setState('title'); });
+  await fr(3);
+  await page.click('#home .boost-chip');
+  const boosts0 = await page.evaluate(() => window.__crab.game.save.data.boosts);
+  await page.click('#home .play-card');
+  await fr(10);
+  check((await page.evaluate(() => window.__crab.game.save.data.boosts)) === boosts0 - 1 && (await page.evaluate(() => window.__crab.game.runBoost)) === true, 'a Golden Shell is spent when the run starts');
+  await page.evaluate(() => { window.__crab.frames(60 * 4); window.__crab.crash(); window.__crab.frames(60 * 2); });
+  const res = await page.evaluate(() => window.__crab.game.lastResults);
+  check(res.total >= res.pickups * 2 + res.bonus, 'the Golden Shell doubles the shells picked up');
+
   await page.evaluate(() => window.__crab.setState('title'));
   await page.evaluate(() => window.__crab.startRun({ seed: 2, tutorial: false }));
   await page.keyboard.press('KeyP');

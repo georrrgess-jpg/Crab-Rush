@@ -1,4 +1,5 @@
 import { CFG, speedAt, tierAt, zoneAt } from '../config';
+import type { Modifier } from '../meta/daily';
 import { Rng } from '../core/rng';
 import type { Entity, EntityKind, PlayerState, Shell } from './types';
 import type { GameEvent, PowerKind } from './events';
@@ -22,6 +23,8 @@ export interface RunOptions {
   zonesSeen: number[];
   /** Island Hop: a compiled level (finite course, scripted spawns, no upgrades) */
   level?: CompiledLevel | null;
+  /** Daily Tide: the day's modifier (an endless run with a twist) */
+  modifier?: Modifier | null;
 }
 
 export interface RunStats {
@@ -139,6 +142,7 @@ export class World {
   /** Island Hop */
   kind: RunKind = 'endless';
   level: CompiledLevel | null = null;
+  modifier: Modifier | null = null;
   /** track position where the level's distances start */
   levelStart = 0;
   levelStats: LevelRunStats = emptyLevelStats();
@@ -199,7 +203,8 @@ export class World {
     this.learned = { move: false, hop: false };
     this.tutorialActive = !!opts.tutorial && !(opts.tutorial.move && opts.tutorial.hop);
     this.level = opts.level ?? null;
-    this.kind = this.level ? 'level' : 'endless';
+    this.modifier = this.level ? null : (opts.modifier ?? null);
+    this.kind = this.level ? 'level' : this.modifier ? 'daily' : 'endless';
     this.levelStart = opts.startDist;
     this.levelStats = emptyLevelStats();
     if (this.level) this.levelStats.dollarsTotal = this.level.dollars;
@@ -214,7 +219,12 @@ export class World {
   /** Speed of the player at a given track position (used by spawner and sim). */
   speedForDist(d: number): number {
     if (this.level) return levelSpeed(this.level.speed, d - this.levelStart, this.level.length);
-    const v = speedAt(d);
+    let v = speedAt(d);
+    if (this.modifier === 'lowTide') v *= CFG.daily.lowTideSpeed;
+    else if (this.modifier === 'magnetMadness') {
+      const S = CFG.speed;
+      v = S.start + S.gain * (1 - Math.exp(-Math.max(0, d) / (S.tau / CFG.daily.madnessRamp)));
+    }
     return this.tutorialActive ? Math.min(v, CFG.speed.tutorialCap) : v;
   }
 
@@ -497,9 +507,10 @@ export class World {
 
   private updatePower(dt: number): void {
     const pw = this.power;
-    if (!pw.kind) return;
+    const madness = this.modifier === 'magnetMadness';
+    if (!pw.kind && !madness) return;
     pw.t -= dt;
-    if (pw.kind === 'magnet' || pw.kind === 'rider') {
+    if (pw.kind === 'magnet' || pw.kind === 'rider' || madness) {
       const all = pw.kind === 'rider';
       for (const s of this.shells) {
         if (s.magnet || s.dead) continue;
@@ -509,7 +520,7 @@ export class World {
         s.magnet = true;
       }
     }
-    if (pw.t <= 0) this.endPower(false);
+    if (pw.kind && pw.t <= 0) this.endPower(false);
   }
 
   private endPower(popped: boolean): void {

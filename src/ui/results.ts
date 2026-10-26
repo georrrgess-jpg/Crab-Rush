@@ -18,6 +18,10 @@ export interface ResultsView {
   goals: GoalView[];
   unlock: { name: string; have: number; need: number } | null;
   wardrobeBadge: boolean;
+  /** extra reward rows (Golden Shell boost, Daily Tide rewards) */
+  extra?: { label: string; value: number }[];
+  /** a highlighted line under the distance (Daily Tide score) */
+  banner?: string;
 }
 
 export interface ResultsHandlers {
@@ -94,7 +98,9 @@ export class ResultsScreen {
       btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()),
     );
     buttons.append(this.again, small);
-    p.append(head, dist, sub, rows);
+    p.append(head, dist, sub);
+    if (d.banner) p.append(el('div', 'res-banner', d.banner));
+    p.append(rows);
     p.append(xp);
     if (unlock) p.append(unlock);
     p.append(buttons, el('div', 'res-skip', 'Tap to skip'));
@@ -137,6 +143,7 @@ export class ResultsScreen {
     };
     addRow('Shells collected', d.pickups);
     if (d.bonus > 0) addRow('Bonuses', d.bonus);
+    for (const x of d.extra ?? []) addRow(x.label, x.value, 'extra');
     for (const g of d.completed) addRow(`<span class="chk">${ICON.check}</span>${g.text}`, g.reward, 'goal');
     addRow('Your shells', d.balance, 'total');
     at += 150;

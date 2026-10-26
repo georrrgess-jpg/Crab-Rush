@@ -12,14 +12,20 @@ import { HowToScreen } from './ui/howto';
 import { SettingsScreen, StatsScreen } from './ui/settings';
 import { Haptics } from './core/haptics';
 import { PASS_TIERS, tierFromXp, xpFor } from './meta/xp';
-import { claimable } from './meta/pass';
+import { MAX_BOOSTS, PASS_REWARDS, claim, claimable, type Reward } from './meta/pass';
+import { MODIFIERS, currentStreak, dateKey, modifierFor, recordFinish, seedFor, type Modifier } from './meta/daily';
+import { PassScreen, rewardView } from './ui/pass';
+import { DailyScreen, type DailyData } from './ui/daily';
+import { DANCE_SVG, GIFT_SVG } from './ui/icons';
 import type { HomeData } from './ui/home';
 import { LevelEnd, LevelIntro, MapScreen, type MapData } from './ui/islands';
 import { LEVELS, LEVEL_BY_ID } from './sim/levelData';
 import { compileLevel, type CompiledLevel } from './sim/levels';
 import { evalStars, ruleHud, ruleState, ruleText } from './sim/objectives';
 import { ISLAND_NAMES, ISLAND_REWARD_HATS, TOTAL_STARS, applyLevelResult, islandComplete, islandStars, islandUnlocked, levelUnlocked, nextLevel, totalStars } from './meta/islands';
-import { ITEMS, grant } from './meta/wardrobe';
+import { ITEMS, equip, grant, type Slot } from './meta/wardrobe';
+import { HAT_KINDS, type HatKind } from './render/models/hats';
+import type { TrailKind } from './render/materials';
 
 const ITEM_NAMES: Record<string, string> = Object.fromEntries(ITEMS.filter((i) => i.slot === 'hats').map((i) => [i.id, i.name]));
 import { ShopScreen } from './ui/shop';
@@ -27,13 +33,15 @@ import { Autopilot } from './sim/autopilot';
 import type { GameEvent } from './sim/events';
 import { World, defaultRunOptions, type RunOptions } from './sim/world';
 import { pickQuality } from './render/renderer';
-import { CRAB_SKINS } from './render/models/crab';
+import { BODY_SKINS, CRAB_SKINS } from './render/models/crab';
 import { GameView, type CamMode } from './render/view';
 import { UI, type GoalView } from './ui/ui';
+import { fmt } from './ui/dom';
+import { ICON } from './ui/icons';
 import type { PowerKind } from './sim/events';
 
 type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats'
-  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd';
+  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily';
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
@@ -80,6 +88,19 @@ export class Game {
   private finishClock = 0;
   private goalCheckT = 0;
   private thumbsReady = false;
+  // Sunny Pass, Daily Tide, boosts (Phase F)
+  private passScreen: PassScreen;
+  private dailyScreen: DailyScreen;
+  /** the Home Play card's Golden Shell toggle */
+  private boostOn = false;
+  /** this run spends a Golden Shell (2× shells at the end) */
+  private runBoost = false;
+  /** the current/last run is a Daily Tide run */
+  private dailyRun = false;
+  private runModifier: Modifier | null = null;
+  /** test hook: a fixed "now" (ms) for Daily Tide dates */
+  private fakeNow: number | null = null;
+  private tierToast = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.save = new SaveStore();
@@ -90,10 +111,6 @@ export class Game {
     this.tagQuality();
     const app = document.getElementById('app') as HTMLElement;
     this.touchLayer = document.getElementById('touch-layer') as HTMLElement;
-    const soon = (what: string): void => {
-      this.audio.play('tap');
-      this.ui.toast(`${what} is on its way!`, { sub: 'Arriving in this update', life: 2 });
-    };
     this.ui = new UI(
       document.getElementById('ui') as HTMLElement,
       {
@@ -108,9 +125,9 @@ export class Game {
       {
         play: () => this.onPlay(),
         islands: () => this.openMap(),
-        daily: () => soon('Daily Tide'),
+        daily: () => this.openDaily(),
         wardrobe: () => this.openShop(),
-        pass: () => soon('The Sunny Pass track'),
+        pass: () => this.openPass(),
         settings: () => this.openSettings(),
         howto: () => this.openHowTo(),
         stats: () => this.openStats(),
@@ -118,6 +135,14 @@ export class Game {
           this.audio.play('tap');
           this.haptics.play('light');
           this.view.crab.emote();
+        },
+        toggleBoost: () => {
+          if (this.save.data.boosts <= 0) return;
+          this.boostOn = !this.boostOn;
+          this.audio.play(this.boostOn ? 'powerup' : 'tap');
+          this.haptics.play('light');
+          this.ui.setHome(this.homeData());
+          if (this.boostOn) this.ui.toast('Golden Shell ready!', { kind: 'gold', sub: 'Your next Beach Run pays 2× shells', life: 2 });
         },
       },
       {
@@ -129,27 +154,33 @@ export class Game {
         levelUp: (tier) => {
           this.audio.play('levelUp');
           this.haptics.play('success');
-          this.ui.toast(`Sunny Pass tier ${tier}!`, { kind: 'gold', sub: 'A reward is waiting', life: 2.2 });
+          // several tiers in one fill: one toast for the last
+          clearTimeout(this.tierToast);
+          this.tierToast = window.setTimeout(() => this.ui.toast(`Sunny Pass tier ${tier}!`, { kind: 'gold', sub: 'Rewards are waiting on the Pass', life: 2.2 }), 450);
         },
       },
     );
     this.goals = new Goals(this.save.data.goals);
-    this.shop = new ShopScreen(CRAB_SKINS, {
+    this.shop = new ShopScreen(BODY_SKINS, {
       back: () => this.closeOverlay(),
-      preview: (id) => this.view.setSkin(this.skinOf(id)),
-      select: (id) => {
-        if (selectCrab(this.save.data, id)) {
+      preview: (slot, id) => this.previewItem(slot, id),
+      equip: (slot, id) => {
+        const d = this.save.data;
+        if (equip(d.wardrobe, slot, id)) {
+          // keep the v1 field in step so economy / migration stay consistent
+          if (slot === 'bodies' && d.crabs.owned.includes(id)) d.crabs.selected = id;
           this.save.save();
           this.audio.play('tap');
-          this.view.setSkin(this.skinOf(id));
+          this.haptics.play('light');
+          this.previewItem(slot, id);
         }
-        this.shop.render(this.save.data);
+        this.shop.render(d);
       },
       buyCrab: (id) => {
         if (buyCrab(this.save.data, id)) {
           this.save.save();
           this.audio.play('purchase');
-          this.view.setSkin(this.skinOf(id));
+          this.applyLook();
           this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold' });
         } else this.audio.play('deny');
         this.shop.render(this.save.data);
@@ -167,13 +198,22 @@ export class Game {
       reset: () => {
         this.save.reset();
         this.goals = new Goals(this.save.data.goals);
-        this.view.setSkin(this.skinOf('sandy'));
+        this.applyLook();
         this.ui.toast('Progress erased');
       },
       back: () => this.closeOverlay(),
       stats: () => this.openStats(),
     });
     this.howto = new HowToScreen(() => this.closeOverlay());
+    this.passScreen = new PassScreen({
+      back: () => this.closeOverlay(),
+      claim: (t) => this.claimTiers([t]),
+      claimAll: () => this.claimTiers(claimable(this.save.data)),
+    });
+    this.dailyScreen = new DailyScreen({
+      back: () => this.closeOverlay(),
+      play: () => this.playDaily(),
+    });
     this.stats = new StatsScreen(() => this.closeStats());
     this.map = new MapScreen({ back: () => this.closeOverlay(), open: (id) => this.openLevel(id) });
     this.levelIntro = new LevelIntro({ play: (id) => this.playLevel(id), back: () => this.openMap() });
@@ -197,14 +237,15 @@ export class Game {
     this.ui.addScreen(this.map.el);
     this.ui.addScreen(this.levelIntro.el);
     this.ui.addScreen(this.levelEnd.el);
+    this.ui.addScreen(this.passScreen.el);
+    this.ui.addScreen(this.dailyScreen.el);
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
     if (this.flags.debug) this.debug = new DebugOverlay(app);
 
     this.audio.setVolumes(this.save.data.settings.music, this.save.data.settings.sfx);
-    const skin = CRAB_SKINS.find((s) => s.id === this.save.data.crabs.selected) ?? CRAB_SKINS[0]!;
-    this.view.setSkin(skin);
+    this.applyLook();
     this.view.setReduceMotion(this.reduceMotion);
     this.applyControlSettings();
     // desktop: the crab's eyes follow the cursor on Home
@@ -304,6 +345,8 @@ export class Game {
   toTitle(): void {
     this.state = 'title';
     this.currentLevel = null;
+    this.setModifierView(null);
+    this.dailyScreen.stop();
     this.ui.setLevelHUD(null);
     this.levelEnd.hide();
     this.applyPendingQuality();
@@ -320,6 +363,7 @@ export class Game {
     if (this.state !== 'title') return;
     if (!this.flags.shots) this.audio.unlock();
     this.audio.play('tap');
+    this.dailyRun = false;
     this.startRun(true);
   }
 
@@ -334,12 +378,30 @@ export class Game {
     opts.zonesSeen = [...d.zonesSeen];
     const skipTut = this.flags.notut || this.flags.autopilot || this.flags.start > 0;
     opts.tutorial = skipTut ? null : { ...d.tutorial };
+    if (this.dailyRun) {
+      // everyone gets the same course today
+      const key = this.todayKey();
+      opts.seed = seedFor(key);
+      opts.modifier = modifierFor(key);
+      opts.tutorial = null;
+      opts.startDist = 0;
+    }
     return opts;
   }
 
   startRun(withIntro: boolean): void {
     const opts = this.buildRunOptions();
     this.world.start(opts);
+    this.runModifier = opts.modifier ?? null;
+    this.setModifierView(this.runModifier);
+    // Golden Shell: spent at the start of a Beach Run (not on Daily Tide)
+    this.runBoost = false;
+    if (!this.dailyRun && this.boostOn && this.save.data.boosts > 0) {
+      this.save.data.boosts--;
+      this.runBoost = true;
+      this.boostOn = false;
+      this.save.save();
+    }
     this.runStartedWithTutorial = this.world.tutorialActive;
     this.view.resetRun(opts.best);
     this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
@@ -357,9 +419,14 @@ export class Game {
     this.introT = withIntro ? 0 : 1;
     this.state = withIntro ? 'intro' : 'running';
     this.audio.setMusicMode('run');
+    if (this.runBoost) this.ui.toast('Golden Shell!', { kind: 'gold', sub: '2× shells this run', life: 2 });
+    if (this.runModifier) {
+      const m = MODIFIERS.find((x) => x.id === this.runModifier)!;
+      this.ui.toast(`Daily Tide: ${m.name}`, { kind: 'gold', sub: m.desc, life: 2.4 });
+    }
     const st = this.save.data.stats;
     st.runs++;
-    const body = this.save.data.crabs.selected;
+    const body = this.save.data.wardrobe.equipped.body;
     st.runsByCrab[body] = (st.runsByCrab[body] ?? 0) + 1;
   }
 
@@ -376,12 +443,168 @@ export class Game {
       tierNeed: t.need,
       passClaimable: claimable(d).length,
       goals: this.goalViews(),
-      crabName: this.skinOf(d.crabs.selected).name,
+      crabName: this.skinOf(d.wardrobe.equipped.body).name,
       wardrobeBadge: this.anyAffordable(),
       islands: { stars: totalStars(d.levels), total: TOTAL_STARS },
-      daily: null,
+      daily: (() => {
+        const today = this.todayKey();
+        return { streak: currentStreak(d.daily, today), playedToday: d.daily.lastDate === today, modifier: MODIFIERS.find((m) => m.id === modifierFor(today))!.name, msLeft: this.msToMidnight() };
+      })(),
       keyboard: this.input.lastDevice === 'keyboard',
+      boosts: d.boosts,
+      boostOn: this.boostOn && d.boosts > 0,
+      nextReward: this.nextRewardText(),
     };
+  }
+
+  // ------------------------------------------------------------------ Sunny Pass / Daily Tide
+  private now(): number {
+    return this.fakeNow ?? Date.now();
+  }
+  private todayKey(): string {
+    return dateKey(new Date(this.now()));
+  }
+  private msToMidnight(): number {
+    const d = new Date(this.now());
+    const m = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    return m.getTime() - d.getTime();
+  }
+
+  /** Mirror Beach flips the canvas (input is swapped in onAction); Night Run forces the night palette. */
+  private setModifierView(m: Modifier | null): void {
+    this.canvas.classList.toggle('mirrored', m === 'mirror');
+    this.view.nightForce = m === 'nightRun' ? 1 : 0;
+  }
+
+  private itemName(r: Reward): string {
+    return rewardView(r, this.shop.thumbs).name;
+  }
+
+  /** "Next: Parrot Pal in 2 tiers" for the Home pass pill. */
+  private nextRewardText(): string | null {
+    const tier = tierFromXp(this.save.data.xp).tier;
+    const i = PASS_REWARDS.findIndex((r, k) => k + 1 > tier && r.kind === 'item');
+    if (i < 0) return null;
+    const left = i + 1 - tier;
+    return `Next: ${this.itemName(PASS_REWARDS[i] as Reward)}${left > 1 ? ` in ${left} tiers` : ''}`;
+  }
+
+  private passData() {
+    const d = this.save.data;
+    const t = tierFromXp(d.xp);
+    return { tier: t.tier, into: t.into, need: t.need, claimed: d.passClaimed, boosts: d.boosts, thumbs: this.shop.thumbs };
+  }
+
+  openPass(): void {
+    if (this.state !== 'title' && this.state !== 'results') return;
+    this.audio.play('tap');
+    this.prepareThumbs();
+    if (this.state === 'results') {
+      this.ui.flashFade(() => {
+        this.toTitle();
+        this.showPass();
+      });
+      return;
+    }
+    this.showPass();
+  }
+
+  private showPass(): void {
+    this.returnTo = 'title';
+    this.state = 'pass';
+    this.ui.home.hide();
+    this.passScreen.render(this.passData());
+    this.ui.showExtra(this.passScreen.el);
+  }
+
+  private claimTiers(tiers: number[]): void {
+    const d = this.save.data;
+    const got: Reward[] = [];
+    for (const t of tiers) {
+      const r = claim(d, t);
+      if (!r) continue;
+      got.push(r);
+      this.passScreen.render(this.passData(), false);
+      this.passScreen.burst(t);
+    }
+    if (got.length === 0) return;
+    this.save.save();
+    this.audio.play('levelUp');
+    this.haptics.play('success');
+    const items = got.filter((r) => r.kind === 'item');
+    const shells = got.reduce((a, r) => a + (r.kind === 'shells' ? r.amount : 0), 0);
+    const boosts = got.filter((r) => r.kind === 'boost').length;
+    if (got.length === 1) {
+      const r = got[0] as Reward;
+      this.ui.toast(r.kind === 'item' ? `${this.itemName(r)} unlocked!` : r.kind === 'boost' ? 'Golden Shell!' : `+${r.amount} shells`, {
+        kind: 'gold',
+        sub: r.kind === 'item' ? 'Find it in the Wardrobe' : r.kind === 'boost' ? (d.boosts >= MAX_BOOSTS ? 'Boost slots full' : 'Turn it on from the Play card') : undefined,
+        life: 2.2,
+      });
+    } else {
+      const parts = [items.length ? `${items.length} item${items.length > 1 ? 's' : ''}` : '', shells ? `${shells} shells` : '', boosts ? `${boosts} Golden Shell${boosts > 1 ? 's' : ''}` : ''].filter(Boolean);
+      this.ui.toast(`Claimed ${got.length} rewards!`, { kind: 'gold', sub: parts.join(' · '), life: 2.6 });
+    }
+  }
+
+  private dailyData(): DailyData {
+    const d = this.save.data;
+    const today = this.todayKey();
+    const week: DailyData['week'] = [];
+    const base = new Date(this.now());
+    for (let i = 6; i >= 0; i--) {
+      const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() - i);
+      const key = dateKey(day);
+      week.push({ key, label: i === 0 ? 'Today' : day.toLocaleDateString('en-US', { weekday: 'short' }), done: d.daily.history.includes(key), today: i === 0 });
+    }
+    const streak = currentStreak(d.daily, today);
+    const crown = this.shop.thumbs.hats.flowercrown;
+    return {
+      today,
+      modifier: modifierFor(today),
+      streak,
+      savers: d.daily.savers,
+      bestToday: d.daily.bestDate === today ? d.daily.bestToday : 0,
+      playedToday: d.daily.lastDate === today,
+      week,
+      msLeft: this.msToMidnight(),
+      milestones: [
+        { days: 7, name: 'Flower Crown', art: crown ? `<img alt="" src="${crown}">` : GIFT_SVG, got: d.wardrobe.owned.hats.includes('flowercrown') },
+        { days: 30, name: 'Moonscuttle dance', art: DANCE_SVG.moonwalk as string, got: d.wardrobe.owned.dances.includes('moonwalk') },
+      ],
+      firstXp: xpFor({ daily: true, streak: streak > 0 ? d.daily.streak + 1 : 1 }),
+    };
+  }
+
+  openDaily(): void {
+    if (this.state !== 'title' && this.state !== 'results') return;
+    this.audio.play('tap');
+    this.prepareThumbs();
+    if (this.state === 'results') {
+      this.ui.flashFade(() => {
+        this.toTitle();
+        this.showDaily();
+      });
+      return;
+    }
+    this.showDaily();
+  }
+
+  private showDaily(): void {
+    this.returnTo = 'title';
+    this.state = 'daily';
+    this.ui.home.hide();
+    this.dailyScreen.render(this.dailyData());
+    this.ui.showExtra(this.dailyScreen.el);
+  }
+
+  private playDaily(): void {
+    if (this.state !== 'daily') return;
+    if (!this.flags.shots) this.audio.unlock();
+    this.audio.play('tap');
+    this.dailyScreen.stop();
+    this.dailyRun = true;
+    this.startRun(true);
   }
 
   /** Which control hints to show: touch on phones/tablets, keyboard on computers. */
@@ -496,6 +719,10 @@ export class Game {
   private startLevel(id: string, withIntro: boolean): void {
     const cl = this.compiledLevel(id);
     this.currentLevel = id;
+    this.dailyRun = false;
+    this.runBoost = false;
+    this.runModifier = null;
+    this.setModifierView(null);
     const opts = defaultRunOptions();
     // a fixed seed per level so the course is learnable
     let h = 7;
@@ -638,7 +865,27 @@ export class Game {
   }
 
   private skinOf(id: string) {
-    return CRAB_SKINS.find((k) => k.id === id) ?? CRAB_SKINS[0]!;
+    return BODY_SKINS.find((k) => k.id === id) ?? CRAB_SKINS[0]!;
+  }
+
+  /** Dress the game crab in the equipped wardrobe. */
+  private applyLook(): void {
+    const e = this.save.data.wardrobe.equipped;
+    this.view.setSkin(this.skinOf(e.body), e.hat as HatKind);
+    this.view.setTrail(e.trail as TrailKind);
+    this.view.setDance(e.dance);
+  }
+
+  /** Wardrobe preview on the turntable (not saved): the rest of the outfit stays as equipped. */
+  private previewItem(slot: Slot, id: string): void {
+    const e = this.save.data.wardrobe.equipped;
+    if (slot === 'bodies') this.view.setSkin(this.skinOf(id), e.hat as HatKind);
+    else if (slot === 'hats') this.view.setSkin(this.skinOf(e.body), id as HatKind);
+    else if (slot === 'trails') this.view.setTrail(id as TrailKind);
+    else {
+      this.view.setDance(id);
+      this.view.crab.celebrate();
+    }
   }
 
   private openShop(): void {
@@ -673,7 +920,7 @@ export class Game {
     if (this.thumbsReady) return;
     this.thumbsReady = true;
     void this.view
-      .renderCrabThumbs()
+      .renderWardrobeThumbs(HAT_KINDS.filter((k) => k !== 'none'))
       .then((t) => {
         this.shop.thumbs = t;
         if (this.state === 'shop') this.shop.render(this.save.data);
@@ -710,7 +957,7 @@ export class Game {
       favouriteRuns: fav ? fav[1] : 0,
       passTier: tierFromXp(d.xp).tier,
       islandStars: totalStars(d.levels),
-      dailyStreak: null,
+      dailyStreak: currentStreak(d.daily, this.todayKey()),
     });
     this.ui.showExtra(this.stats.el);
   }
@@ -736,7 +983,7 @@ export class Game {
   private closeOverlay(): void {
     this.audio.play('tap');
     this.ui.hideExtras();
-    this.view.setSkin(this.skinOf(this.save.data.crabs.selected));
+    this.applyLook();
     if (this.returnTo === 'paused') {
       this.state = 'paused';
       this.ui.show('pause');
@@ -799,6 +1046,8 @@ export class Game {
       if (a === 'pause' || a === 'back') return this.pause();
       if (a === 'confirm') return;
       if (this.autopilot) return;
+      // Mirror Beach: the picture is flipped, so are the controls
+      if (this.runModifier === 'mirror' && (a === 'left' || a === 'right')) a = a === 'left' ? 'right' : 'left';
       this.world.act(a);
       return;
     }
@@ -817,7 +1066,8 @@ export class Game {
       return;
     }
     if (s === 'stats' && a === 'back') return this.closeStats();
-    if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map') && a === 'back') this.closeOverlay();
+    if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map' || s === 'pass' || s === 'daily') && a === 'back') this.closeOverlay();
+    if (s === 'daily' && (a === 'confirm' || alsoConfirm)) this.playDaily();
     if (s === 'levelIntro') {
       if (a === 'back') this.openMap();
       else if ((a === 'confirm' || alsoConfirm) && this.currentLevelIntro()) this.playLevel(this.currentLevelIntro() as string);
@@ -918,15 +1168,20 @@ export class Game {
     const d = this.save.data;
     const distance = w.distance;
     const prevBest = d.best;
-    const newBest = distance > prevBest && prevBest > 0;
+    const newBest = !this.dailyRun && distance > prevBest && prevBest > 0;
     const pickups = w.stats.shells;
     const bonus = w.stats.bonus;
     const snap = this.snapshot();
     const completedIds = [...this.goals.pending];
     const { completed, reward: goalRewards } = this.goals.finishRun(snap);
-    const total = pickups + bonus + goalRewards;
+    // Golden Shell doubles the shells picked up; Daily Tide pays its first-finish reward
+    const extra: { label: string; value: number }[] = [];
+    if (this.runBoost) extra.push({ label: 'Golden Shell 2×', value: pickups });
+    const daily = this.dailyRun ? this.finishDaily(distance, pickups) : null;
+    if (daily?.firstToday) extra.push({ label: 'Daily Tide reward', value: CFG.daily.firstFinishShells });
+    const total = pickups + bonus + goalRewards + extra.reduce((a, x) => a + x.value, 0);
     d.shells += total;
-    if (w.startDist === 0) d.best = Math.max(d.best, distance);
+    if (w.startDist === 0 && !this.dailyRun) d.best = Math.max(d.best, distance);
     d.stats.totalShells += total;
     d.stats.totalDistance += distance;
     d.stats.totalHops += w.stats.hops;
@@ -947,7 +1202,7 @@ export class Game {
 
     // Sunny Pass XP for the run
     const xpBefore = d.xp;
-    const xpGained = xpFor({ distance, shells: pickups, goals: completed.length });
+    const xpGained = xpFor({ distance, shells: pickups, goals: completed.length, daily: !!daily?.firstToday, streak: daily?.streak });
     d.xp += xpGained;
     d.stats.longestRun = Math.max(d.stats.longestRun, w.time);
     this.save.save();
@@ -957,7 +1212,9 @@ export class Game {
     this.applyPendingQuality();
     if (newBest) this.view.celebrateResults();
     this.ui.showResults({
-      title: newBest ? 'New Best!' : 'Wipeout!',
+      title: daily ? (daily.newBest ? 'Tide Record!' : 'Daily Tide') : newBest ? 'New Best!' : 'Wipeout!',
+      extra,
+      banner: daily ? `${ICON.flame} Score <b>${fmt(daily.score)}</b>${daily.newBest ? ' · best today!' : ` · best ${fmt(daily.best)}`} · ${daily.streak}-day streak` : undefined,
       distance,
       best: prevBest,
       newBest,
@@ -977,6 +1234,19 @@ export class Game {
       this.haptics.play('success');
     }
     for (const id of unlocked) this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold', sub: 'Find them in the Wardrobe', life: 3 });
+    if (daily?.usedSavers) this.ui.toast('Streak saved!', { kind: 'green', sub: `A streak saver kept your ${daily.streak}-day streak alive`, life: 3 });
+    if (daily?.milestone === 7) this.ui.toast('Flower Crown unlocked!', { kind: 'gold', sub: '7-day Daily Tide streak', life: 3.2 });
+    if (daily?.milestone === 30) this.ui.toast('Moonscuttle unlocked!', { kind: 'gold', sub: '30-day Daily Tide streak', life: 3.2 });
+  }
+
+  /** Record a Daily Tide finish: score, streak, savers and streak cosmetics. */
+  private finishDaily(distance: number, shells: number): { score: number; best: number; newBest: boolean; firstToday: boolean; streak: number; usedSavers: number; milestone: number | null } {
+    const d = this.save.data;
+    const score = Math.floor(distance) + shells * CFG.daily.shellScore;
+    const r = recordFinish(d.daily, this.todayKey(), score);
+    const crown = r.streak >= 7 && grant(d.wardrobe, 'hats', 'flowercrown');
+    const moon = r.streak >= 30 && grant(d.wardrobe, 'dances', 'moonwalk');
+    return { score, best: d.daily.bestToday, ...r, milestone: moon ? 30 : crown ? 7 : null };
   }
 
   private goalViews(): GoalView[] {
@@ -993,7 +1263,7 @@ export class Game {
     }
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
-    const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro';
+    const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily';
     const mode: CamMode = menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
     if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
@@ -1053,7 +1323,7 @@ export class Game {
           this.audio.play(ev.big ? 'bigShell' : 'shell', { streak: ev.streak });
           if (!this.reduceMotion && !this.skipRender) {
             const p = this.view.toScreen(ev.x, ev.y + 0.6, 0);
-            this.ui.flyShell(p.x, p.y, ev.big);
+            this.ui.flyShell(this.runModifier === 'mirror' ? this.canvas.clientWidth - p.x : p.x, p.y, ev.big);
           }
           break;
         case 'laneChange':
@@ -1135,6 +1405,7 @@ export class Game {
       ready: false,
       game: g,
       startRun(o: { seed?: number; start?: number; autopilot?: boolean; tutorial?: boolean } = {}) {
+        g.dailyRun = false;
         if (o.seed !== undefined) g.flags.seed = o.seed;
         if (o.start !== undefined) g.flags.start = o.start;
         if (o.autopilot !== undefined) g.flags.autopilot = o.autopilot;
@@ -1156,6 +1427,12 @@ export class Game {
         } else if (name === 'map') {
           g.toTitle();
           g.openMap();
+        } else if (name === 'pass') {
+          g.toTitle();
+          g.openPass();
+        } else if (name === 'daily') {
+          g.toTitle();
+          g.openDaily();
         } else if (name === 'stats') {
           g.toTitle();
           g.openStats();
@@ -1192,6 +1469,29 @@ export class Game {
       grant(n: number) {
         g.save.data.shells += n;
         g.save.save();
+      },
+      /** add Sunny Pass XP / Golden Shells (screenshots, tests) */
+      xp(n: number, boosts = 0) {
+        g.save.data.xp += n;
+        g.save.data.boosts = Math.min(MAX_BOOSTS, g.save.data.boosts + boosts);
+        g.save.save();
+      },
+      /** fake the clock for Daily Tide (ISO date or ms; null = real time) */
+      setDate(d: string | number | null) {
+        g.fakeNow = d === null ? null : typeof d === 'number' ? d : new Date(d).getTime();
+      },
+      /** start today's Daily Tide run directly */
+      daily(o: { autopilot?: boolean } = {}) {
+        if (o.autopilot !== undefined) g.flags.autopilot = o.autopilot;
+        g.toTitle();
+        g.openDaily();
+        g.playDaily();
+      },
+      /** wear a wardrobe item (owning it first) */
+      wear(slot: Slot, id: string) {
+        grant(g.save.data.wardrobe, slot, id);
+        equip(g.save.data.wardrobe, slot, id);
+        g.applyLook();
       },
       act(a: Action) {
         g.onAction(a, false);

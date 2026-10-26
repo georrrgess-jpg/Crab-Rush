@@ -197,6 +197,8 @@ export class CrabModel {
   private blinkT = 2;
   private blinkPhase = 0;
   private emoteId = '';
+  /** equipped victory dance (Wardrobe) */
+  dance = 'clap';
   private sparkled = false;
   private emoteCd = 4;
   private lookX = 0;
@@ -637,8 +639,121 @@ export class CrabModel {
         this.mouth = 3;
         break;
       }
-      case 'celebrate': {
-        // claw clap, jump spin, hat toss caught on the head
+      case 'celebrate':
+        this.poseDance(p, t);
+        break;
+      case 'emote':
+        this.poseEmote(p, t);
+        break;
+    }
+    void d;
+  }
+
+  /** Victory dances (Wardrobe, UPDATE2_PLAN.md §6.3); each lasts about 2.4 s. */
+  private poseDance(p: Pose, t: number): void {
+    const k = smooth01(t / 0.25) * (1 - smooth01((t - 2.2) / 0.35));
+    switch (this.dance) {
+      case 'spin': {
+        // two hop spins, claws thrown up on the second
+        for (let n = 0; n < 2; n++) {
+          const j = (t - 0.15 - n * 0.85) / 0.7;
+          if (j <= 0 || j >= 1) continue;
+          p[P_LIFT] = arc(j) * (0.55 + n * 0.35);
+          p[P_ROOT_RY] = smooth01(j) * Math.PI * 2 * (n === 0 ? 1 : -1);
+          for (let l = 0; l < 6; l++) {
+            p[P_LEG + l * 4 + 1] = 0.12 + arc(j) * 0.7;
+            p[P_LEG + l * 4 + 2] = -arc(j) * 0.8;
+          }
+        }
+        const up = smooth01((t - 1.0) / 0.3) * k;
+        for (let s2 = 0; s2 < 2; s2++) {
+          p[P_CLAW + s2 * 4] = 0.3 + up * 1.0;
+          p[P_CLAW + s2 * 4 + 1] = (s2 === 0 ? -1 : 1) * 0.3 * up;
+          p[P_CLAW + s2 * 4 + 3] = 0.6;
+        }
+        this.mouth = 1;
+        break;
+      }
+      case 'wave':
+        // both claws sweep overhead like a stadium wave, body swaying
+        for (let s2 = 0; s2 < 2; s2++) {
+          const ph = t * 7 + s2 * Math.PI;
+          p[P_CLAW + s2 * 4] = (1.1 + Math.sin(ph) * 0.3) * k;
+          p[P_CLAW + s2 * 4 + 1] = Math.sin(ph) * 0.55 * k;
+          p[P_CLAW + s2 * 4 + 2] = (0.4 + Math.cos(ph) * 0.3) * k;
+          p[P_CLAW + s2 * 4 + 3] = 0.45;
+        }
+        p[P_BODY_RZ] = Math.sin(t * 7) * 0.14 * k;
+        p[P_BODY_Y] = Math.abs(Math.sin(t * 7)) * 0.05 * k;
+        p[P_LOOK_Y] = 0.25 * k;
+        this.mouth = 1;
+        break;
+      case 'shimmy':
+        // hips (well, shell) shake while the claws pump in turn and the feet shuffle
+        p[P_BODY_RZ] = Math.sin(t * 22) * 0.16 * k;
+        p[P_BODY_RY] = Math.sin(t * 11) * 0.2 * k;
+        p[P_BODY_Y] = -0.05 * k;
+        for (let s2 = 0; s2 < 2; s2++) {
+          const pump = Math.max(0, Math.sin(t * 9 + s2 * Math.PI));
+          p[P_CLAW + s2 * 4] = (0.4 + pump * 0.8) * k;
+          p[P_CLAW + s2 * 4 + 1] = (s2 === 0 ? -1 : 1) * 0.2;
+          p[P_CLAW + s2 * 4 + 2] = 0.3 + pump * 0.4;
+          p[P_CLAW + s2 * 4 + 3] = 0.2 + pump * 0.5;
+        }
+        for (let l = 0; l < 6; l++) {
+          const lift = Math.max(0, Math.sin(t * 18 + l * 1.3));
+          p[P_LEG + l * 4] = Math.sin(t * 9 + l) * 0.25 * k;
+          p[P_LEG + l * 4 + 1] = 0.15 + lift * 0.3 * k;
+        }
+        p[P_LID] = 0.4 * k;
+        this.mouth = 1;
+        break;
+      case 'hattoss': {
+        // a big hat throw: several flips high overhead, watched all the way, caught with a bow
+        const h = (t - 0.35) / 1.5;
+        p[P_HAT_Y] = arc(h) * 3.2;
+        p[P_HAT_RX] = h > 0 && h < 1 ? smooth01(h) * Math.PI * 6 : 0;
+        p[P_HAT_RZ] = h > 0 && h < 1 ? Math.sin(h * Math.PI) * 0.6 : 0;
+        const look = h > 0 && h < 1 ? arc(h) : 0;
+        p[P_LOOK_Y] = look * 0.9;
+        p[P_BODY_RX] = -look * 0.25 + (t > 1.9 ? 0.3 * arc((t - 1.9) / 0.5) : 0);
+        const throwK = arc((t - 0.1) / 0.45);
+        p[P_CLAW + 4] = 0.3 + throwK * 1.2 + look * 0.5;
+        p[P_CLAW + 4 + 1] = -0.3 * throwK;
+        p[P_CLAW + 4 + 2] = 0.5;
+        p[P_CLAW] = 0.3 + look * 0.6;
+        p[P_CLAW + 3] = 0.5 * look;
+        // step under it
+        p[P_BODY_RY] = Math.sin(h * Math.PI * 2) * 0.2 * look;
+        this.mouth = look > 0.3 ? 1 : 0;
+        break;
+      }
+      case 'moonwalk': {
+        // the Moonscuttle: legs glide backwards, one claw points to the sky, a spin and a pose
+        for (let l = 0; l < 6; l++) {
+          const g = (l % 2) * Math.PI;
+          const lp = -t * 9 + g;
+          p[P_LEG + l * 4] = Math.sin(lp) * 0.4 * k;
+          p[P_LEG + l * 4 + 1] = 0.12 + Math.max(0, Math.cos(lp)) * 0.18 * k;
+        }
+        p[P_BODY_RX] = -0.12 * k;
+        p[P_BODY_RZ] = Math.sin(t * 9) * 0.04 * k;
+        const spin = (t - 1.3) / 0.5;
+        p[P_ROOT_RY] = smooth01(spin) * Math.PI * 2;
+        const pose = smooth01((t - 1.8) / 0.15) * k;
+        p[P_CLAW + 4] = 0.3 + pose * 1.25;
+        p[P_CLAW + 4 + 1] = -0.4 * pose;
+        p[P_CLAW + 4 + 2] = 0.1;
+        p[P_CLAW + 4 + 3] = 0.05;
+        p[P_CLAW] = 0.25;
+        p[P_CLAW + 1] = 0.5 * pose;
+        p[P_HAT_RZ] = 0.25 * pose;
+        p[P_LID] = 0.35 * k;
+        this.mouth = pose > 0.5 ? 1 : 0;
+        break;
+      }
+      default: {
+        // Claw Clap: claw clap, jump spin, hat toss caught on the head
         const clap = t < 0.9 ? Math.abs(Math.sin(t * 14)) : 0;
         for (let s2 = 0; s2 < 2; s2++) {
           const sg = s2 === 0 ? 1 : -1;
@@ -660,11 +775,7 @@ export class CrabModel {
         this.mouth = j > 0 && j < 1 ? 1 : 0;
         break;
       }
-      case 'emote':
-        this.poseEmote(p, t);
-        break;
     }
-    void d;
   }
 
   /** Signature emotes (UPDATE2_PLAN.md §3.2). */

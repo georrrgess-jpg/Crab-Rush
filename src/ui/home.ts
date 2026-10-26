@@ -1,5 +1,5 @@
 import { btn, el, fmt } from './dom';
-import { HAT_SVG, ICON } from './icons';
+import { BOOST_SVG, HAT_SVG, ICON } from './icons';
 import type { GoalView } from './ui';
 
 /** Everything the Home screen shows (UPDATE2_PLAN.md §4.3 Home). */
@@ -20,6 +20,11 @@ export interface HomeData {
   /** Daily Tide; null until the mode ships */
   daily: { streak: number; playedToday: boolean; modifier: string; msLeft: number } | null;
   keyboard: boolean;
+  /** Golden Shell boosts stored, and whether the next Beach Run uses one */
+  boosts: number;
+  boostOn: boolean;
+  /** the next big Sunny Pass reward ("Next: Parrot Pal, 2 tiers") */
+  nextReward: string | null;
 }
 
 export interface HomeHandlers {
@@ -33,6 +38,7 @@ export interface HomeHandlers {
   stats(): void;
   /** tap on the crab area: emote */
   poke(): void;
+  toggleBoost(): void;
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -60,6 +66,8 @@ export class HomeScreen {
   private goalsChip: HTMLButtonElement;
   private wardrobeDot: HTMLElement;
   private dailyMs = 0;
+  private boost: HTMLButtonElement;
+  private passNext: HTMLElement;
   private data: HomeData | null = null;
   private timer = 0;
 
@@ -81,6 +89,8 @@ export class HomeScreen {
     this.passFill = pass.querySelector('.bar i') as HTMLElement;
     this.passText = pass.querySelector('.txt') as HTMLElement;
     this.passDot = pass.querySelector('.dot') as HTMLElement;
+    this.passNext = el('span', 'pass-next-chip hidden');
+    pass.appendChild(this.passNext);
     this.wallet = el('div', 'wallet', `<span class="ico">${ICON.shell}</span><b>0</b>`);
     const help = btn(ICON.help, 'icon ghost', () => this.h.howto(), 'How to play');
     const right = el('div', 'home-top-r');
@@ -127,11 +137,17 @@ export class HomeScreen {
       });
       return c;
     };
+    this.boost = el('button', 'boost-chip hidden') as HTMLButtonElement;
+    this.boost.type = 'button';
+    this.boost.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.h.toggleBoost();
+    });
     this.islandCard = mk('islands', ICON.island, 'Island Hop', () => this.h.islands());
     this.dailyCard = mk('daily', ICON.calendar, 'Daily Tide', () => this.h.daily());
     const row = el('div', 'mode-row');
     row.append(this.islandCard, this.dailyCard);
-    modes.append(play, row);
+    modes.append(this.boost, play, row);
 
     // ---- bottom nav
     const nav = el('nav', 'home-nav');
@@ -166,6 +182,13 @@ export class HomeScreen {
     this.playLabel.textContent = d.keyboard ? 'Play' : 'Play';
     this.playSub.innerHTML = `Beach Run${d.best > 0 ? ` · Best <b>${fmt(d.best)} m</b>` : ''}`;
     this.wardrobeDot.classList.toggle('hidden', !d.wardrobeBadge);
+    this.boost.classList.toggle('hidden', d.boosts <= 0);
+    this.boost.classList.toggle('on', d.boostOn);
+    this.boost.setAttribute('aria-pressed', String(d.boostOn));
+    this.boost.setAttribute('aria-label', `Golden Shell: double shells next run (${d.boosts} left)`);
+    this.boost.innerHTML = `${BOOST_SVG}<span>${d.boostOn ? '2× on' : '2× shells'}</span><b>${d.boosts}</b>`;
+    this.passNext.classList.toggle('hidden', !d.nextReward || d.passClaimable > 0);
+    this.passNext.textContent = d.passClaimable > 0 ? '' : (d.nextReward ?? '');
     // Island Hop card
     const isub = this.islandCard.querySelector('.mc-sub') as HTMLElement;
     this.islandCard.classList.toggle('soon', !d.islands);

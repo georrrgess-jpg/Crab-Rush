@@ -113,6 +113,63 @@ const SCENES = {
     await p.evaluate(() => window.__crab.setState('shop'));
     await p.evaluate(() => window.__crab.frames(30));
   },
+  // ---- Phase F: Wardrobe, Sunny Pass, Daily Tide
+  wardrobe: async (p) => {
+    await p.evaluate(() => { window.__crab.xp(9000); const d = window.__crab.game.save.data; for (const t of [5, 10, 15, 20]) d.passClaimed.push(t); d.wardrobe.owned.hats.push('parrot', 'sunflower', 'beanie', 'chef'); window.__crab.wear('hats', 'parrot'); window.__crab.setState('shop'); window.__crab.frames(10); });
+    await p.waitForTimeout(2500);
+    await p.click('#shop [data-tab="hats"]');
+    await p.evaluate(() => window.__crab.frames(30));
+    await p.waitForTimeout(300);
+  },
+  trail: async (p) => {
+    await p.evaluate(() => { window.__crab.wear('trails', 'rainbow'); window.__crab.wear('hats', 'crown'); window.__crab.wear('bodies', 'midnight'); window.__crab.startRun({ seed: 9, autopilot: true, tutorial: false }); window.__crab.frames(60 * 6); });
+  },
+  dance: async (p) => {
+    await p.evaluate(() => { window.__crab.wear('dances', 'spin'); window.__crab.wear('hats', 'viking'); window.__crab.setState('title'); window.__crab.cam(0.4, 1.4, 4.6); window.__crab.crabCelebrate(); window.__crab.frames(60 * 1.15); });
+  },
+  pass: async (p) => {
+    await p.evaluate(() => { window.__crab.xp(6000, 2); const d = window.__crab.game.save.data; d.passClaimed.push(1, 2, 3, 4, 5, 6, 7, 8); window.__crab.setState('pass'); window.__crab.frames(10); });
+    await p.waitForTimeout(2500);
+    await p.evaluate(() => { window.__crab.setState('pass'); window.__crab.frames(10); });
+    await p.waitForTimeout(900);
+  },
+  daily: async (p) => {
+    await p.evaluate(() => {
+      window.__crab.setDate('2026-10-26T15:00:00');
+      const d = window.__crab.game.save.data.daily;
+      Object.assign(d, { lastDate: '2026-10-25', streak: 5, savers: 1, bestToday: 0, bestDate: '', history: ['2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'] });
+      window.__crab.setState('daily');
+      window.__crab.frames(10);
+    });
+    await p.waitForTimeout(900);
+  },
+  homestreak: async (p) => {
+    await p.evaluate(() => {
+      window.__crab.setDate('2026-10-26T15:00:00');
+      window.__crab.xp(1500, 2);
+      const d = window.__crab.game.save.data;
+      Object.assign(d.daily, { lastDate: '2026-10-25', streak: 6, savers: 0, history: ['2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25'] });
+      d.best = 1840;
+      window.__crab.game.boostOn = true;
+      window.__crab.setState('title');
+      window.__crab.frames(40);
+    });
+    await p.waitForTimeout(1400);
+  },
+  dailyrun: async (p) => {
+    await p.evaluate(() => { window.__crab.setDate('2026-10-29T15:00:00'); window.__crab.daily({ autopilot: true }); window.__crab.frames(60 * 8); });
+  },
+  dailyresults: async (p) => {
+    await p.evaluate(() => {
+      window.__crab.setDate('2026-10-26T15:00:00');
+      Object.assign(window.__crab.game.save.data.daily, { lastDate: '2026-10-25', streak: 6, savers: 0, history: ['2026-10-25'] });
+      window.__crab.daily({ autopilot: true });
+      window.__crab.frames(60 * 10);
+      window.__crab.crash();
+      window.__crab.frames(60 * 1.6);
+    });
+    await p.waitForTimeout(4200);
+  },
   stats: async (p) => {
     await p.evaluate(() => window.__crab.setState('stats'));
     await p.evaluate(() => window.__crab.frames(10));

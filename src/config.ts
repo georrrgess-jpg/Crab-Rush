@@ -54,6 +54,19 @@ export const CFG = {
   // ---- speed ----
   speed: { start: 10, gain: 14, tau: 1800, tutorialCap: 9, wiggle: 0 },
 
+  // ---- Daily Tide modifiers (UPDATE2_PLAN.md §6.2) ----
+  daily: {
+    lowTideSpeed: 1.15,
+    /** shell strand spacing multiplier on Low Tide (smaller = denser) */
+    lowTideShells: 0.6,
+    /** Magnet Madness: the speed ramp's time constant is divided by this */
+    madnessRamp: 2,
+    /** pattern weight multipliers for the themed days */
+    themeWeight: 5,
+    shellScore: 2,
+    firstFinishShells: 100,
+  },
+
   // ---- tiers & zones ----
   tierStarts: [0, 150, 700, 1600, 2800] as readonly number[],
   zoneStarts: [0, 700, 1600, 2800] as readonly number[],

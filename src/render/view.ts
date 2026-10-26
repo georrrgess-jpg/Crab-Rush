@@ -8,8 +8,8 @@ import { CAMERA_ELEVATION } from './camera';
 import { EntityViews } from './entities';
 import { LivingWorld } from './life';
 import { BlobShadows, Footprints, Particles } from './fx';
-import { Materials } from './materials';
-import { CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, IDLE_DRIVE } from './models/crab';
+import { Materials, type TrailKind, makeTrailTex } from './materials';
+import { BODY_SKINS, CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, type HatKind, IDLE_DRIVE } from './models/crab';
 import { greatWave, powerupIcon, riderWave } from './models/obstacles';
 import { Spring } from './anim/spring';
 import { Ocean } from './ocean';
@@ -46,6 +46,14 @@ export class GameView {
   private shadows: BlobShadows;
   private dust: Particles;
   private sparks: Particles;
+  /** Wardrobe trail sprites (one extra draw call, only while a non-sand trail is equipped) */
+  private trail: Particles;
+  private trailKind: TrailKind = 'sand';
+  private trailTex = new Map<TrailKind, THREE.CanvasTexture>();
+  private trailT = 0;
+  private trailHue = 0;
+  /** Daily Tide "Night Run": force the night palette (0..1) */
+  nightForce = 0;
   readonly entities: EntityViews;
   private palette = clonePalette(ZONE_PALETTES[0]!);
   private world = new THREE.Group();
@@ -131,7 +139,10 @@ export class GameView {
     this.sparks = new Particles(this.mats.sparkTex, true, 160);
     this.dust.limit = Math.floor(quality.maxParticles * 0.6);
     this.sparks.limit = Math.floor(quality.maxParticles * 0.6);
-    this.world.add(this.dust.mesh, this.sparks.mesh);
+    this.trail = new Particles(this.mats.sparkTex, false, 120);
+    this.trail.limit = Math.floor(quality.maxParticles * 0.4);
+    this.trail.mesh.visible = false;
+    this.world.add(this.dust.mesh, this.sparks.mesh, this.trail.mesh);
 
     this.crab = new CrabModel(this.mats);
     this.world.add(this.crab.root);
@@ -186,8 +197,64 @@ export class GameView {
     this.reduceMotion = on;
   }
 
-  setSkin(skin: CrabSkin): void {
-    this.crab.setSkin(skin);
+  setSkin(skin: CrabSkin, hat?: HatKind): void {
+    this.crab.setSkin(skin, hat ?? skin.hat);
+  }
+
+  /** Wardrobe: running trail and victory dance */
+  setTrail(kind: TrailKind): void {
+    this.trailKind = kind;
+    this.trail.clear();
+    this.trail.mesh.visible = kind !== 'sand';
+    if (kind === 'sand') return;
+    let tex = this.trailTex.get(kind);
+    if (!tex) {
+      tex = makeTrailTex(kind);
+      this.trailTex.set(kind, tex);
+    }
+    const m = this.trail.mesh.material as THREE.MeshBasicMaterial;
+    m.map = tex;
+    const additive = kind === 'sparkles';
+    m.blending = additive ? THREE.AdditiveBlending : THREE.NormalBlending;
+    this.trail.shrinkFade = !additive;
+    m.needsUpdate = true;
+  }
+
+  setDance(id: string): void {
+    this.crab.dance = id;
+  }
+
+  /** one trail particle behind the crab (x in lane space, wz on the track) */
+  private spawnTrail(px: number, py: number, dist: number): void {
+    const r = Math.random;
+    switch (this.trailKind) {
+      case 'bubbles':
+        this.trail.spawn(px + (r() - 0.5) * 0.9, py + 0.25 + r() * 0.3, dist - 0.4, (r() - 0.5) * 0.4, 0.9 + r() * 0.6, 0, 1.1, 0.18 + r() * 0.16, 0xd8f4ff, -0.3, 0.3);
+        break;
+      case 'petals': {
+        const col = r() < 0.5 ? 0xff9ccf : r() < 0.5 ? 0xffd1e6 : 0xffffff;
+        this.trail.spawn(px + (r() - 0.5) * 1.0, py + 0.5 + r() * 0.4, dist - 0.3, (r() - 0.5) * 1.6, 0.6 + r() * 0.5, 0, 1.3, 0.2 + r() * 0.08, col, 1.1, 0);
+        break;
+      }
+      case 'sparkles': {
+        const col = r() < 0.6 ? 0xfff2a0 : 0xffffff;
+        this.trail.spawn(px + (r() - 0.5) * 1.1, py + 0.2 + r() * 0.7, dist - 0.3, (r() - 0.5) * 0.6, 0.3 + r() * 0.6, 0, 0.7, 0.16 + r() * 0.16, col, 0, -0.6);
+        break;
+      }
+      case 'notes': {
+        const cols = [0x6a4cff, 0xff4f9a, 0x2fb7ff, 0x34c46a];
+        this.trail.spawn(px + (r() - 0.5) * 0.8, py + 0.6 + r() * 0.3, dist - 0.3, (r() - 0.5) * 1.2, 1.1 + r() * 0.5, 0, 1.2, 0.26 + r() * 0.08, cols[(r() * 4) | 0] as number, 0.2, 0.2);
+        break;
+      }
+      case 'rainbow': {
+        // a ribbon of colour bands: each puff steps around the hue wheel
+        this.trailHue = (this.trailHue + 0.06) % 1;
+        this.trail.spawn(px + (r() - 0.5) * 0.2, py + 0.22, dist - 0.35, 0, 0.1, 0, 0.75, 0.34, hsl(this.trailHue), 0, -0.2);
+        break;
+      }
+      default:
+        break;
+    }
   }
 
   /** Low tier trims optional meshes to stay inside its draw-call budget. */
@@ -216,6 +283,7 @@ export class GameView {
     this.scenery.setDensity(q.sceneryDensity);
     this.dust.limit = Math.floor(q.maxParticles * 0.6);
     this.sparks.limit = Math.floor(q.maxParticles * 0.6);
+    this.trail.limit = Math.floor(q.maxParticles * 0.4);
   }
 
   resize(w: number, h: number): void {
@@ -230,6 +298,7 @@ export class GameView {
     this.footT = 0;
     this.life.reset(0);
     this.sparks.clear();
+    this.trail.clear();
     this.entities.setBest(best);
     this.crab.reset();
     this.celebrating = false;
@@ -307,7 +376,7 @@ export class GameView {
     const t = zoneBlend(dist, z);
     if (z === 0) lerpPalette(this.palette, ZONE_PALETTES[0]!, ZONE_PALETTES[0]!, 0);
     else lerpPalette(this.palette, ZONE_PALETTES[z - 1]!, ZONE_PALETTES[z]!, t);
-    this.night = Math.max(0, Math.min(1, (dist - CFG.nightStart) / (CFG.nightFull - CFG.nightStart)));
+    this.night = Math.max(this.nightForce, Math.min(1, (dist - CFG.nightStart) / (CFG.nightFull - CFG.nightStart)));
     if (this.night > 0) lerpPalette(this.palette, this.palette, NIGHT_PALETTE, this.night * this.night * (3 - 2 * this.night));
     this.sky.apply(this.palette);
     this.mats.lighting.fromPalette(this.palette);
@@ -523,6 +592,18 @@ export class GameView {
         this.dust.spawn(side * (2.5 + Math.random() * 2), 0.2 + Math.random() * 0.4, dist + 25 + Math.random() * 20, 0, 0, 0, 0.6, 0.18, 0xffffff, 0, 0);
       }
     }
+    // Wardrobe trail (also in the air, so hops leave an arc)
+    const trailing = running && w.mode === 'running' && pk !== 'rider';
+    if (this.trailKind !== 'sand' && (trailing || mode === 'shop')) {
+      this.trailT -= dt;
+      const every = this.trailKind === 'rainbow' ? 0.03 : 0.06;
+      while (this.trailT <= 0) {
+        this.trailT += every;
+        // Wardrobe preview: the trail circles the turntable
+        if (trailing) this.spawnTrail(px, py, dist);
+        else this.spawnTrail(Math.sin(this.time * 2.4) * 1.2, 0, dist - Math.cos(this.time * 2.4) * 1.2 + 0.3);
+      }
+    }
 
     // camera
     const cam = this.renderer.camera;
@@ -604,6 +685,7 @@ export class GameView {
     this.updateChase(w, dt);
     this.dust.update(dt, dist, cam.quaternion);
     this.sparks.update(dt, dist, cam.quaternion);
+    if (this.trail.mesh.visible) this.trail.update(dt, dist, cam.quaternion);
     this.renderer.render();
   }
 
@@ -665,13 +747,34 @@ export class GameView {
     return CRAB_SKINS;
   }
 
-  /** Render a portrait of every crab skin into PNG data URLs (shop tiles). One-off cost; async readback avoids GPU stalls. */
-  async renderCrabThumbs(size = 192): Promise<string[]> {
+  /** Portraits of every v1 crab skin (kept for the v1 shop flow and tests). */
+  renderCrabThumbs(size = 192): Promise<string[]> {
+    return this.renderThumbs(CRAB_SKINS.map((skin) => ({ skin, hat: skin.hat })), size);
+  }
+
+  /** Wardrobe portraits: every body with its own hat, then every hat on Sandy (framed on the head). */
+  async renderWardrobeThumbs(hats: readonly HatKind[], size = 160): Promise<{ bodies: Record<string, string>; hats: Record<string, string> }> {
+    const b = await this.renderThumbs(BODY_SKINS.map((skin) => ({ skin, hat: skin.hat })), size);
+    const sandy = CRAB_SKINS[0] as CrabSkin;
+    const h = await this.renderThumbs(hats.map((hat) => ({ skin: sandy, hat })), size, true);
+    return {
+      bodies: Object.fromEntries(BODY_SKINS.map((k, i) => [k.id, b[i] as string])),
+      hats: Object.fromEntries(hats.map((k, i) => [k, h[i] as string])),
+    };
+  }
+
+  /** Render portraits into PNG data URLs. One-off cost; async readback avoids GPU stalls. */
+  private async renderThumbs(list: readonly { skin: CrabSkin; hat: HatKind }[], size: number, head = false): Promise<string[]> {
     const gl = this.renderer.gl;
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
-    cam.position.set(0, 1.75, 4.3);
-    cam.lookAt(0, 0.68, 0);
+    if (head) {
+      cam.position.set(0, 1.9, 2.6);
+      cam.lookAt(0, 0.95, 0);
+    } else {
+      cam.position.set(0, 1.75, 4.3);
+      cam.lookAt(0, 0.68, 0);
+    }
     const crab = new CrabModel(this.mats);
     scene.add(crab.root);
     const rt = new THREE.WebGLRenderTarget(size, size, { samples: 4 });
@@ -686,10 +789,10 @@ export class GameView {
     const prevAlpha = gl.getClearAlpha();
     const out: string[] = [];
     cam.updateMatrixWorld();
-    for (const skin of CRAB_SKINS) {
+    for (const { skin, hat } of list) {
       this.mats.lighting.fromPalette(ZONE_PALETTES[0]!);
       this.mats.lighting.update(cam);
-      crab.setSkin(skin);
+      crab.setSkin(skin, hat);
       crab.reset();
       crab.look(0.1, 0.05);
       crab.update(1 / 60, IDLE_DRIVE);
@@ -711,4 +814,14 @@ export class GameView {
     });
     return out;
   }
+}
+
+/** HSL (full saturation, light 0.62) to a hex colour, without allocating. */
+function hsl(h: number): number {
+  const f = (n: number): number => {
+    const k = (n + h * 12) % 12;
+    const a = 0.38 * 0.95;
+    return Math.round((0.62 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255);
+  };
+  return (f(0) << 16) | (f(8) << 8) | f(4);
 }

@@ -68,6 +68,8 @@ export class Particles {
   private ps: Particle[] = [];
   private free: Particle[] = [];
   limit: number;
+  /** normal-blend sprites with opaque art shrink away instead of fading to black */
+  shrinkFade = false;
   constructor(tex: THREE.Texture, additive: boolean, private max = 200) {
     const mat = new THREE.MeshBasicMaterial({
       map: tex,
@@ -116,13 +118,14 @@ export class Particles {
     for (let i = 0; i < w; i++) {
       const p = this.ps[i] as Particle;
       const t = p.life / p.max;
-      const s = p.size * (1 + (1 - t) * p.grow);
+      const fade = Math.min(1, t * 2.5);
+      const s = p.size * (1 + (1 - t) * p.grow) * (this.shrinkFade ? fade : 1);
       const z = p.local ? p.wz : -(p.wz - dist);
       _q.copy(camQ);
       _m.compose(_p.set(p.x, p.y, z), _q, _s.set(s, s, s));
       this.mesh.setMatrixAt(i, _m);
-      const fade = Math.min(1, t * 2.5);
-      this.mesh.instanceColor!.setXYZ(i, p.r * fade, p.gC * fade, p.b * fade);
+      const k = this.shrinkFade ? 1 : fade;
+      this.mesh.instanceColor!.setXYZ(i, p.r * k, p.gC * k, p.b * k);
     }
     this.mesh.count = w;
     this.mesh.instanceMatrix.needsUpdate = true;

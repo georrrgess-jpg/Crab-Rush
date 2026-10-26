@@ -110,3 +110,94 @@ export function makeRadial(stops: [number, string][], size = 64): THREE.CanvasTe
 }
 
 export { canvas as makeCanvas };
+
+export type TrailKind = 'sand' | 'bubbles' | 'petals' | 'sparkles' | 'notes' | 'rainbow';
+
+/** Sprite for a Wardrobe trail (white-ish so instance colours tint it). Generated, never downloaded. */
+export function makeTrailTex(kind: TrailKind): THREE.CanvasTexture {
+  const S = 64;
+  const [c, g] = canvas(S);
+  g.clearRect(0, 0, S, S);
+  const mid = S / 2;
+  switch (kind) {
+    case 'bubbles': {
+      const gr = g.createRadialGradient(mid, mid, S * 0.18, mid, mid, S * 0.46);
+      gr.addColorStop(0, 'rgba(255,255,255,0.08)');
+      gr.addColorStop(0.75, 'rgba(255,255,255,0.35)');
+      gr.addColorStop(0.92, 'rgba(255,255,255,0.95)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.beginPath();
+      g.arc(mid, mid, S * 0.46, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.95)';
+      g.beginPath();
+      g.ellipse(mid - S * 0.14, mid - S * 0.15, S * 0.08, S * 0.05, -0.7, 0, Math.PI * 2);
+      g.fill();
+      break;
+    }
+    case 'petals': {
+      g.translate(mid, mid);
+      g.rotate(0.5);
+      g.fillStyle = 'rgba(255,255,255,1)';
+      g.beginPath();
+      g.moveTo(0, -S * 0.4);
+      g.bezierCurveTo(S * 0.3, -S * 0.25, S * 0.25, S * 0.25, 0, S * 0.4);
+      g.bezierCurveTo(-S * 0.25, S * 0.25, -S * 0.3, -S * 0.25, 0, -S * 0.4);
+      g.fill();
+      g.strokeStyle = 'rgba(220,170,200,0.6)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(0, -S * 0.32);
+      g.lineTo(0, S * 0.32);
+      g.stroke();
+      break;
+    }
+    case 'sparkles': {
+      const gr = g.createRadialGradient(mid, mid, 0, mid, mid, S * 0.22);
+      gr.addColorStop(0, 'rgba(255,255,255,1)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, S, S);
+      g.fillStyle = 'rgba(255,255,255,1)';
+      g.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 - Math.PI / 2;
+        const r = i % 2 === 0 ? S * 0.47 : S * 0.08;
+        g.lineTo(mid + Math.cos(a) * r, mid + Math.sin(a) * r);
+      }
+      g.closePath();
+      g.fill();
+      break;
+    }
+    case 'notes': {
+      g.fillStyle = 'rgba(255,255,255,1)';
+      g.strokeStyle = 'rgba(255,255,255,1)';
+      g.lineWidth = S * 0.08;
+      g.beginPath();
+      g.ellipse(S * 0.32, S * 0.72, S * 0.15, S * 0.11, -0.4, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.ellipse(S * 0.72, S * 0.62, S * 0.15, S * 0.11, -0.4, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();
+      g.moveTo(S * 0.44, S * 0.7);
+      g.lineTo(S * 0.44, S * 0.2);
+      g.lineTo(S * 0.84, S * 0.1);
+      g.lineTo(S * 0.84, S * 0.6);
+      g.stroke();
+      break;
+    }
+    default: {
+      const gr = g.createRadialGradient(mid, mid, 0, mid, mid, mid);
+      gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+      gr.addColorStop(0.5, 'rgba(255,255,255,0.5)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, S, S);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

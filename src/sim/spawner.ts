@@ -6,6 +6,7 @@ import type { PowerKind } from './events';
 import { POWER_KINDS } from './events';
 import { PAD_APEX_T, type World } from './world';
 import type { Block } from './levels';
+import type { Modifier } from '../meta/daily';
 
 /** The scripted first-run tutorial: pattern id → the lesson it teaches. */
 export const TUTORIAL_SCRIPT: { id: string; step: string; need: 'move' | 'hop' | 'none'; slow: boolean; group: 'move' | 'hop' | 'misc' }[] = [
@@ -22,6 +23,16 @@ export type TutorialFlags = { move: boolean; hop: boolean };
 export function tutorialQueue(flags: TutorialFlags | null): typeof TUTORIAL_SCRIPT {
   if (!flags || (flags.move && flags.hop)) return [];
   return TUTORIAL_SCRIPT.filter((s) => (s.group === 'move' ? !flags.move : s.group === 'hop' ? !flags.hop : true));
+}
+
+/** Daily Tide: does this pattern fit the day's theme (gulls, waves/logs, balls)? */
+function themed(pt: Pattern, mod: Modifier | null): boolean {
+  if (!mod) return false;
+  const has = (chars: string): boolean => pt.rows.some((r) => [...chars].some((c) => r.includes(c)));
+  if (mod === 'gullDay') return has('G');
+  if (mod === 'bigWaves') return has('WwLl') && !has('BGRr');
+  if (mod === 'ballStorm') return has('Rr');
+  return false;
 }
 
 interface Strand {
@@ -141,13 +152,19 @@ export class Spawner {
     const powerDue = probeWz >= this.nextPowerAt;
 
     if (!wantBreather) {
-      const cands = PATTERNS.filter(
-        (pt) => pt.def.weight > 0 && pt.def.minTier <= tier && (pt.def.maxTier ?? 99) >= tier && !this.recent.includes(pt.def.id),
+      const mod = w.modifier;
+      let cands = PATTERNS.filter(
+        (pt) => pt.def.weight > 0 && (pt.def.minTier <= tier || (themed(pt, mod) && pt.def.minTier <= tier + 1)) && (pt.def.maxTier ?? 99) >= tier && !this.recent.includes(pt.def.id),
       );
+      // Big Waves: only waves and logs (if this tier has any)
+      if (mod === 'bigWaves') {
+        const only = cands.filter((pt) => themed(pt, mod));
+        if (only.length > 0) cands = only;
+      }
       const v = w.speedForDist(probeWz);
       let pool = cands.slice();
       for (let attempt = 0; attempt < 8 && pool.length > 0; attempt++) {
-        const pt = rng.weighted(pool, pool.map((c) => c.def.weight * (c.def.minTier === tier ? 1.5 : 1)));
+        const pt = rng.weighted(pool, pool.map((c) => c.def.weight * (c.def.minTier === tier ? 1.5 : 1) * (themed(c, mod) ? CFG.daily.themeWeight : 1)));
         pool = pool.filter((c) => c !== pt);
         const mirror = rng.next() < 0.5;
         const rows = patternRows(pt, mirror);
@@ -341,7 +358,7 @@ export class Spawner {
         break;
       }
       const dz = b.wz - a.wz;
-      const n = Math.max(1, Math.round(dz / CFG.shell.spacing));
+      const n = Math.max(1, Math.round(dz / (CFG.shell.spacing * (w.modifier === 'lowTide' ? CFG.daily.lowTideShells : 1))));
       for (let j = 0; j < n; j++) {
         const u = j / n;
         const x = (X[a.lane] as number) + ((X[b.lane] as number) - (X[a.lane] as number)) * smooth(0.3, 0.7, u);
