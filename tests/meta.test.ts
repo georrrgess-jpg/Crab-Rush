@@ -112,3 +112,41 @@ describe('daily tide', () => {
     expect(s.savers).toBe(0);
   });
 });
+
+describe('island hop progression', async () => {
+  const I = await import('../src/meta/islands');
+  const { LEVELS } = await import('../src/sim/levelData');
+  it('gates open with stars and levels open in order', () => {
+    const r: Record<string, { stars: [boolean, boolean, boolean]; best: number }> = {};
+    expect(I.islandUnlocked(r, 0)).toBe(true);
+    expect(I.islandUnlocked(r, 1)).toBe(false);
+    expect(I.levelUnlocked(r, 'shore-1')).toBe(true);
+    expect(I.levelUnlocked(r, 'shore-2')).toBe(false);
+    const a = I.applyLevelResult(r, 'shore-1', [true, true, false], 40);
+    expect(a).toMatchObject({ firstClear: true, newStars: 2, shells: 60, xp: 140 });
+    expect(I.levelUnlocked(r, 'shore-2')).toBe(true);
+    expect(I.nextLevel(r)).toBe('shore-2');
+    // replaying keeps old stars and only pays for new ones
+    const b = I.applyLevelResult(r, 'shore-1', [true, false, true], 38);
+    expect(b).toMatchObject({ firstClear: false, newStars: 1, shells: 0, xp: 40 });
+    expect(r['shore-1']).toEqual({ stars: [true, true, true], best: 38 });
+    for (const l of LEVELS.filter((x) => x.island === 0 && x.index > 1)) I.applyLevelResult(r, l.id, [true, true, l.index < 5], 30);
+    expect(I.islandComplete(r, 0)).toBe(true);
+    expect(I.totalStars(r)).toBeGreaterThanOrEqual(10);
+    expect(I.islandUnlocked(r, 1)).toBe(true);
+  });
+  it('completing an island and all 72 stars pay out once', () => {
+    const r: Record<string, { stars: [boolean, boolean, boolean]; best: number }> = {};
+    let completed: number[] = [];
+    let gold = 0;
+    for (const l of LEVELS) {
+      const res = I.applyLevelResult(r, l.id, [true, true, true], 30);
+      if (res.islandCompleted !== null) completed.push(res.islandCompleted);
+      if (res.goldCrab) gold++;
+    }
+    expect(completed).toEqual([0, 1, 2, 3]);
+    expect(gold).toBe(1);
+    expect(I.totalStars(r)).toBe(72);
+    completed = [];
+  });
+});

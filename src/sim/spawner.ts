@@ -4,7 +4,8 @@ import { PATTERNS, PATTERN_BY_ID, patternRows, rowSpacing, toSolverRows, type Pa
 import { initialStates, solveRows, type SolverState } from './solver';
 import type { PowerKind } from './events';
 import { POWER_KINDS } from './events';
-import type { World } from './world';
+import { PAD_APEX_T, type World } from './world';
+import type { Block } from './levels';
 
 /** The scripted first-run tutorial: pattern id → the lesson it teaches. */
 export const TUTORIAL_SCRIPT: { id: string; step: string; need: 'move' | 'hop' | 'none'; slow: boolean; group: 'move' | 'hop' | 'misc' }[] = [
@@ -46,6 +47,9 @@ export class Spawner {
   scriptLen = 0;
   lastPattern = '';
   lastPower: PowerKind | null = null;
+  /** Island Hop: index of the next level block to place */
+  private blockIdx = 0;
+  private flagDone = false;
 
   constructor(private w: World, private rng: Rng, startDist: number, tutorial: TutorialFlags | null) {
     this.lastRowWz = startDist + 30;
@@ -66,6 +70,10 @@ export class Spawner {
   /** Called every sim step: keep the track filled to the spawn horizon. */
   update(): void {
     const horizon = this.w.dist + CFG.spawnAhead;
+    if (this.w.level) {
+      this.updateLevel(horizon);
+      return;
+    }
     let guard = 0;
     while (this.lastRowWz < horizon && guard++ < 6) this.spawnNext();
     for (let z = 1; z < CFG.zoneStarts.length; z++) {
@@ -78,6 +86,23 @@ export class Spawner {
     if (!this.bannerDone && this.w.bestAtStart > 60 && horizon >= this.w.bestAtStart && this.w.bestAtStart > this.w.startDist + 20) {
       this.bannerDone = true;
       this.w.addEntity('banner', 1, this.w.bestAtStart, {});
+    }
+  }
+
+  /** Island Hop: place the level's blocks in order as they come within the horizon, then the flag. */
+  private updateLevel(horizon: number): void {
+    const L = this.w.level!;
+    const base = this.w.levelStart;
+    while (this.blockIdx < L.blocks.length) {
+      const b = L.blocks[this.blockIdx] as Block;
+      if (base + b.at > horizon) break;
+      this.blockIdx++;
+      const pt: Pattern = { def: { id: b.id, minTier: 0, weight: 0, spacing: b.spacing, template: '' }, rows: b.rows, hasPower: b.rows.some((r) => r.includes('P')) };
+      this.place(pt, false, base + b.at, b.v, false, b);
+    }
+    if (!this.flagDone && base + L.length <= horizon) {
+      this.flagDone = true;
+      this.w.addEntity('flag', 1, base + L.length, { skin: L.def.island, state: L.def.chase ? 1 : 0 });
     }
   }
 
@@ -186,10 +211,10 @@ export class Spawner {
   }
 
   /** Create obstacles, pickups and shell strands for a pattern. */
-  private place(pt: Pattern, mirror: boolean, wz0: number, v: number, scripted: boolean): void {
+  private place(pt: Pattern, mirror: boolean, wz0: number, v: number, scripted: boolean, block?: Block): void {
     const w = this.w;
     const rows = patternRows(pt, mirror);
-    const sp = pt.def.id === 'breather' ? pt.def.spacing : rowSpacing(pt.def.spacing, v);
+    const sp = pt.def.id === 'breather' || block ? pt.def.spacing : rowSpacing(pt.def.spacing, v);
     this.lastPattern = pt.def.id;
     const strands: Strand[] = [];
     let active = new Map<number, Strand>();
@@ -236,11 +261,29 @@ export class Spawner {
               firstObstacleWz = Math.min(firstObstacleWz, wz);
               break;
             case 'P': {
-              const kind: PowerKind = scripted ? 'magnet' : this.pickPower();
+              const kind: PowerKind = block ? (block.powerup ?? 'magnet') : scripted ? 'magnet' : this.pickPower();
               w.addEntity('powerup', l, wz, { power: kind, skin: POWER_KINDS.indexOf(kind) });
-              if (!scripted) this.schedulePower(wz);
+              if (!scripted && !block) this.schedulePower(wz);
               break;
             }
+            // ---- Island Hop cells
+            case 'd':
+              w.addEntity('dollar', l, wz, {});
+              break;
+            case 'D':
+              // a bounce pad and a sand dollar floating at the top of its arc
+              w.addEntity('pad', l, wz, { skin: zoneAt(wz) });
+              w.addEntity('dollar', l, wz + v * PAD_APEX_T, { y: CFG.island.padApex + 0.35 });
+              break;
+            case '^':
+              w.addEntity('pad', l, wz, { skin: zoneAt(wz) });
+              break;
+            case 'H':
+              w.addEntity('hourglass', l, wz, {});
+              break;
+            case 'T':
+              w.addEntity('tidepool', l, wz, { skin: zoneAt(wz) });
+              break;
             default:
               break;
           }

@@ -138,6 +138,27 @@ try {
   check(await page.isVisible('#howto .howto-card'), 'how-to-play cards are shown');
   await page.click('#howto .btn.big');
   check((await st()).state === 'title', 'Got it returns to the title');
+  // ---------------- Island Hop: Home card → map → intro → level → stars
+  await page.click('#home .mode-card.islands');
+  check((await st()).state === 'map' && (await page.isVisible('.lv-node.next')), 'Island Hop map opens from Home with the next level marked');
+  check((await page.locator('.isl.locked').count()) === 3, 'islands 2–4 start locked behind star gates');
+  await page.click('.lv-node.next');
+  check((await st()).state === 'levelIntro' && (await page.isVisible('#level-intro .obj')), 'level intro shows the three star objectives');
+  await page.evaluate(() => { window.__crab.game.flags.autopilot = true; });
+  await page.click('#level-intro .btn.big');
+  await fr(10);
+  check(['intro', 'running'].includes((await st()).state) && (await page.isVisible('.lv-progress')), 'Play starts the level with the progress HUD');
+  await page.evaluate(() => window.__crab.skip(60 * 45));
+  await page.evaluate(() => window.__crab.frames(60 * 2));
+  check((await st()).state === 'levelEnd', 'reaching the flag shows the level end screen');
+  const rec = await page.evaluate(() => window.__crab.game.save.data.levels['shore-1']);
+  check(!!rec && rec.stars[0] === true && rec.stars[1] === true, 'level stars (flag + all sand dollars) are saved');
+  await page.evaluate(() => { window.__crab.game.flags.autopilot = false; });
+  await fr(60);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(350);
+  check((await st()).state === 'map', 'Escape from level end goes back to the map');
+  await page.evaluate(() => window.__crab.setState('title'));
   await page.evaluate(() => window.__crab.startRun({ seed: 2, tutorial: false }));
   await page.keyboard.press('KeyP');
   await page.click('#pause .btn:has-text("Settings")');

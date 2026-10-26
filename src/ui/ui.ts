@@ -48,6 +48,16 @@ export class UI {
   private streakEl: HTMLElement;
   private streakNum: HTMLElement;
   private pauseGoals: HTMLElement;
+  // Island Hop HUD
+  private lvBar: HTMLElement;
+  private lvFill: HTMLElement;
+  private lvCrab: HTMLElement;
+  private lvDollars: HTMLElement;
+  private lvRule: HTMLElement;
+  private lvChase: HTMLElement;
+  private lvChaseFill: HTMLElement;
+  private foam: HTMLElement;
+  private lastLv = '';
   private lastShells = -1;
   private lastDist = -1;
   private lastPower: PowerKind | null = null;
@@ -86,6 +96,17 @@ export class UI {
     this.distVal = dist.querySelector('b') as HTMLElement;
     right.append(pauseBtn, dist);
     this.hud.append(left, right);
+    // Island Hop: progress to the flag, sand dollar slots, the star-3 rule and the chase meter
+    this.lvBar = el('div', 'lv-progress hidden', `<span class="track"><i></i><span class="me">${ICON.crab}</span></span><span class="fl">${ICON.flag}</span>`);
+    this.lvFill = this.lvBar.querySelector('i') as HTMLElement;
+    this.lvCrab = this.lvBar.querySelector('.me') as HTMLElement;
+    this.lvDollars = el('div', 'lv-dollars hidden', '<span></span><span></span><span></span>');
+    this.lvRule = el('div', 'lv-rule hidden');
+    this.lvChase = el('div', 'lv-chase hidden', `<span class="ci">${ICON.rider}</span><span class="bar"><i></i></span>`);
+    this.lvChaseFill = this.lvChase.querySelector('i') as HTMLElement;
+    left.append(this.lvDollars, this.lvRule);
+    this.hud.append(this.lvBar, this.lvChase);
+    this.foam = el('div', 'chase-foam hidden');
     this.touchL = el('button', 'touch-btn l', ICON.left) as HTMLButtonElement;
     this.touchR = el('button', 'touch-btn r', ICON.right) as HTMLButtonElement;
     this.touchL.setAttribute('aria-label', 'Move left');
@@ -137,7 +158,7 @@ export class UI {
     this.fade = el('div');
     this.fade.id = 'fade';
 
-    root.append(this.home.el, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results.el, this.toasts, this.fade);
+    root.append(this.foam, this.home.el, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results.el, this.toasts, this.fade);
   }
 
   // ------------------------------------------------------------------ screens
@@ -197,6 +218,48 @@ export class UI {
   setPauseInfo(goals: GoalView[], dist: number, shells: number): void {
     this.pauseStats.innerHTML = `<div><span>Distance</span><b>${fmt(dist)} m</b></div><div><span>Shells</span><b>${ICON.shell}${fmt(shells)}</b></div>`;
     this.renderGoals(this.pauseGoals, goals, 'Goals');
+  }
+
+  /** Island Hop HUD on/off (null = endless run). */
+  setLevelHUD(info: { chase: boolean } | null): void {
+    const on = !!info;
+    this.lvBar.classList.toggle('hidden', !on);
+    this.lvDollars.classList.toggle('hidden', !on);
+    this.lvRule.classList.toggle('hidden', !on);
+    this.lvChase.classList.toggle('hidden', !info?.chase);
+    this.foam.classList.toggle('hidden', !info?.chase);
+    this.hud.classList.toggle('level', on);
+    this.lastLv = '';
+  }
+
+  updateLevelHUD(progress: number, dollars: number, rule: string, met: boolean, lost: boolean, gap: number | null): void {
+    const p = Math.max(0, Math.min(1, progress));
+    this.lvFill.style.width = `${(p * 100).toFixed(1)}%`;
+    this.lvCrab.style.left = `${(p * 100).toFixed(1)}%`;
+    const key = `${dollars}|${rule}|${met}|${lost}`;
+    if (key !== this.lastLv) {
+      const was = this.lastLv ? Number(this.lastLv.split('|')[0]) : 0;
+      this.lastLv = key;
+      const spans = this.lvDollars.children;
+      for (let i = 0; i < 3; i++) {
+        const sp = spans[i] as HTMLElement;
+        const on = i < dollars;
+        sp.classList.toggle('on', on);
+        if (on && i >= was) {
+          sp.classList.remove('pop');
+          void sp.offsetWidth;
+          sp.classList.add('pop');
+        }
+      }
+      this.lvRule.className = `lv-rule${lost ? ' lost' : met ? ' met' : ''}`;
+      this.lvRule.innerHTML = `<span class="ri">${lost ? '✕' : met ? ICON.check : ICON.trophy}</span>${rule}`;
+    }
+    if (gap !== null) {
+      const k = Math.max(0, Math.min(1, gap / 20));
+      this.lvChaseFill.style.width = `${(k * 100).toFixed(0)}%`;
+      this.lvChase.classList.toggle('danger', gap < 6);
+      this.foam.style.opacity = String(Math.max(0, Math.min(1, (12 - gap) / 10)));
+    }
   }
 
   /** Left-handed HUD: pause and distance on the left, shells on the right. */

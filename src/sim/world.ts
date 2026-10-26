@@ -3,8 +3,11 @@ import { Rng } from '../core/rng';
 import type { Entity, EntityKind, PlayerState, Shell } from './types';
 import type { GameEvent, PowerKind } from './events';
 import { Spawner } from './spawner';
+import { levelSpeed, type CompiledLevel } from './levels';
+import { emptyLevelStats, type LevelRunStats } from './objectives';
 
-export type WorldMode = 'idle' | 'running' | 'crashing';
+export type WorldMode = 'idle' | 'running' | 'crashing' | 'finished';
+export type RunKind = 'endless' | 'level' | 'daily';
 export type SimAction = 'left' | 'right' | 'hop' | 'slam';
 
 export interface RunOptions {
@@ -17,6 +20,8 @@ export interface RunOptions {
   best: number;
   upgrades: Record<PowerKind, number>;
   zonesSeen: number[];
+  /** Island Hop: a compiled level (finite course, scripted spawns, no upgrades) */
+  level?: CompiledLevel | null;
 }
 
 export interface RunStats {
@@ -48,6 +53,9 @@ export interface TutorialStep {
 const HOP_G = (8 * CFG.hop.apex) / (CFG.hop.airtime * CFG.hop.airtime);
 const HOP_V0 = (4 * CFG.hop.apex) / CFG.hop.airtime;
 const LANE_TAU = CFG.laneChangeTime / 3;
+/** bounce pad launch speed (apex CFG.island.padApex) and time to apex */
+export const PAD_V0 = Math.sqrt(2 * HOP_G * CFG.island.padApex);
+export const PAD_APEX_T = PAD_V0 / HOP_G;
 
 export function defaultRunOptions(): RunOptions {
   return {
@@ -128,6 +136,17 @@ export class World {
   tutorialActive = false;
   /** which tutorial lessons the player has completed during this run */
   learned = { move: false, hop: false };
+  /** Island Hop */
+  kind: RunKind = 'endless';
+  level: CompiledLevel | null = null;
+  /** track position where the level's distances start */
+  levelStart = 0;
+  levelStats: LevelRunStats = emptyLevelStats();
+  /** Great Wave chase: metres between the wave and the crab (null = no chase) */
+  chaseGap: number | null = null;
+  /** tide pool slowdown time left */
+  slowT = 0;
+  finishT = 0;
 
   power: { kind: PowerKind | null; t: number; dur: number } = { kind: null, t: 0, dur: 0 };
   streak = 0;
@@ -179,6 +198,14 @@ export class World {
     this.waitingStep = null;
     this.learned = { move: false, hop: false };
     this.tutorialActive = !!opts.tutorial && !(opts.tutorial.move && opts.tutorial.hop);
+    this.level = opts.level ?? null;
+    this.kind = this.level ? 'level' : 'endless';
+    this.levelStart = opts.startDist;
+    this.levelStats = emptyLevelStats();
+    if (this.level) this.levelStats.dollarsTotal = this.level.dollars;
+    this.chaseGap = this.level?.def.chase ? CFG.island.chase.startGap : null;
+    this.slowT = 0;
+    this.finishT = 0;
     this.speed = this.speedForDist(this.dist);
     this.spawner = new Spawner(this, this.rng, opts.startDist, this.tutorialActive ? opts.tutorial : null);
     this.spawner.update();
@@ -186,6 +213,7 @@ export class World {
 
   /** Speed of the player at a given track position (used by spawner and sim). */
   speedForDist(d: number): number {
+    if (this.level) return levelSpeed(this.level.speed, d - this.levelStart, this.level.length);
     const v = speedAt(d);
     return this.tutorialActive ? Math.min(v, CFG.speed.tutorialCap) : v;
   }
@@ -220,6 +248,12 @@ export class World {
     Object.assign(e, extra);
     if (kind === 'roller' && e.meetWz !== undefined) e.wz = e.prevWz = this.rollerWz(e.meetWz);
     if (kind === 'gull') e.y = CFG.gull.height;
+    if (kind === 'dollar' && extra.y === undefined) e.y = CFG.island.dollarY;
+    if (kind === 'hourglass') e.y = CFG.shell.y;
+    if (kind === 'tidepool') {
+      e.w = CFG.island.tidepool.w;
+      e.d = CFG.island.tidepool.d;
+    }
     this.entities.push(e);
     return e;
   }
@@ -234,6 +268,7 @@ export class World {
     s.dead = false;
     s.magnet = false;
     this.shells.push(s);
+    if (this.level) this.levelStats.shellsTotal++;
   }
 
   // ---------------------------------------------------------------- input
@@ -269,10 +304,10 @@ export class World {
     }
   }
 
-  private startHop(): void {
+  private startHop(v0 = HOP_V0): void {
     const p = this.player;
     p.grounded = false;
-    p.vy = HOP_V0;
+    p.vy = v0;
     p.hopBuffer = 0;
     p.airTime = 0;
     this.slamming = false;
@@ -299,6 +334,15 @@ export class World {
   // ---------------------------------------------------------------- stepping
   step(dt: number): void {
     if (this.mode === 'idle') return;
+    if (this.mode === 'finished') {
+      // coast past the flag
+      this.finishT += dt;
+      this.speed = Math.max(0, this.speed - 14 * dt);
+      this.prevDist = this.dist;
+      this.dist += this.speed * dt;
+      this.updatePlayer(dt);
+      return;
+    }
     this.time += dt;
     if (this.mode === 'crashing') {
       this.crashT += dt;
@@ -312,6 +356,10 @@ export class World {
     // speed
     let target = this.speedForDist(this.dist);
     if (this.power.kind === 'rider') target *= CFG.riderSpeedMul;
+    if (this.slowT > 0) {
+      this.slowT = Math.max(0, this.slowT - dt);
+      target *= CFG.island.tidepool.slow;
+    }
     const dv = target - this.speed;
     const maxDv = 40 * dt;
     this.speed += Math.abs(dv) <= maxDv ? dv : Math.sign(dv) * maxDv;
@@ -334,8 +382,38 @@ export class World {
     if (this.mode !== 'running') return;
     this.collectPickups(dt);
     this.detectPasses();
-    this.zoneAndMilestones();
+    if (this.level) this.updateLevel(dt);
+    else this.zoneAndMilestones();
     this.cleanup();
+  }
+
+  /** Island Hop: chase wave, finish line. */
+  private updateLevel(dt: number): void {
+    const L = this.level as CompiledLevel;
+    const st = this.levelStats;
+    st.time = this.time;
+    st.bumps = this.stats.bumps;
+    st.hops = this.stats.hops;
+    st.powerups = this.stats.powerups;
+    st.maxStreak = this.stats.maxStreak;
+    if (this.chaseGap !== null) {
+      // the wave keeps a steady pace slightly faster than the level's, so slowdowns let it close in
+      const C = CFG.island.chase;
+      const waveSpeed = this.speedForDist(this.dist) + C.creep;
+      this.chaseGap = Math.min(C.maxGap, this.chaseGap + (this.speed - waveSpeed) * dt);
+      if (this.chaseGap <= 0 && !this.opts.god) {
+        this.chaseGap = 0;
+        this.crash('wave');
+        return;
+      }
+    }
+    if (this.dist - this.levelStart >= L.length - CFG.island.flagAfter * 0.4) {
+      st.finished = true;
+      this.mode = 'finished';
+      this.finishT = 0;
+      this.timeScale = 1;
+      this.events.push({ t: 'finish' });
+    }
   }
 
   private updatePlayer(dt: number): void {
@@ -504,6 +582,7 @@ export class World {
     for (const e of this.entities) {
       if (e.dead) continue;
       if (e.kind === 'arch' || e.kind === 'banner' || e.kind === 'powerup') continue;
+      if (e.kind === 'dollar' || e.kind === 'hourglass' || e.kind === 'pad' || e.kind === 'tidepool' || e.kind === 'flag') continue;
       const rel = e.wz - this.dist;
       const halfZ = (e.d + P.d) / 2;
       if (Math.abs(rel) >= halfZ) continue;
@@ -556,6 +635,7 @@ export class World {
     this.lastShellTime = -10;
     this.stats.bumps++;
     this.events.push({ t: 'bump', x: p.x });
+    if (this.chaseGap !== null) this.chaseGap -= CFG.island.chase.bump;
   }
 
   private crash(kind: string): void {
@@ -598,7 +678,27 @@ export class World {
       this.pickShell(s);
     }
     for (const e of this.entities) {
-      if (e.dead || e.kind !== 'powerup') continue;
+      if (e.dead) continue;
+      if (e.kind === 'dollar' || e.kind === 'hourglass') {
+        const rel = e.wz - this.dist;
+        if (Math.abs(rel) > 2) continue;
+        const dx = p.x - e.x;
+        const dy = p.y + 0.45 - e.y;
+        const R = CFG.island.pickupRadius;
+        if (!rider && dx * dx + dy * dy + rel * rel > R * R) continue;
+        if (rider && Math.abs(rel) > 1.4) continue;
+        e.dead = true;
+        if (e.kind === 'dollar') {
+          this.levelStats.dollars++;
+          this.events.push({ t: 'dollar', n: this.levelStats.dollars, x: e.x, y: e.y });
+        } else {
+          this.levelStats.hourglasses++;
+          if (this.chaseGap !== null) this.chaseGap = Math.min(CFG.island.chase.maxGap, this.chaseGap + CFG.island.chase.hourglass);
+          this.events.push({ t: 'hourglass', gap: this.chaseGap ?? 0 });
+        }
+        continue;
+      }
+      if (e.kind !== 'powerup') continue;
       const rel = e.wz - this.dist;
       if (Math.abs(rel) > 1.2) continue;
       if (Math.abs(p.x - e.x) > 1.3) continue;
@@ -611,6 +711,7 @@ export class World {
   private pickShell(s: Shell): void {
     const stats = this.stats;
     stats.shells += s.big ? CFG.shell.big : 1;
+    if (this.level) this.levelStats.shellsPicked++;
     this.distSinceShell = 0;
     if (this.time - this.lastShellTime <= CFG.shell.streakWindow) this.streak++;
     else this.streak = 1;
@@ -642,6 +743,19 @@ export class World {
           break;
         case 'low':
           if (p.y > 0.05 && Math.abs(p.x - e.x) < 1.4) this.stats.obstaclesHopped++;
+          break;
+        case 'pad':
+          // bounce pads launch you high (to reach floating sand dollars)
+          if (p.grounded && Math.abs(p.x - e.x) < 1.1 && this.power.kind !== 'rider') {
+            this.startHop(PAD_V0);
+            this.events.push({ t: 'pad' });
+          }
+          break;
+        case 'tidepool':
+          if (p.grounded && Math.abs(p.x - e.x) < 1.2 && this.power.kind !== 'rider') {
+            this.slowT = CFG.island.tidepool.time;
+            this.events.push({ t: 'tidepool' });
+          }
           break;
         case 'sweep':
           if (p.y > 0.05 && this.power.kind !== 'rider') {

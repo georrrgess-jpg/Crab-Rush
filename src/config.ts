@@ -102,6 +102,26 @@ export const CFG = {
   riderSpeedMul: 1.35,
   riderHeight: 1.2,
 
+  // ---- Island Hop (UPDATE2_PLAN.md §5) ----
+  island: {
+    /** each level is played inside its island's zone so it gets that zone's look */
+    startOffset: 40,
+    firstRowAt: 30,
+    /** gap between sections at the 12 m/s reference speed */
+    sectionGap: 13,
+    flagAfter: 28,
+    dollarY: 0.75,
+    pickupRadius: 1.15,
+    /** bounce pad: hop apex (m); high sand dollars float at the apex */
+    padApex: 3.0,
+    tidepool: { slow: 0.85, time: 1.0, w: 2.0, d: 2.6 },
+    chase: { startGap: 15, creep: 0.42, bump: 4, hourglass: 4.5, maxGap: 22 },
+    /** stars needed to open each island */
+    gates: [0, 10, 24, 40] as readonly number[],
+    speeds: [[10, 12.5], [11.5, 14], [13, 16], [14.5, 18]] as readonly (readonly [number, number])[],
+    firstClearShells: [60, 90, 120, 160] as readonly number[],
+  },
+
   // ---- economy ----
   crabPrices: { sandy: 0, chill: 450, blossom: 1200, skipper: 2200, pinch: 3500, dazzle: 0 } as Record<string, number>,
   goalRewards: [60, 120, 220, 400] as readonly number[],

@@ -10,7 +10,7 @@ import { LivingWorld } from './life';
 import { BlobShadows, Footprints, Particles } from './fx';
 import { Materials } from './materials';
 import { CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, IDLE_DRIVE } from './models/crab';
-import { powerupIcon, riderWave } from './models/obstacles';
+import { greatWave, powerupIcon, riderWave } from './models/obstacles';
 import { Spring } from './anim/spring';
 import { Ocean } from './ocean';
 import * as P from './props';
@@ -57,6 +57,8 @@ export class GameView {
   private life: LivingWorld;
   /** Home diorama: a sand mound with an umbrella, towel and bucket around the crab (UPDATE2_PLAN.md §4.3) */
   private homeSet = new THREE.Group();
+  /** Island Hop: the Great Wave chasing the crab (created on first use) */
+  private chaseWave: THREE.Mesh | null = null;
   /** track distance of the last footprint */
   private footT = 0;
   private time = 0;
@@ -236,6 +238,46 @@ export class GameView {
     this.camDip.snap(0);
   }
 
+  /**
+   * Great Wave chase: the wave sits behind the crab at a distance mapped from the sim's gap, so it
+   * looms into the bottom of the screen as it closes in, with spray off its lip.
+   */
+  private updateChase(w: World, dt: number): void {
+    const gap = w.kind === 'level' && w.mode !== 'idle' ? w.chaseGap : null;
+    if (gap === null) {
+      if (this.chaseWave) this.chaseWave.visible = false;
+      return;
+    }
+    if (!this.chaseWave) {
+      this.chaseWave = new THREE.Mesh(greatWave(), this.mats.gloss);
+      this.chaseWave.frustumCulled = false;
+      this.world.add(this.chaseWave);
+    }
+    const cw = this.chaseWave;
+    cw.visible = true;
+    // close gap → the wave sits right behind the crab. Its crest height is solved each frame so the
+    // lip projects just below the crab's feet on screen: it looms, but never hides the crab.
+    const z = 2.6 + gap * 0.3;
+    const lipZ = z - 1.36;
+    const V = this.renderer.camera.matrixWorldInverse.elements;
+    const px = this.crab.root.position.x;
+    // view-space y/z of a world point (x, y, zz): rows 1 and 2 of the view matrix
+    const vy = (x: number, y: number, zz: number): number => V[1]! * x + V[5]! * y + V[9]! * zz + V[13]!;
+    const vz = (x: number, y: number, zz: number): number => V[2]! * x + V[6]! * y + V[10]! * zz + V[14]!;
+    const feetT = vy(px, 0, 0) / -vz(px, 0, 0) - 0.04;
+    const ay = vy(0, 0, lipZ);
+    const az = vz(0, 0, lipZ);
+    const by = V[5] as number;
+    const bz = V[6] as number;
+    const denom = by + feetT * bz;
+    const crest = Math.min(5, Math.max(0.6, Math.abs(denom) > 1e-4 ? (-feetT * az - ay) / denom : 1));
+    cw.position.set(0, -0.15 + Math.sin(this.time * 2.2) * 0.06, z);
+    cw.scale.set(1, crest * (1 + Math.sin(this.time * 3.1) * 0.03), 1);
+    if (!this.reduceMotion && Math.random() < dt * (14 - Math.min(12, gap * 0.6))) {
+      this.dust.spawn((Math.random() - 0.5) * 12, crest * 0.95, w.dist - lipZ, (Math.random() - 0.5) * 2, 1 + Math.random() * 1.5, -2.5, 0.6, 0.3, 0xf2fbff, 6, 0.8);
+    }
+  }
+
   /** Compile every shader program in the scene up front (loader step). */
   async precompile(): Promise<void> {
     const r = this.renderer;
@@ -350,6 +392,32 @@ export class GameView {
         case 'knock':
           this.entities.knock(ev.id, w.dist);
           break;
+        // ---- Island Hop
+        case 'dollar':
+          this.shake(0.05, 0.08);
+          for (let i = 0; i < 18; i++) {
+            const a = (i / 18) * Math.PI * 2;
+            this.sparks.spawn(ev.x, ev.y + 0.2, -0.2, Math.cos(a) * 3, Math.sin(a) * 3 + 2, -0.5, 0.5, 0.3, i % 2 ? 0xffd23a : 0xffffff, 3, 0, true);
+          }
+          break;
+        case 'hourglass':
+          for (let i = 0; i < 14; i++) this.sparks.spawn(p.x + (Math.random() - 0.5), 0.8 + Math.random(), -0.2, (Math.random() - 0.5) * 4, 2 + Math.random() * 3, 2, 0.5, 0.25, 0xbfeaff, 4, 0, true);
+          break;
+        case 'pad':
+          this.crab.hop();
+          this.puff(p.x, w.dist, 10, 0.5);
+          if (!this.reduceMotion) this.fovPunch.impulse(45);
+          break;
+        case 'tidepool':
+          for (let i = 0; i < 12; i++) this.dust.spawn(p.x + (Math.random() - 0.5) * 1.2, 0.15, w.dist - 0.2, (Math.random() - 0.5) * 3, 2 + Math.random() * 2.5, (Math.random() - 0.5) * 2, 0.5, 0.3, 0xcff6ff, 9, 0.6);
+          break;
+        case 'finish':
+          this.crab.celebrate();
+          for (let i = 0; i < 50; i++) {
+            const cols = [0xff5a4a, 0xffd23a, 0x3fd6d0, 0x6f8bff, 0xff7ad0];
+            this.sparks.spawn((Math.random() - 0.5) * 7, 4 + Math.random() * 2, w.dist + 2 + Math.random() * 6, (Math.random() - 0.5) * 4, 1 + Math.random() * 3, 0, 1.4, 0.26, cols[i % 5] as number, 3);
+          }
+          break;
         default:
           break;
       }
@@ -401,7 +469,7 @@ export class GameView {
     const crashT = w.mode === 'crashing' ? w.crashT : -1;
     const speed = running ? w.speed : 0;
     const dv = this.drive;
-    dv.running = running && mode === 'run' && w.mode !== 'idle';
+    dv.running = running && mode === 'run' && w.mode !== 'idle' && w.mode !== 'finished';
     dv.grounded = !running || p.grounded;
     dv.vy = running ? p.vy : 0;
     dv.vx = running ? p.vx : 0;
@@ -533,6 +601,7 @@ export class GameView {
 
     if (this.feet.mesh.visible) this.feet.update(dt, dist);
     this.life.update(dt, this.time, dist, zone, this.night);
+    this.updateChase(w, dt);
     this.dust.update(dt, dist, cam.quaternion);
     this.sparks.update(dt, dist, cam.quaternion);
     this.renderer.render();

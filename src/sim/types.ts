@@ -1,6 +1,8 @@
 import type { PowerKind } from './events';
 
-export type EntityKind = 'block' | 'low' | 'sweep' | 'roller' | 'gull' | 'powerup' | 'arch' | 'banner';
+export type EntityKind = 'block' | 'low' | 'sweep' | 'roller' | 'gull' | 'powerup' | 'arch' | 'banner'
+  // Island Hop (UPDATE2_PLAN.md §5.4)
+  | 'dollar' | 'hourglass' | 'pad' | 'tidepool' | 'flag';
 
 /** Obstacles, pickups and landmark props that live on the track. Shells are separate (see Shell). */
 export interface Entity {

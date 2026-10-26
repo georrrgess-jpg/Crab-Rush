@@ -300,6 +300,39 @@ export class EntityViews {
         };
         break;
       }
+      // ---- Island Hop
+      case 'dollar':
+      case 'hourglass': {
+        const grp = new THREE.Group();
+        const coin = mesh(e.kind === 'dollar' ? g.get('dollar', () => O.sandDollar()) : g.get('hourglass', () => O.hourglass()), e.kind === 'dollar' ? M.gold : M.gloss);
+        coin.scale.setScalar(e.kind === 'dollar' ? 1.05 : 1.1);
+        const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), new THREE.MeshBasicMaterial({ map: M.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: e.kind === 'dollar' ? 0.8 : 0.55, color: e.kind === 'dollar' ? 0xffffff : 0xbfeaff }));
+        glow.position.z = -0.1;
+        grp.add(glow, coin);
+        v = { obj: grp, key, stamp: 0, shadow: [0.8, 0.5], parts: [coin, glow], enter: -1, memo: { landed: -1, squawk: 0 } };
+        v.anim = (vv, ee, t) => {
+          const [c, gl] = vv.parts as THREE.Object3D[];
+          vv.obj.position.y = ee.y + Math.sin(t * 3 + ee.id) * 0.1;
+          c!.rotation.y = t * 2.6 + ee.id;
+          gl!.scale.setScalar(1 + Math.sin(t * 5 + ee.id) * 0.1);
+        };
+        break;
+      }
+      case 'pad': {
+        const m = mesh(g.get('pad', () => O.bouncePad()));
+        v = { obj: m, key, stamp: 0, shadow: [0, 0], enter: -1, memo: { landed: -1, squawk: 0 } };
+        v.anim = (vv, _e, t) => {
+          vv.obj.scale.y = 1 + Math.sin(t * 7) * 0.06;
+        };
+        this.addOutline(v, m);
+        break;
+      }
+      case 'tidepool':
+        v = { obj: mesh(g.get('tidepool', () => O.tidePoolPatch()), M.gloss), key, stamp: 0, shadow: [0, 0], enter: -1, memo: { landed: -1, squawk: 0 } };
+        break;
+      case 'flag':
+        v = { obj: mesh(g.get(`flag${e.state}`, () => O.finishArch(e.state === 1)), M.clayWind), key, stamp: 0, shadow: [0, 0], enter: -1, memo: { landed: -1, squawk: 0 } };
+        break;
       case 'arch':
       case 'banner': {
         const grp = new THREE.Group();
@@ -313,7 +346,7 @@ export class EntityViews {
       default:
         v = { obj: new THREE.Object3D(), key, stamp: 0, shadow: [0, 0], enter: -1, memo: { landed: -1, squawk: 0 } };
     }
-    const cast = v.shadow[0] > 0 && e.kind !== 'gull' && e.kind !== 'powerup';
+    const cast = v.shadow[0] > 0 && e.kind !== 'gull' && e.kind !== 'powerup' && e.kind !== 'dollar' && e.kind !== 'hourglass';
     const casters: THREE.Object3D[] = [];
     v.obj.traverse((o) => {
       o.frustumCulled = false;
@@ -369,7 +402,8 @@ export class EntityViews {
 
   private keyOf(e: Entity): string {
     if (e.kind === 'powerup') return `powerup:${e.power}`;
-    if (e.kind === 'roller' || e.kind === 'gull' || e.kind === 'banner') return e.kind;
+    if (e.kind === 'roller' || e.kind === 'gull' || e.kind === 'banner' || e.kind === 'dollar' || e.kind === 'hourglass' || e.kind === 'pad' || e.kind === 'tidepool') return e.kind;
+    if (e.kind === 'flag') return `flag:${e.state}`;
     if (e.kind === 'arch') return `arch:${e.skin}`;
     const skin = e.skin === 3 ? 0 : e.skin; // sunset reuses shore skins
     // two model variants per obstacle, picked by entity id

@@ -77,6 +77,24 @@ const SCENES = {
     await p.evaluate(() => window.__crab.startRun({ seed: 14, autopilot: true, tutorial: false, start: 5300 }));
     await p.evaluate(() => window.__crab.frames(60 * 3));
   },
+  map: async (p) => {
+    await p.evaluate(() => { window.__crab.unlockAll(2); window.__crab.game.save.data.levels['pier-3'] = undefined; delete window.__crab.game.save.data.levels['pier-3']; window.__crab.setState('map'); window.__crab.frames(10); });
+    await p.waitForTimeout(700);
+  },
+  levelintro: async (p) => {
+    await p.evaluate(() => { window.__crab.level('shore-3', { intro: true }); window.__crab.frames(10); });
+    await p.waitForTimeout(500);
+  },
+  level: async (p) => {
+    await p.evaluate(() => { window.__crab.level('sunset-1', { autopilot: true }); window.__crab.frames(60 * 6.2); });
+  },
+  chase: async (p) => {
+    await p.evaluate(() => { window.__crab.level('shore-6', { autopilot: true }); window.__crab.game.world.chaseGap = 6; window.__crab.frames(60 * 4); window.__crab.game.world.chaseGap = 4.5; window.__crab.frames(4); });
+  },
+  levelend: async (p) => {
+    await p.evaluate(() => { window.__crab.level('cove-1', { autopilot: true }); window.__crab.skip(60 * 40); window.__crab.frames(60 * 2); });
+    await p.waitForTimeout(2600);
+  },
   results: async (p) => {
     await p.evaluate(() => window.__crab.startRun({ seed: 7, autopilot: true, tutorial: false }));
     await p.evaluate(() => window.__crab.frames(60 * 12));

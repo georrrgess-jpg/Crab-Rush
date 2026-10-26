@@ -84,6 +84,9 @@ export class Autopilot {
     for (const e of w.entities) {
       if (e.dead) continue;
       if (e.kind === 'arch' || e.kind === 'banner' || e.kind === 'powerup') continue;
+      if (e.kind === 'pad' || e.kind === 'tidepool' || e.kind === 'flag') continue;
+      // pickups become constraint-free rows so the planner's lane preference reaches them
+      if ((e.kind === 'dollar' || e.kind === 'hourglass') && !this.seekShells) continue;
       const closing = Math.max(1, w.speed - e.vz);
       const rel = e.wz - w.dist;
       const tt = rel / closing;
@@ -139,7 +142,7 @@ export class Autopilot {
           break;
       }
     }
-    return rows.slice(0, 7);
+    return rows.slice(0, 9);
   }
 
   private shellScore(): number[] {
@@ -151,6 +154,13 @@ export class Autopilot {
       if (rel < 0 || rel > 40 || s.dead) continue;
       const lane = Math.round((s.x + 2.2) / 2.2);
       if (lane >= 0 && lane < 3) sc[lane] = (sc[lane] as number) + 1 / (1 + rel * 0.05);
+    }
+    // Island Hop: sand dollars and hourglasses are worth far more than shells
+    for (const e of w.entities) {
+      if (e.dead || (e.kind !== 'dollar' && e.kind !== 'hourglass')) continue;
+      const rel = e.wz - w.dist;
+      if (rel < 0 || rel > 45) continue;
+      sc[e.lane] = (sc[e.lane] as number) + (e.kind === 'dollar' ? 40 : 25) / (1 + rel * 0.05);
     }
     return sc;
   }

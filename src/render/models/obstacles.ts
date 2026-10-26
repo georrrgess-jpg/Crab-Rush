@@ -166,7 +166,7 @@ export function driftwoodLog(variant = 0, lo = false): THREE.BufferGeometry {
 }
 
 /** Wave v2: a curling breaker with an overhanging lip, foam beads on the crest and hop chevrons. */
-export function waveSweep(lo = false): THREE.BufferGeometry {
+export function waveSweep(lo = false, chevrons = true, beads = true): THREE.BufferGeometry {
   const W = 6.8;
   // cross-section in (z, y, foam): front face rises concave into a lip that curls forward
   const prof: [number, number, number][] = [
@@ -223,14 +223,14 @@ export function waveSweep(lo = false): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.raw(g);
   // foam beads along the lip
-  const beads = lo ? 8 : 20;
-  for (let i = 0; i < beads; i++) {
-    const x = -W / 2 + 0.1 + (i / (beads - 1)) * (W - 0.2);
+  const nBeads = beads ? (lo ? 8 : 20) : 0;
+  for (let i = 0; i < nBeads; i++) {
+    const x = -W / 2 + 0.1 + (i / (nBeads - 1)) * (W - 0.2);
     const r = 0.07 + hash(i, 3, 1) * 0.07;
     b.sphere(0xffffff, r, [x, 1.1 + hash(i, 4, 1) * 0.05, 0.48 + hash(i, 5, 1) * 0.16], [1.3, 0.8, 1], 5);
   }
   // chevron markers on the water in front of the crest
-  for (const x of [-1.8, 0, 1.8]) {
+  for (const x of chevrons ? [-1.8, 0, 1.8] : []) {
     for (let k = 0; k < 2; k++) {
       const z = 1.15 + k * 0.5;
       b.box(0xfff1a8, 0.62, 0.05, 0.14, [x - 0.28, 0.06, z], [0, -0.7, 0]);
@@ -463,4 +463,106 @@ export function makeSignMesh(mats: Materials, tex: THREE.Texture): THREE.Mesh {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 1.44), new THREE.MeshBasicMaterial({ map: tex }));
   m.position.set(0, 3.55, 0.08);
   return m;
+}
+
+// ------------------------------------------------------------------ Island Hop (UPDATE2_PLAN.md §5.4)
+/** Golden sand dollar: a thick coin with a five-petal star, standing up to face the camera. */
+export function sandDollar(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0xffcf3a, 0.46, 0.46, 0.09, [0, 0, 0], [Math.PI / 2, 0, 0], 24).paint((x, y, z, c) => {
+    const r = Math.hypot(x, y);
+    if (r > 0.4) c.set(0xe8a020);
+  });
+  // raised rim and petals on both faces
+  for (const f of [1, -1]) {
+    b.torus(0xfff0a0, 0.41, 0.035, [0, 0, f * 0.045], [0, 0, 0], 24);
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + Math.PI / 2;
+      b.sphere(0xfff6c8, 0.11, [Math.cos(a) * 0.2, Math.sin(a) * 0.2, f * 0.05], [0.55, 1.2, 0.25], 8, [0, 0, a - Math.PI / 2]);
+    }
+    b.sphere(0xffe27a, 0.06, [0, 0, f * 0.05], [1, 1, 0.4], 6);
+  }
+  return b.build();
+}
+
+/** Hourglass shell (chase levels): glass bulbs with sand, gold caps. */
+export function hourglass(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0xe9b53a, 0.32, 0.32, 0.07, [0, 0.42, 0], [0, 0, 0], 14);
+  b.cyl(0xe9b53a, 0.32, 0.32, 0.07, [0, -0.42, 0], [0, 0, 0], 14);
+  b.lathe(0xbfeaff, [[0.02, -0.39], [0.26, -0.3], [0.24, -0.12], [0.05, 0], [0.24, 0.12], [0.26, 0.3], [0.02, 0.39]], 14);
+  b.cone(0xffb347, 0.2, 0.22, [0, -0.27, 0], [Math.PI, 0, 0], 10);
+  b.cone(0xffb347, 0.14, 0.14, [0, 0.2, 0], [0, 0, 0], 10);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    b.cyl(0xe9b53a, 0.025, 0.025, 0.8, [Math.cos(a) * 0.3, 0, Math.sin(a) * 0.3], [0, 0, 0], 5);
+  }
+  return b.build();
+}
+
+/** Bounce pad: a striped cushion on springs. */
+export function bouncePad(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0x2a2f38, 0.85, 0.95, 0.12, [0, 0.06, 0], [0, 0, 0], 20);
+  for (let i = 0; i < 3; i++) b.torus(0xc8ced6, 0.55, 0.04, [0, 0.16 + i * 0.07, 0], [Math.PI / 2, 0, 0], 16);
+  b.lathe(0xe53935, [[0.01, 0.42], [0.55, 0.4], [0.78, 0.33], [0.8, 0.27], [0, 0.27]], 20).paint((x, y, z, c) => {
+    const a = Math.atan2(z, x);
+    if (Math.floor(((a + Math.PI) / (Math.PI * 2)) * 8) % 2 === 0) c.set(0xfff4dc);
+  });
+  b.sphere(0xffd23a, 0.12, [0, 0.43, 0], [1, 0.4, 1], 8);
+  return b.build();
+}
+
+/** Tide pool: shallow water in a ring of rocks (walkable, slows you). */
+export function tidePoolPatch(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0x8a7466, 1.02, 1.1, 0.08, [0, 0.02, 0], [0, 0, 0], 16, [1, 1, 1.3]);
+  b.cyl(0x3fc6d8, 0.9, 0.9, 0.04, [0, 0.07, 0], [0, 0, 0], 16, [1, 1, 1.3]).paint((x, y, z, c) => c.lerp(new THREE.Color(0xbff6ff), Math.max(0, 0.6 - Math.hypot(x, z / 1.3)) * 0.8));
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    b.ico(i % 2 ? 0x9b8577 : 0x7d6a5c, 0.16, [Math.cos(a) * 1.0, 0.06, Math.sin(a) * 1.3], [1.2, 0.6, 1], 0, 0.2, 60 + i);
+  }
+  b.sphere(0xff7a3a, 0.1, [0.35, 0.1, 0.2], [1, 0.3, 1], 6);
+  b.sphere(0xb06ad6, 0.08, [-0.4, 0.1, -0.5], [1, 0.3, 1], 6);
+  return b.build();
+}
+
+/** Finish arch: posts, a chequered banner and pennants. `light` adds a little lighthouse (chase levels). */
+export function finishArch(light = false): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const hw = CFG.trackHalfWidth + 0.5;
+  for (const s of [-1, 1]) {
+    b.cyl(0xf4f4f4, 0.2, 0.24, 4.4, [s * hw, 2.2, 0], [0, 0, 0], 10).paint((x, y, z, c) => {
+      if (Math.floor(y * 2.2) % 2 === 0) c.set(0xe53935);
+    });
+    b.sphere(0xffd23a, 0.26, [s * hw, 4.5, 0], [1, 1, 1], 10);
+    b.cone(0x3fd6d0, 0.3, 0.7, [s * hw + s * 0.32, 4.95, 0], [0, 0, -s * Math.PI / 2], 3, [0.4, 1, 1]);
+  }
+  b.box(0xffffff, hw * 2, 1.0, 0.12, [0, 3.85, 0]).paint((x, y, z, c) => {
+    const cx = Math.floor((x + hw) / 0.5);
+    const cy = Math.floor((y - 3.35) / 0.5);
+    if ((cx + cy) % 2 === 0) c.set(0x1a1a24);
+  });
+  for (let i = 0; i < 9; i++) {
+    const x = -hw + 0.5 + (i / 8) * (hw * 2 - 1);
+    b.cone([0xe53935, 0xffc933, 0x2f6fd6, 0x3dae4f][i % 4] as number, 0.18, 0.36, [x, 3.15, 0.08], [Math.PI, 0, 0], 3, [1, 1, 0.3]);
+  }
+  if (light) {
+    b.lathe(0xffffff, [[0.7, 0], [0.55, 3.5], [0.5, 4.2], [0, 4.2]], 14, [hw + 3.2, 0, -2]).paint((x, y, z, c) => {
+      if (Math.floor(y * 1.4) % 2 === 1) c.set(0xe53935);
+    });
+    b.cyl(0xfff3a0, 0.42, 0.42, 0.6, [hw + 3.2, 4.5, -2], [0, 0, 0], 10);
+    b.cone(0xe53935, 0.6, 0.6, [hw + 3.2, 5.1, -2], [0, 0, 0], 10);
+  }
+  return addWind(b.build(), (x, y) => (y > 3.0 && y < 3.4 ? -0.04 : 0));
+}
+
+/** The Great Wave (chase levels): a towering curl that faces the crab from behind. */
+export function greatWave(): THREE.BufferGeometry {
+  const g = waveSweep(false, false, false);
+  // unit height (crest ≈ 1): the view scales it so the crest stays below the crab on screen
+  g.scale(2.4, 1 / 1.12, 2.2);
+  g.rotateY(Math.PI);
+  g.computeBoundingSphere();
+  return g;
 }

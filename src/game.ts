@@ -14,6 +14,14 @@ import { Haptics } from './core/haptics';
 import { PASS_TIERS, tierFromXp, xpFor } from './meta/xp';
 import { claimable } from './meta/pass';
 import type { HomeData } from './ui/home';
+import { LevelEnd, LevelIntro, MapScreen, type MapData } from './ui/islands';
+import { LEVELS, LEVEL_BY_ID } from './sim/levelData';
+import { compileLevel, type CompiledLevel } from './sim/levels';
+import { evalStars, ruleHud, ruleState, ruleText } from './sim/objectives';
+import { ISLAND_NAMES, ISLAND_REWARD_HATS, TOTAL_STARS, applyLevelResult, islandComplete, islandStars, islandUnlocked, levelUnlocked, nextLevel, totalStars } from './meta/islands';
+import { ITEMS, grant } from './meta/wardrobe';
+
+const ITEM_NAMES: Record<string, string> = Object.fromEntries(ITEMS.filter((i) => i.slot === 'hats').map((i) => [i.id, i.name]));
 import { ShopScreen } from './ui/shop';
 import { Autopilot } from './sim/autopilot';
 import type { GameEvent } from './sim/events';
@@ -24,7 +32,8 @@ import { GameView, type CamMode } from './render/view';
 import { UI, type GoalView } from './ui/ui';
 import type { PowerKind } from './sim/events';
 
-type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats';
+type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats'
+  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd';
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
@@ -62,6 +71,13 @@ export class Game {
   private howto: HowToScreen;
   private stats: StatsScreen;
   private statsReturn: State = 'title';
+  // Island Hop
+  private map: MapScreen;
+  private levelIntro: LevelIntro;
+  private levelEnd: LevelEnd;
+  private currentLevel: string | null = null;
+  private compiled = new Map<string, CompiledLevel>();
+  private finishClock = 0;
   private goalCheckT = 0;
   private thumbsReady = false;
 
@@ -91,7 +107,7 @@ export class Game {
       },
       {
         play: () => this.onPlay(),
-        islands: () => soon('Island Hop'),
+        islands: () => this.openMap(),
         daily: () => soon('Daily Tide'),
         wardrobe: () => this.openShop(),
         pass: () => soon('The Sunny Pass track'),
@@ -159,10 +175,28 @@ export class Game {
     });
     this.howto = new HowToScreen(() => this.closeOverlay());
     this.stats = new StatsScreen(() => this.closeStats());
+    this.map = new MapScreen({ back: () => this.closeOverlay(), open: (id) => this.openLevel(id) });
+    this.levelIntro = new LevelIntro({ play: (id) => this.playLevel(id), back: () => this.openMap() });
+    this.levelEnd = new LevelEnd({
+      retry: () => this.retryLevel(),
+      next: () => {
+        const n = this.nextLevelId();
+        if (n) this.openLevel(n);
+        else this.openMap();
+      },
+      map: () => this.openMap(),
+      star: () => {
+        this.audio.play('goal');
+        this.haptics.play('light');
+      },
+    });
     this.ui.addScreen(this.shop.el);
     this.ui.addScreen(this.settings.el);
     this.ui.addScreen(this.howto.el);
     this.ui.addScreen(this.stats.el);
+    this.ui.addScreen(this.map.el);
+    this.ui.addScreen(this.levelIntro.el);
+    this.ui.addScreen(this.levelEnd.el);
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
@@ -267,8 +301,11 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ flow
-  private toTitle(): void {
+  toTitle(): void {
     this.state = 'title';
+    this.currentLevel = null;
+    this.ui.setLevelHUD(null);
+    this.levelEnd.hide();
     this.applyPendingQuality();
     this.resetWorldToBeach();
     this.input.setPointerEnabled(false);
@@ -307,6 +344,7 @@ export class Game {
     this.view.resetRun(opts.best);
     this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
     this.ui.resetHUD();
+    this.ui.setLevelHUD(this.world.level ? { chase: !!this.world.level.def.chase } : null);
     this.ui.hideTutorial();
     this.ui.clearToasts();
     this.ui.show('hud');
@@ -340,7 +378,7 @@ export class Game {
       goals: this.goalViews(),
       crabName: this.skinOf(d.crabs.selected).name,
       wardrobeBadge: this.anyAffordable(),
-      islands: null,
+      islands: { stars: totalStars(d.levels), total: TOTAL_STARS },
       daily: null,
       keyboard: this.input.lastDevice === 'keyboard',
     };
@@ -364,8 +402,212 @@ export class Game {
 
   restart(): void {
     if (this.state === 'results' && this.clock - this.resultsAt < 0.25) return;
+    if (this.currentLevel) return this.retryLevel();
     this.audio.play('tap');
     this.ui.flashFade(() => this.startRun(false));
+  }
+
+  // ------------------------------------------------------------------ Island Hop
+  private compiledLevel(id: string): CompiledLevel {
+    let c = this.compiled.get(id);
+    if (!c) {
+      c = compileLevel(LEVEL_BY_ID.get(id)!);
+      this.compiled.set(id, c);
+    }
+    return c;
+  }
+
+  private mapData(): MapData {
+    const r = this.save.data.levels;
+    const next = nextLevel(r);
+    return {
+      totalStars: totalStars(r),
+      maxStars: TOTAL_STARS,
+      islands: ISLAND_NAMES.map((name, i) => ({
+        name,
+        stars: islandStars(r, i),
+        unlocked: islandUnlocked(r, i),
+        gate: CFG.island.gates[i] as number,
+        complete: islandComplete(r, i),
+        rewardName: (ITEM_NAMES[ISLAND_REWARD_HATS[i] as string] as string) ?? '',
+        levels: LEVELS.filter((l) => l.island === i).map((l) => ({
+          id: l.id,
+          index: l.index,
+          name: l.name,
+          chase: !!l.chase,
+          stars: r[l.id]?.stars ?? [false, false, false],
+          unlocked: levelUnlocked(r, l.id),
+          next: l.id === next,
+        })),
+      })),
+    };
+  }
+
+  openMap(): void {
+    const from = this.state;
+    if (from !== 'title' && from !== 'levelIntro' && from !== 'levelEnd' && from !== 'results' && from !== 'paused') return;
+    this.audio.play('tap');
+    if (from === 'levelEnd' || from === 'results' || from === 'paused') {
+      this.ui.flashFade(() => {
+        this.toTitle();
+        this.showMap();
+      });
+      return;
+    }
+    this.showMap();
+  }
+
+  private showMap(): void {
+    this.currentLevel = null;
+    this.returnTo = 'title';
+    this.state = 'map';
+    this.map.render(this.mapData());
+    this.ui.home.hide();
+    this.ui.showExtra(this.map.el);
+  }
+
+  private openLevel(id: string): void {
+    if (!levelUnlocked(this.save.data.levels, id)) return;
+    const from = this.state;
+    const show = (): void => {
+      const l = LEVEL_BY_ID.get(id)!;
+      const rec = this.save.data.levels[id];
+      this.state = 'levelIntro';
+      this.lastIntro = id;
+      this.levelIntro.render({ id, island: ISLAND_NAMES[l.island] as string, index: l.index, name: l.name, chase: !!l.chase, rule: ruleText(l.star3), stars: rec?.stars ?? [false, false, false], best: rec?.best ?? 0 });
+      this.ui.showExtra(this.levelIntro.el);
+    };
+    this.audio.play('tap');
+    if (from === 'levelEnd') {
+      this.ui.flashFade(() => {
+        this.toTitle();
+        show();
+      });
+    } else show();
+  }
+
+  private playLevel(id: string): void {
+    if (this.state !== 'levelIntro') return;
+    if (!this.flags.shots) this.audio.unlock();
+    this.audio.play('tap');
+    this.startLevel(id, true);
+  }
+
+  private startLevel(id: string, withIntro: boolean): void {
+    const cl = this.compiledLevel(id);
+    this.currentLevel = id;
+    const opts = defaultRunOptions();
+    // a fixed seed per level so the course is learnable
+    let h = 7;
+    for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    opts.seed = h;
+    opts.startDist = (CFG.zoneStarts[cl.def.island] as number) + CFG.island.startOffset;
+    opts.god = this.flags.god;
+    opts.zonesSeen = [0, 1, 2, 3];
+    opts.level = cl;
+    this.world.start(opts);
+    this.runStartedWithTutorial = false;
+    this.view.resetRun(0);
+    this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
+    this.ui.resetHUD();
+    this.ui.setLevelHUD({ chase: !!cl.def.chase });
+    this.ui.hideTutorial();
+    this.ui.clearToasts();
+    this.ui.show('hud');
+    this.ui.hideExtras();
+    this.ui.setTouchButtons(this.touchButtonsWanted());
+    this.input.setPointerEnabled(true);
+    this.touchLayer.classList.add('active');
+    this.crashClock = 0;
+    this.hitStop = 0;
+    this.finishClock = 0;
+    this.introT = withIntro ? 0 : 1;
+    this.state = withIntro ? 'intro' : 'running';
+    this.audio.setMusicMode('run');
+    this.save.data.stats.runs++;
+    this.ui.toast(cl.def.name, { sub: cl.def.chase ? 'Outrun the Great Wave!' : 'Grab all 3 sand dollars', kind: 'gold', life: 2.2 });
+  }
+
+  startLevelHook(id: string): void {
+    this.startLevel(id, false);
+  }
+  openLevelHook(id: string): void {
+    this.openLevel(id);
+  }
+
+  private retryLevel(): void {
+    const id = this.currentLevel;
+    if (!id) return;
+    this.audio.play('tap');
+    this.ui.flashFade(() => {
+      this.levelEnd.hide();
+      this.startLevel(id, false);
+    });
+  }
+
+  private nextLevelId(): string | null {
+    const cur = this.currentLevel ? LEVEL_BY_ID.get(this.currentLevel) : null;
+    if (!cur) return null;
+    const i = LEVELS.indexOf(cur);
+    const n = LEVELS[i + 1];
+    return n && levelUnlocked(this.save.data.levels, n.id) ? n.id : null;
+  }
+
+  /** A level ended: crashed (or caught by the wave) or reached the flag. */
+  private endLevel(success: boolean): void {
+    const w = this.world;
+    const d = this.save.data;
+    const id = this.currentLevel as string;
+    const def = LEVEL_BY_ID.get(id)!;
+    const earned = evalStars(def.star3, w.levelStats);
+    // shells picked up always count; rewards and stars only on a finish
+    const pickups = w.stats.shells + w.stats.bonus;
+    d.shells += pickups;
+    d.stats.totalShells += pickups;
+    d.stats.totalHops += w.stats.hops;
+    d.stats.totalWaves += w.stats.wavesHopped;
+    d.stats.totalPowerups += w.stats.powerups;
+    d.stats.totalDistance += w.distance;
+    let reward = { stars: (d.levels[id]?.stars ?? [false, false, false]) as [boolean, boolean, boolean], newStars: 0, firstClear: false, shells: 0, xp: 0, islandCompleted: null as number | null, goldCrab: false };
+    if (success) reward = applyLevelResult(d.levels, id, earned, w.levelStats.time);
+    const xp = reward.xp + Math.floor(w.stats.shells / 5);
+    d.shells += reward.shells;
+    d.xp += xp;
+    let islandReward: string | null = null;
+    if (reward.islandCompleted !== null) {
+      const hat = ISLAND_REWARD_HATS[reward.islandCompleted] as string;
+      grant(d.wardrobe, 'hats', hat);
+      islandReward = ITEM_NAMES[hat] ?? hat;
+    }
+    if (reward.goldCrab) grant(d.wardrobe, 'bodies', 'gold');
+    this.save.save();
+    this.state = 'levelEnd';
+    this.resultsAt = this.clock;
+    this.input.setPointerEnabled(false);
+    this.ui.show('none');
+    this.ui.showExtra(this.levelEnd.el);
+    this.levelEnd.show(
+      {
+        success,
+        name: def.name,
+        stars: reward.stars,
+        earned,
+        rule: ruleText(def.star3),
+        dollars: w.levelStats.dollars,
+        time: w.levelStats.time,
+        shells: reward.shells,
+        xp,
+        firstClear: reward.firstClear,
+        islandReward,
+        goldCrab: reward.goldCrab,
+        hasNext: success && this.nextLevelId() !== null,
+      },
+      this.reduceMotion,
+    );
+    if (success) {
+      this.audio.play('newBest');
+      this.haptics.play('success');
+    }
   }
 
   goHome(): void {
@@ -467,7 +709,7 @@ export class Game {
       favourite: fav ? this.skinOf(fav[0]).name : '',
       favouriteRuns: fav ? fav[1] : 0,
       passTier: tierFromXp(d.xp).tier,
-      islandStars: null,
+      islandStars: totalStars(d.levels),
       dailyStreak: null,
     });
     this.ui.showExtra(this.stats.el);
@@ -575,8 +817,21 @@ export class Game {
       return;
     }
     if (s === 'stats' && a === 'back') return this.closeStats();
-    if ((s === 'shop' || s === 'settings' || s === 'howto') && a === 'back') this.closeOverlay();
+    if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map') && a === 'back') this.closeOverlay();
+    if (s === 'levelIntro') {
+      if (a === 'back') this.openMap();
+      else if ((a === 'confirm' || alsoConfirm) && this.currentLevelIntro()) this.playLevel(this.currentLevelIntro() as string);
+    }
+    if (s === 'levelEnd' && this.clock - this.resultsAt > 0.6) {
+      if (a === 'back') this.openMap();
+      else if (a === 'confirm' || alsoConfirm) this.retryLevel();
+    }
   }
+
+  private currentLevelIntro(): string | null {
+    return this.lastIntro;
+  }
+  private lastIntro: string | null = null;
 
   // ------------------------------------------------------------------ fixed step
   private step(dt: number): void {
@@ -588,11 +843,13 @@ export class Game {
         this.world.step(dt * this.world.timeScale);
         if (this.introT >= 1) this.state = 'running';
         this.checkCrash();
+        this.checkFinish();
         break;
       case 'running':
         this.autopilot?.update();
         this.world.step(dt * this.world.timeScale);
         this.checkCrash();
+        this.checkFinish();
         break;
       case 'countdown': {
         this.countdownT -= dt;
@@ -619,11 +876,30 @@ export class Game {
         const slow = this.crashClock < CFG.crash.slowMoTime ? CFG.crash.slowMo : 1;
         this.world.step(dt * slow);
         this.crashClock += dt;
-        if (this.crashClock >= CFG.crash.resultsDelay) this.endRun();
+        if (this.crashClock >= CFG.crash.resultsDelay) {
+          if (this.world.kind === 'level') this.endLevel(false);
+          else this.endRun();
+        }
         break;
       }
+      case 'finishing':
+        // coast through the finish arch, then show the stars
+        this.world.step(dt);
+        this.finishClock += dt;
+        if (this.finishClock >= 1.5) this.endLevel(true);
+        break;
       default:
         break;
+    }
+  }
+
+  /** Island Hop: the flag was reached → coast, celebrate, then the level end screen. */
+  private checkFinish(): void {
+    if (this.world.mode === 'finished' && (this.state === 'running' || this.state === 'intro')) {
+      this.state = 'finishing';
+      this.finishClock = 0;
+      this.input.setPointerEnabled(false);
+      this.audio.setMusicMode('menu');
     }
   }
 
@@ -717,15 +993,24 @@ export class Game {
     }
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
-    const mode: CamMode = this.state === 'title' || this.state === 'settings' || this.state === 'howto' ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
+    const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro';
+    const mode: CamMode = menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
     if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
     this.view.frame(this.world, alpha, dt, mode, this.introT);
     if (this.qm.sample(frameDt * 1000, this.state === 'running')) this.view.renderer.setDprScale(this.qm.dprScale);
-    if (this.state === 'running' || this.state === 'intro' || this.state === 'crashing' || this.state === 'countdown' || this.state === 'paused') {
+    if (this.state === 'running' || this.state === 'intro' || this.state === 'crashing' || this.state === 'countdown' || this.state === 'paused' || this.state === 'finishing') {
       const w = this.world;
       const pk = w.power.kind;
       this.ui.updateHUD(w.runShells, w.distance, pk, pk ? w.power.t / w.power.dur : 0, w.streak);
+      if (w.level) {
+        const rs = ruleState(w.level.def.star3, w.levelStats);
+        const k = w.level.def.star3.kind;
+        const progressRule = k === 'shells' || k === 'hourglasses' || k === 'streak';
+        // "avoid" rules show green while intact; progress rules turn green once reached
+        const ok = progressRule ? ruleState(w.level.def.star3, { ...w.levelStats, finished: true }).met : !rs.lost;
+        this.ui.updateLevelHUD((w.dist - w.levelStart) / w.level.length, w.levelStats.dollars, ruleHud(w.level.def.star3, w.levelStats), ok, rs.lost, w.chaseGap);
+      }
       this.goalCheckT -= frameDt;
       if (this.goalCheckT <= 0 && (this.state === 'running' || this.state === 'intro')) {
         this.goalCheckT = 0.25;
@@ -813,6 +1098,20 @@ export class Game {
           this.audio.play('newBest');
           this.ui.toast('NEW BEST!', { kind: 'gold', big: true, life: 2.2 });
           break;
+        case 'dollar':
+          this.audio.play('goal');
+          this.haptics.play('medium');
+          break;
+        case 'hourglass':
+          this.audio.play('milestone');
+          this.ui.floater('Wave pushed back!', 0.5, 0.36);
+          break;
+        case 'pad':
+          this.audio.play('hop');
+          break;
+        case 'tidepool':
+          this.audio.play('land');
+          break;
         case 'tutorial':
           if (ev.step === 'complete') {
             this.ui.showTutorial('complete', this.promptDevice());
@@ -854,6 +1153,9 @@ export class Game {
         } else if (name === 'settings') {
           g.toTitle();
           g.openSettings();
+        } else if (name === 'map') {
+          g.toTitle();
+          g.openMap();
         } else if (name === 'stats') {
           g.toTitle();
           g.openStats();
@@ -893,6 +1195,19 @@ export class Game {
       },
       act(a: Action) {
         g.onAction(a, false);
+      },
+      /** start an Island Hop level directly (optionally autopiloted) */
+      level(id: string, o: { autopilot?: boolean; intro?: boolean } = {}) {
+        if (o.autopilot !== undefined) g.flags.autopilot = o.autopilot;
+        g.toTitle();
+        if (o.intro) {
+          g.openMap();
+          g.openLevelHook(id);
+        } else g.startLevelHook(id);
+      },
+      /** unlock every level (screenshots / tests) */
+      unlockAll(stars = 2) {
+        for (const l of LEVELS) g.save.data.levels[l.id] = { stars: [true, stars > 1, stars > 2], best: 40 };
       },
       /** close-up camera at an offset from the crab (null restores the game camera) */
       cam(x: number | null, y = 1.6, z = 4.2) {
