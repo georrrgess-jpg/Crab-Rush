@@ -19,12 +19,23 @@ export class BlobShadows {
     this.mesh.renderOrder = 1;
     this.mesh.count = 0;
   }
+  /** shadows lean away from the sun: horizontal offset per metre of caster height */
+  private ox = 0;
+  private oz = 0;
   begin(): void {
     this.n = 0;
   }
-  add(x: number, y: number, z: number, sx: number, sz: number): void {
+  /** Sun direction (world, normalised x/z components) for elongated, offset shadows. */
+  setSun(dx: number, dz: number): void {
+    this.ox = -dx * 0.35;
+    this.oz = -dz * 0.35;
+  }
+  /** `h` is the caster's height above the ground: the shadow slides away from the sun and shrinks. */
+  add(x: number, y: number, z: number, sx: number, sz: number, h = 0): void {
     if (this.n >= this.mesh.instanceMatrix.count) return;
-    _m.compose(_p.set(x, y + 0.025, z), FLAT, _s.set(sx, sz, 1));
+    const k = 0.5 + h;
+    const stretch = 1 + Math.abs(this.ox) * 0.6;
+    _m.compose(_p.set(x + this.ox * k, y + 0.025, z + this.oz * k), FLAT, _s.set(sx * stretch, sz, 1));
     this.mesh.setMatrixAt(this.n++, _m);
   }
   end(): void {
@@ -116,5 +127,103 @@ export class Particles {
     this.mesh.count = w;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.mesh.instanceColor!.needsUpdate = true;
+  }
+}
+
+const footVert = /* glsl */ `
+#include <common>
+#include <fog_pars_vertex>
+attribute float aFade;
+varying vec2 vUv;
+varying float vFade;
+void main() {
+  vUv = uv;
+  vFade = aFade;
+  vec3 transformed = position;
+  vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(transformed, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+const footFrag = /* glsl */ `
+#include <common>
+#include <fog_pars_fragment>
+uniform vec3 uColor;
+varying vec2 vUv;
+varying float vFade;
+void main() {
+  // three little leg pokes on each side, staggered
+  vec2 p = vUv * vec2(5.0, 3.0);
+  vec2 cell = floor(p);
+  vec2 f = fract(p) - 0.5;
+  f.y += mod(cell.x, 2.0) * 0.25 - 0.12;
+  float side = step(1.5, cell.x) * step(cell.x, 2.5);
+  float d = length(f * vec2(1.6, 1.0));
+  float a = (1.0 - smoothstep(0.18, 0.3, d)) * (1.0 - side) * vFade;
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(uColor, a * 0.4);
+  #include <fog_fragment>
+}`;
+
+/** Little leg-poke footprints left in the sand behind the crab: one instanced draw call. */
+export class Footprints {
+  readonly mesh: THREE.InstancedMesh;
+  private wz: Float32Array;
+  private xs: Float32Array;
+  private life: Float32Array;
+  private fade: THREE.InstancedBufferAttribute;
+  private head = 0;
+  readonly mat: THREE.ShaderMaterial;
+  constructor(private max = 36) {
+    this.mat = new THREE.ShaderMaterial({
+      vertexShader: footVert,
+      fragmentShader: footFrag,
+      transparent: true,
+      depthWrite: false,
+      fog: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      uniforms: { ...THREE.UniformsLib.fog, uColor: { value: new THREE.Color(0x8a6a48) } },
+    });
+    const g = new THREE.PlaneGeometry(1.4, 0.55);
+    this.fade = new THREE.InstancedBufferAttribute(new Float32Array(max), 1);
+    g.setAttribute('aFade', this.fade);
+    this.mesh = new THREE.InstancedMesh(g, this.mat, max);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 0;
+    this.wz = new Float32Array(max);
+    this.xs = new Float32Array(max);
+    this.life = new Float32Array(max);
+    this.mesh.count = max;
+    for (let i = 0; i < max; i++) this.fade.setX(i, 0);
+  }
+  clear(): void {
+    this.life.fill(0);
+  }
+  /** Stamp a footprint at lateral x and track distance wz. */
+  stamp(x: number, wz: number): void {
+    const i = this.head;
+    this.head = (this.head + 1) % this.max;
+    this.xs[i] = x;
+    this.wz[i] = wz;
+    this.life[i] = 1;
+  }
+  update(dt: number, dist: number): void {
+    for (let i = 0; i < this.max; i++) {
+      let l = this.life[i] as number;
+      if (l > 0) l = Math.max(0, l - dt * 0.55);
+      this.life[i] = l;
+      const z = -((this.wz[i] as number) - dist);
+      if (l <= 0 || z > 14) {
+        this.fade.setX(i, 0);
+        _m.compose(_p.set(0, -10, 0), FLAT, _s.set(0.001, 0.001, 1));
+      } else {
+        this.fade.setX(i, Math.min(1, l * 1.5));
+        _m.compose(_p.set(this.xs[i] as number, 0.03, z), FLAT, _s.set(1, 1, 1));
+      }
+      this.mesh.setMatrixAt(i, _m);
+    }
+    this.fade.needsUpdate = true;
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 }

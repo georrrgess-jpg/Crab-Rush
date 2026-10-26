@@ -4,6 +4,7 @@ import { GeoBuilder, mergeAll, translated } from './geo';
 import type { Materials } from './materials';
 import * as P from './props';
 import { plankTexture, sandTexture } from './textures';
+import { makeToy } from './shaders/toy';
 
 export const TILE_LEN = 25;
 const TILE_COUNT = 7;
@@ -97,7 +98,7 @@ function beachGround(seed: number, opts: { shore: number; base: number; track: n
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
-  bakeShade(g);
+  bakeShade(g, 0.9, 0.12);
   return g;
 }
 
@@ -186,7 +187,7 @@ export class Scenery {
   private tiles: Tile[] = [];
   private variants: Variant[][] = [];
   private kit: PropKit;
-  readonly groundMats: THREE.MeshBasicMaterial[];
+  readonly groundMats: THREE.ShaderMaterial[];
   private glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
 
   constructor(private mats: Materials, density: number) {
@@ -194,12 +195,8 @@ export class Scenery {
     const sand = sandTexture(false);
     const wet = sandTexture(true);
     const planks = plankTexture();
-    this.groundMats = [
-      new THREE.MeshBasicMaterial({ map: sand, vertexColors: true }),
-      new THREE.MeshBasicMaterial({ map: planks, vertexColors: true }),
-      new THREE.MeshBasicMaterial({ map: wet, vertexColors: true }),
-      new THREE.MeshBasicMaterial({ map: sand, vertexColors: true }),
-    ];
+    // ground is lit by the zone lighting too (UPDATE2_PLAN.md §1.2), so berms and ridges model
+    this.groundMats = [sand, planks, wet, sand].map((map) => makeToy(mats.lighting, { map, color: 0xf0f0f0 }));
     this.buildVariants(density);
     for (let i = 0; i < TILE_COUNT; i++) {
       const group = new THREE.Group();
@@ -385,7 +382,7 @@ export class Scenery {
         const vi = ((k * 2654435761) >>> 0) % VARIANTS;
         const v = (this.variants[zone] as Variant[])[vi] as Variant;
         t.ground.geometry = v.ground;
-        t.ground.material = this.groundMats[zone] as THREE.MeshBasicMaterial;
+        t.ground.material = this.groundMats[zone] as THREE.ShaderMaterial;
         t.props.geometry = v.props;
         t.glow.geometry = v.glow ?? EMPTY;
         t.glow.visible = !!v.glow && this.glowOn;
@@ -394,7 +391,7 @@ export class Scenery {
       // tiles that start beyond the fog are invisible anyway: skip their draw calls
       t.group.visible = t.k * TILE_LEN - dist < viewDist;
     }
-    for (const m of this.groundMats) m.color.copy(groundTint);
+    for (const m of this.groundMats) (m.uniforms.diffuse as { value: THREE.Color }).value.copy(groundTint).multiplyScalar(0.94);
   }
 
   glowFlicker(time: number): void {

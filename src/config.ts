@@ -59,6 +59,9 @@ export const CFG = {
   zoneStarts: [0, 700, 1600, 2800] as readonly number[],
   zoneNames: ['Sunny Shore', 'Boardwalk Pier', 'Tide Pool Cove', 'Sunset Lagoon'] as readonly string[],
   zoneBonus: 100,
+  /** Sunset Lagoon fades to dusk between these distances (render only) */
+  nightStart: 4000,
+  nightFull: 5200,
 
   // ---- obstacles: hitbox w, d, h ----
   obstacle: {

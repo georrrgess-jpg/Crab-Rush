@@ -88,11 +88,11 @@ void main() {
     vec3 n = normalize(vNormalV);
     if (!gl_FrontFacing) n = -n;
     float ndl = dot(n, uSunDirV);
-    float wrap = ndl * 0.5 + 0.5;
-    wrap *= wrap;
+    // soft-toon terminator: readable form without the flatness of a pure wrap
+    float wrap = smoothstep(-0.2, 0.55, ndl);
     vec3 light = mix(uShadowColor, uSunColor, wrap);
     float hemi = dot(n, uUpV) * 0.5 + 0.5;
-    light += mix(uGroundColor, uSkyColor, hemi) * 0.35;
+    light += mix(uGroundColor, uSkyColor, hemi) * 0.22;
     col = base * light;
     #ifndef TOY_LITE
       vec3 v = normalize(-vViewPos);
@@ -100,7 +100,7 @@ void main() {
       col += uRimColor * rim * (0.4 + 0.6 * hemi);
       #ifdef TOY_GLOSS
         vec3 h = normalize(uSunDirV + v);
-        float spec = pow(max(dot(n, h), 0.0), 48.0) * uGloss;
+        float spec = pow(max(dot(n, h), 0.0), mix(24.0, 64.0, min(uGloss, 1.0))) * uGloss;
         col += uSunColor * spec;
       #endif
     #endif
@@ -157,15 +157,18 @@ export class ToyLighting {
   readonly sunDir = new THREE.Vector3(-0.4, 0.8, 0.45).normalize();
   private readonly up = new THREE.Vector3(0, 1, 0);
 
-  /** Derive lighting colours from a zone palette (Phase B adds dedicated lighting fields). */
+  /** Copy a zone palette's lighting into the shared uniforms. */
   fromPalette(p: ZonePalette): void {
     const u = this.uniforms;
-    this.sunDir.copy(p.sunDir).setY(Math.max(0.35, p.sunDir.y)).normalize();
-    u.uSunColor.value.copy(p.sunColor).multiplyScalar(1.05);
-    u.uShadowColor.value.copy(p.skyMid).lerp(p.groundTint, 0.35).multiplyScalar(0.62);
-    u.uSkyColor.value.copy(p.skyTop);
-    u.uGroundColor.value.setRGB(0.95, 0.8, 0.6).multiply(p.groundTint);
-    u.uRimColor.value.copy(p.skyHorizon).lerp(p.sunColor, 0.4);
+    // key light from the upper left and slightly toward the camera so forms read from the play
+    // camera; the sky's sun position only nudges it
+    this.sunDir.set(-0.78 + p.sunDir.x * 0.2, 0.62, 0.05).normalize();
+    u.uSunColor.value.copy(p.lightSun);
+    u.uShadowColor.value.copy(p.lightShadow);
+    u.uSkyColor.value.copy(p.lightSky);
+    u.uGroundColor.value.copy(p.lightBounce);
+    u.uRimColor.value.copy(p.lightRim);
+    u.uGrade.value.copy(p.grade);
   }
 
   /** Re-express world directions in view space; call once per frame after the camera moves. */

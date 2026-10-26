@@ -71,6 +71,10 @@ const SCENES = {
     await p.evaluate(() => window.__crab.startRun({ seed: 13, autopilot: true, tutorial: false, start: 2860 }));
     await p.evaluate(() => window.__crab.frames(60 * 3));
   },
+  night: async (p) => {
+    await p.evaluate(() => window.__crab.startRun({ seed: 14, autopilot: true, tutorial: false, start: 5300 }));
+    await p.evaluate(() => window.__crab.frames(60 * 3));
+  },
   results: async (p) => {
     await p.evaluate(() => window.__crab.startRun({ seed: 7, autopilot: true, tutorial: false }));
     await p.evaluate(() => window.__crab.frames(60 * 12));

@@ -6,12 +6,12 @@ import { zoneBlend } from '../sim/zones';
 import { Backdrop } from './backdrop';
 import { CAMERA_ELEVATION } from './camera';
 import { EntityViews } from './entities';
-import { BlobShadows, Particles } from './fx';
+import { BlobShadows, Footprints, Particles } from './fx';
 import { Materials } from './materials';
 import { CRAB_SKINS, CrabModel, type CrabSkin } from './models/crab';
 import { powerupIcon, riderWave } from './models/obstacles';
 import { Ocean } from './ocean';
-import { ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
+import { NIGHT_PALETTE, ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
 import { Renderer } from './renderer';
 import { Scenery } from './scenery';
 import { ShellRenderer } from './shells';
@@ -28,6 +28,12 @@ export class GameView {
   readonly renderer: Renderer;
   readonly mats = new Materials();
   private sky = new Sky();
+  private night = 0;
+  /** High tier: a small shadow map around the crab (UPDATE2_PLAN.md §1.4) */
+  private sun = new THREE.DirectionalLight(0xffffff, 1);
+  private catcher: THREE.Mesh;
+  private catcherMat = new THREE.ShadowMaterial({ color: 0x2a2060, opacity: 0.5, depthWrite: false });
+  private shadowMap = false;
   private ocean: Ocean;
   private scenery: Scenery;
   private backdrop = new Backdrop();
@@ -45,6 +51,9 @@ export class GameView {
   private squash = 1;
   private squashV = 0;
   private dustT = 0;
+  private feet = new Footprints();
+  /** track distance of the last footprint */
+  private footT = 0;
   private time = 0;
   private shakeAmp = 0;
   private shakeT = 0;
@@ -69,6 +78,7 @@ export class GameView {
     const scene = this.renderer.scene;
     scene.background = null;
     scene.add(this.sky.mesh);
+    scene.add(this.sky.stars);
     this.ocean = new Ocean(quality.oceanWaves);
     scene.add(this.ocean.mesh);
     scene.add(this.backdrop.group);
@@ -79,6 +89,7 @@ export class GameView {
     this.world.add(this.entities.group);
     this.shadows = new BlobShadows(this.mats);
     this.world.add(this.shadows.mesh);
+    this.world.add(this.feet.mesh);
     this.shells = new ShellRenderer(this.mats);
     this.world.add(this.shells.mesh, this.shells.glow);
     this.dust = new Particles(this.mats.dustTex, false, 160);
@@ -109,6 +120,27 @@ export class GameView {
     this.boardGroup.visible = false;
     this.crab.root.add(this.boardGroup);
 
+    // shadow map: an orthographic box over the near track; the crab stays at z=0 so it never moves
+    const sm = this.renderer.gl.shadowMap;
+    sm.enabled = true;
+    sm.type = THREE.PCFSoftShadowMap;
+    this.sun.castShadow = false;
+    this.sun.shadow.mapSize.set(1024, 1024);
+    const sc = this.sun.shadow.camera;
+    // 'up' along the track so top/bottom span its length
+    sc.up.set(0, 0, -1);
+    sc.left = -9; sc.right = 9; sc.top = 26; sc.bottom = -26; sc.near = 1; sc.far = 60;
+    this.sun.shadow.bias = -0.0015;
+    this.sun.shadow.normalBias = 0.02;
+    this.sun.target.position.set(0, 0, -16);
+    scene.add(this.sun, this.sun.target);
+    this.catcher = new THREE.Mesh(new THREE.PlaneGeometry(16, 50), this.catcherMat);
+    this.catcher.rotation.x = -Math.PI / 2;
+    this.catcher.position.set(0, 0.02, -16);
+    this.catcher.receiveShadow = true;
+    this.catcher.renderOrder = 1;
+    this.world.add(this.catcher);
+
     this.applyDetail(quality);
     this.renderer.camera.far = 260;
     this.renderer.camera.updateProjectionMatrix();
@@ -126,9 +158,15 @@ export class GameView {
   /** Low tier trims optional meshes to stay inside its draw-call budget. */
   private applyDetail(q: QualityPreset): void {
     const full = q.name !== 'low';
+    this.shadowMap = q.name === 'high';
+    this.sun.castShadow = this.shadowMap;
+    this.catcher.visible = this.shadowMap;
+    this.entities.castShadows = this.shadowMap;
+    this.mats.setLite(!full);
     this.scenery.glowOn = full;
     this.backdrop.setDetail(full);
     this.entities.lite = !full;
+    this.feet.mesh.visible = full;
   }
 
   setQuality(q: QualityPreset): void {
@@ -148,6 +186,8 @@ export class GameView {
   resetRun(best: number): void {
     this.entities.clear();
     this.dust.clear();
+    this.feet.clear();
+    this.footT = 0;
     this.sparks.clear();
     this.entities.setBest(best);
     this.squash = 1;
@@ -166,7 +206,15 @@ export class GameView {
     const t = zoneBlend(dist, z);
     if (z === 0) lerpPalette(this.palette, ZONE_PALETTES[0]!, ZONE_PALETTES[0]!, 0);
     else lerpPalette(this.palette, ZONE_PALETTES[z - 1]!, ZONE_PALETTES[z]!, t);
+    this.night = Math.max(0, Math.min(1, (dist - CFG.nightStart) / (CFG.nightFull - CFG.nightStart)));
+    if (this.night > 0) lerpPalette(this.palette, this.palette, NIGHT_PALETTE, this.night * this.night * (3 - 2 * this.night));
     this.sky.apply(this.palette);
+    this.mats.lighting.fromPalette(this.palette);
+    const sd = this.mats.lighting.sunDir;
+    // shadows come from higher than the key light so they stay compact under objects
+    this.sun.position.set(sd.x * 14, 26, -16 + 6);
+    this.catcherMat.color.copy(this.palette.lightShadow).multiplyScalar(0.35);
+    this.shadows.setSun(sd.x, sd.z);
     const fog = this.renderer.scene.fog as THREE.Fog;
     fog.color.copy(this.palette.fog);
   }
@@ -302,7 +350,7 @@ export class GameView {
     this.crab.pose(dt, this.legPhase, lean, this.squash, airborne, crashT, running ? p.bumpT : 0, !running || mode !== 'run');
     // shadow under the crab shrinks as it rises
     const sh = 1 / (1 + py * 0.5);
-    this.shadows.add(px, 0, 0, 1.7 * sh, 1.3 * sh);
+    if (!this.shadowMap) this.shadows.add(px, 0, 0, 1.7 * sh, 1.3 * sh, py);
     this.shadows.end();
 
     // power-up visuals
@@ -322,6 +370,10 @@ export class GameView {
 
     // running dust
     if (running && w.mode === 'running' && p.grounded && pk !== 'rider') {
+      if (dist - this.footT > 0.7 && zone !== 1 && this.feet.mesh.visible) {
+        this.footT = dist;
+        this.feet.stamp(px, dist);
+      }
       this.dustT -= dt;
       if (this.dustT <= 0) {
         this.dustT = 0.07;
@@ -380,16 +432,22 @@ export class GameView {
     }
     cam.position.copy(this.camPos);
     cam.lookAt(this.camLook);
+    cam.updateMatrixWorld();
+    this.mats.lighting.update(cam);
     this.sky.mesh.position.copy(cam.position);
+    this.sky.stars.position.copy(cam.position);
+    this.sky.update(this.time, this.night, this.renderer.quality.name !== 'low');
     this.ocean.mesh.position.x = 0;
 
+    if (this.feet.mesh.visible) this.feet.update(dt, dist);
     this.dust.update(dt, dist, cam.quaternion);
     this.sparks.update(dt, dist, cam.quaternion);
     this.renderer.render();
   }
 
-  /** Phase A: shared lighting for the toy shaders (switched on in Phase B). */
-  readonly toyLighting = new ToyLighting();
+  get toyLighting(): ToyLighting {
+    return this.mats.lighting;
+  }
 
   /** Compile and render every toy variant into a tiny target; reports shader compile/link problems. */
   shaderCheck(): { name: string; ok: boolean; log: string }[] {
@@ -456,7 +514,10 @@ export class GameView {
     gl.getClearColor(prevColor);
     const prevAlpha = gl.getClearAlpha();
     const out: string[] = [];
+    cam.updateMatrixWorld();
     for (const skin of CRAB_SKINS) {
+      this.mats.lighting.fromPalette(ZONE_PALETTES[0]!);
+      this.mats.lighting.update(cam);
       crab.setSkin(skin);
       crab.pose(0, 0.9, 0, 1, false, -1, 0, true);
       crab.root.rotation.y = -0.25;

@@ -114,6 +114,7 @@ export class CrabModel {
     this.root.add(this.rig);
 
     this.bodyMesh = new THREE.Mesh(new THREE.BufferGeometry(), mats.clay);
+    this.bodyMesh.castShadow = true;
     this.rig.add(this.bodyMesh);
     this.rig.add(this.head);
 
@@ -134,6 +135,7 @@ export class CrabModel {
       const pivot = new THREE.Group();
       pivot.position.set(side * 0.66, 0.62, 0.3);
       const up = new THREE.Mesh(new THREE.BufferGeometry(), mats.clay);
+      up.castShadow = true;
       const low = new THREE.Mesh(new THREE.BufferGeometry(), mats.clay);
       const arm = new THREE.Mesh(new THREE.BufferGeometry(), mats.clay);
       pivot.add(arm, up, low);
@@ -241,6 +243,7 @@ export class CrabModel {
       this.hatMesh.geometry.dispose();
     }
     this.hatMesh = new THREE.Mesh(buildHat(skin.hat, skin.body), this.mats.clay);
+    this.hatMesh.castShadow = true;
     const pos = this.hatPos(skin.hat);
     this.hatBasePos.copy(pos.p);
     this.hatMesh.position.copy(pos.p);

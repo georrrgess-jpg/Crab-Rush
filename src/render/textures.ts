@@ -47,6 +47,24 @@ export function sandTexture(dark = false): THREE.CanvasTexture {
         g.fillRect(x + ox - rad, y + oy - rad, rad * 2, rad * 2);
       }
   }
+  // wind ripples: soft wavy bands across the track (tile-safe: whole periods over S)
+  for (let k = 0; k < 9; k++) {
+    const y0 = (k / 9) * S;
+    g.beginPath();
+    for (let x = 0; x <= S; x += 4) {
+      const y = y0 + Math.sin((x / S) * Math.PI * 2 * 2 + k * 1.7) * 5 + Math.sin((x / S) * Math.PI * 2 * 5 + k) * 1.5;
+      if (x === 0) g.moveTo(x, y);
+      else g.lineTo(x, y);
+    }
+    g.strokeStyle = 'rgba(150,105,55,0.10)';
+    g.lineWidth = 5;
+    g.stroke();
+    g.strokeStyle = 'rgba(255,255,245,0.16)';
+    g.lineWidth = 2;
+    g.translate(0, -3);
+    g.stroke();
+    g.translate(0, 3);
+  }
   // speckles
   for (let i = 0; i < (dark ? 2200 : 1600); i++) {
     const x = r() * S;

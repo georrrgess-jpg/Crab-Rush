@@ -14,6 +14,9 @@ interface View {
   shadow: [number, number];
   anim?: (v: View, e: Entity, t: number) => void;
   parts?: THREE.Object3D[];
+  /** meshes that may cast into the High-tier shadow map */
+  casters?: THREE.Object3D[];
+  casting?: boolean;
 }
 
 interface Flying {
@@ -39,6 +42,8 @@ export class EntityViews {
   private bestValue = -1;
   /** Low tier: fewer meshes per pickup */
   lite = false;
+  /** High tier: near obstacles cast into the shadow map instead of drawing a blob */
+  castShadows = false;
 
   constructor(private mats: Materials) {
     for (let z = 0; z < CFG.zoneNames.length; z++) {
@@ -175,7 +180,14 @@ export class EntityViews {
       default:
         v = { obj: new THREE.Object3D(), key, stamp: 0, shadow: [0, 0] };
     }
-    v.obj.traverse((o) => (o.frustumCulled = false));
+    const cast = v.shadow[0] > 0 && e.kind !== 'gull' && e.kind !== 'powerup';
+    const casters: THREE.Object3D[] = [];
+    v.obj.traverse((o) => {
+      o.frustumCulled = false;
+      if (cast && (o as THREE.Mesh).isMesh) casters.push(o);
+    });
+    if (casters.length) v.casters = casters;
+    v.casting = false;
     return v;
   }
 
@@ -216,7 +228,13 @@ export class EntityViews {
       v.obj.rotation.set(0, 0, 0);
       v.obj.scale.setScalar(1);
       v.anim?.(v, e, time);
-      if (v.shadow[0] > 0 && rel < 100) {
+      // the shadow map covers the first ~40 m; blobs take over beyond it
+      const inMap = this.castShadows && rel < 40 && rel > -10 && v.casters !== undefined;
+      if (v.casters && inMap !== v.casting) {
+        v.casting = inMap;
+        for (let i = 0; i < v.casters.length; i++) (v.casters[i] as THREE.Object3D).castShadow = inMap;
+      }
+      if (v.shadow[0] > 0 && rel < 100 && !inMap) {
         let sx = v.shadow[0];
         let sz = v.shadow[1];
         if (e.kind === 'gull') {

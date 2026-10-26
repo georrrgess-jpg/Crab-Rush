@@ -63,6 +63,7 @@ export class Game {
     this.quality = pickQuality(this.flags.quality, this.save.data.settings.quality);
     this.view = new GameView(canvas, this.quality);
     this.qm = new QualityManager(this.quality, this.autoQuality);
+    this.tagQuality();
     const app = document.getElementById('app') as HTMLElement;
     this.touchLayer = document.getElementById('touch-layer') as HTMLElement;
     this.ui = new UI(document.getElementById('ui') as HTMLElement, {
@@ -175,12 +176,21 @@ export class Game {
   }
 
   /** Apply a tier change the auto-quality manager asked for (only between runs: it rebuilds scenery). */
+  /** CSS hooks for tier-dependent overlays (e.g. the vignette is off on Low). */
+  private tagQuality(): void {
+    const app = document.getElementById('app');
+    if (!app) return;
+    app.classList.remove('q-low', 'q-medium', 'q-high');
+    app.classList.add(`q-${this.quality.name}`);
+  }
+
   private applyPendingQuality(): void {
     const p = this.qm.takePending();
     if (!p) return;
     this.quality = p;
     this.view.setQuality(p);
     this.view.renderer.setDprScale(1);
+    this.tagQuality();
   }
 
   get reduceMotion(): boolean {
@@ -394,6 +404,7 @@ export class Game {
       this.view.setQuality(this.quality);
       this.view.renderer.setDprScale(1);
       this.qm.setEnabled(this.autoQuality, this.quality);
+      this.tagQuality();
     }
     this.view.setReduceMotion(this.reduceMotion);
     this.ui.setTouchButtons(this.touchButtonsWanted());

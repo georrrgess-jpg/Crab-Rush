@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ToyLighting, makeToy } from './shaders/toy';
 
 /**
  * Shared materials. Characters, obstacles and props use matcap shading (zero lighting cost, glossy
@@ -60,10 +61,26 @@ export class Materials {
   readonly goldMatcap = makeMatcap({ ambient: 0.7, spec: 0.8, shadowTint: [0.95, 0.85, 0.7], lightTint: [1.15, 1.08, 0.9], rim: 0.25 });
   readonly glossMatcap = makeMatcap({ ambient: 0.55, spec: 0.7, shadowTint: [0.75, 0.82, 1.0], lightTint: [1.1, 1.06, 1.0], rim: 0.2 });
 
-  /** vertex-coloured clay: the default for everything solid */
-  readonly clay = new THREE.MeshMatcapMaterial({ matcap: this.clayMatcap, vertexColors: true });
-  readonly gloss = new THREE.MeshMatcapMaterial({ matcap: this.glossMatcap, vertexColors: true });
-  readonly gold = new THREE.MeshMatcapMaterial({ matcap: this.goldMatcap, vertexColors: true });
+  /** shared zone lighting for every toy material (UPDATE2_PLAN.md §1.2) */
+  readonly lighting = new ToyLighting();
+  /** vertex-coloured toy shading: the default for everything solid */
+  readonly clay = makeToy(this.lighting, { gloss: 0.12 });
+  readonly gloss = makeToy(this.lighting, { gloss: 0.55 });
+  readonly gold = makeToy(this.lighting, { gloss: 1.1, color: 0xfff2c8 });
+  /** double-sided variant for thin geometry (fronds, flags) */
+  readonly clay2 = makeToy(this.lighting, { side: THREE.DoubleSide });
+  private lite = false;
+
+  /** Low tier: drop rim and specular terms (one define, recompiles once). */
+  setLite(on: boolean): void {
+    if (on === this.lite) return;
+    this.lite = on;
+    for (const m of [this.clay, this.gloss, this.gold, this.clay2]) {
+      if (on) m.defines.TOY_LITE = '';
+      else delete m.defines.TOY_LITE;
+      m.needsUpdate = true;
+    }
+  }
   /** translucent bubble (shield) */
   readonly bubble = new THREE.MeshBasicMaterial({ color: 0xbff0ff, transparent: true, opacity: 0.28, depthWrite: false });
   readonly unlitVC = new THREE.MeshBasicMaterial({ vertexColors: true });
