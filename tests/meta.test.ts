@@ -7,10 +7,10 @@ import { PASS_TIERS, streakBonus, tierCost, tierFromXp, totalXpForTier, xpFor } 
 
 describe('xp', () => {
   it('awards XP from every source', () => {
-    expect(xpFor({ distance: 1234, shells: 101 })).toBe(123 + 20);
+    expect(xpFor({ distance: 1234, shells: 101 })).toBe(41 + 6);
     expect(xpFor({ goals: 2, stars: 3, firstClears: 1 })).toBe(100 + 120 + 60);
     expect(xpFor({ daily: true, streak: 1 })).toBe(150);
-    expect(xpFor({ daily: true, streak: 4, distance: 500 })).toBe(Math.round((150 + 50) * 1.3));
+    expect(xpFor({ daily: true, streak: 4, distance: 600 })).toBe(Math.round((150 + 20) * 1.3));
   });
   it('caps the streak bonus at +70%', () => {
     expect(streakBonus(1)).toBe(0);

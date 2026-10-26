@@ -10,12 +10,16 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - `node scripts/smoke.mjs [--no-build]`: end-to-end browser smoke test (shader compile check, controls, tutorial, shop, settings, pause, rotation, results)
 - `node scripts/perf.mjs [--no-build] [--tiers=high,medium,low]`: draw-call/triangle budget check per tier and zone (exit 1 if over)
 - `BALANCE=1 npx vitest run tests/balance.test.ts`: simulated-player balance report
-- Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`, `shaderCheck`, `budgets`.
+- Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`, `xp`, `level`, `daily`, `setDate`, `wear`, `unlockAll`, `shaderCheck`, `budgets`.
 
 ## Where things live (Update 2)
 - `src/meta/`: pure progression logic (XP & Sunny Pass, Wardrobe catalogue, Daily Tide date/streak). Like `src/sim/`, no `three` and no DOM.
 - `src/render/shaders/toy.ts`: toy shader family + outline; `src/render/anim/`: springs and tweens.
 - `src/ui/router.ts` + `src/ui/tokens.css`: screen stack and design tokens for the Phase D UI.
+- Screens: `src/ui/home.ts`, `results.ts`, `islands.ts` (map/intro/end), `shop.ts` (Wardrobe), `pass.ts` (Sunny Pass), `daily.ts` (Daily Tide), `settings.ts` (+ Stats). Styles in `src/ui/screens.css`.
+- Island Hop: `src/sim/levels.ts` (format + compiler), `src/sim/levelData.ts` (24 levels), `src/sim/objectives.ts` (stars), `src/meta/islands.ts` (gates, rewards).
+- Daily Tide modifiers live in the sim (`World.modifier`, spawner `themed()`), with knobs in `CFG.daily`.
+- Audio (`src/core/audio.ts`): SFX and music loops are synthesised; `setTrack('beach'|'island'|'chase')`, `setZone(z)` crossfades the zone layers, `setRumble(0..1)` drives the chase rumble.
 - Save format is v2 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
 
 ## Rules

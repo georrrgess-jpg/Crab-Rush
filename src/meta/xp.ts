@@ -17,8 +17,14 @@ export function streakBonus(streak: number): number {
   return Math.min(0.7, Math.max(0, streak - 1) * 0.1);
 }
 
+/**
+ * Metres / shells per XP point. Tuned in Phase G with the balance report: an average player reaches
+ * about tier 20 in 2–3 hours and tier 40 in about 10 (UPDATE2_PLAN.md §6.1).
+ */
+export const XP_PER = { distance: 30, shells: 15 };
+
 export function xpFor(s: XpSources): number {
-  let xp = Math.floor((s.distance ?? 0) / 10) + Math.floor((s.shells ?? 0) / 5) + (s.goals ?? 0) * 50 + (s.stars ?? 0) * 40 + (s.firstClears ?? 0) * 60;
+  let xp = Math.floor((s.distance ?? 0) / XP_PER.distance) + Math.floor((s.shells ?? 0) / XP_PER.shells) + (s.goals ?? 0) * 50 + (s.stars ?? 0) * 40 + (s.firstClears ?? 0) * 60;
   if (s.daily) xp += 150;
   if (s.daily && s.streak) xp = Math.round(xp * (1 + streakBonus(s.streak)));
   return xp;

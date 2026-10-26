@@ -549,7 +549,7 @@
 .pass-next .pn-art { width: 38px; height: 38px; flex: none; display: grid; place-items: center; }
 .pass-next .pn-art img, .pass-next .pn-art svg { width: 100%; height: 100%; object-fit: contain; }
 .pass-track { display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; padding: 12px 4px 16px; scroll-snap-type: x proximity; touch-action: pan-x; overscroll-behavior-x: contain; position: relative; }
-.pass-track::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 8px; background: repeating-linear-gradient(90deg, #f2cf7a 0 14px, transparent 14px 22px); border-radius: 4px; z-index: 0; pointer-events: none; min-width: 100%; }
+.pass-track::before { content: ''; position: absolute; left: 0; right: 0; top: 9px; height: 6px; background: repeating-linear-gradient(90deg, #f2cf7a 0 14px, transparent 14px 22px); border-radius: 4px; z-index: 0; pointer-events: none; min-width: 100%; }
 .pt { position: relative; z-index: 1; flex: none; width: 112px; min-height: 168px; scroll-snap-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 22px 8px 10px; border-radius: 18px; background: linear-gradient(180deg, #e8f6ff, #c7e6fb); border: 3px solid #fff; box-shadow: 0 4px 0 rgba(23, 63, 102, 0.18); text-align: center; }
 .pt.big { width: 132px; background: linear-gradient(180deg, #fff6c8, #ffd96a); border-color: #ffe9a0; box-shadow: 0 0 0 2px #ffb020, 0 4px 0 rgba(196, 82, 10, 0.35); }
 .pt.locked { filter: saturate(0.55); opacity: 0.82; }

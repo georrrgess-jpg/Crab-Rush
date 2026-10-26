@@ -1,8 +1,10 @@
 # Crab Dash
 
-A three-lane endless beach runner for iPhone, Chromebook and PC browsers. Scuttle down the sand as Sandy the crab: dodge sandcastles, beach balls, logs, gulls and waves, grab golden shells, unlock five more crabs and upgrade your power-ups. Runs last a couple of minutes and restart in one tap.
+A three-lane beach runner for iPhone, Chromebook and PC browsers. Scuttle down the sand as Sandy the crab: dodge sandcastles, beach balls, logs, gulls and waves, grab golden shells, and dress your crab up in the Wardrobe.
 
-Everything you see and hear is generated in code: the models, textures, sound effects and music. The whole game downloads in about 250 KB.
+**Update 2, "Sunny Season"**, adds toy-like shading with outlines and shadows, a fully rigged and animated crab, the Island Hop level mode, the Sunny Pass, the Daily Tide and the Wardrobe.
+
+Everything you see and hear is generated in code: the models, textures, sound effects and music. The whole game downloads in about 300 KB.
 
 ![Gameplay](docs/screenshots/m3-pier-desktop.png)
 
@@ -27,21 +29,28 @@ You can change lanes in mid-air. Hitting something head-on ends the run; clippin
 
 ### What's in the game
 
-- **One mode, Beach Run:** an endless run through four areas. Sunny Shore leads to Boardwalk Pier at 700 m, Tide Pool Cove at 1,600 m, and the endless Sunset Lagoon from 2,800 m.
+- **Beach Run:** an endless run through four areas. Sunny Shore leads to Boardwalk Pier at 700 m, Tide Pool Cove at 1,600 m, and the endless Sunset Lagoon from 2,800 m. Night falls past 4,000 m.
+- **Island Hop:** 24 handcrafted levels on four islands, each with three stars:
+  - reach the flag;
+  - grab all three golden sand dollars;
+  - meet the level's own challenge.
+
+  Stars open the next island. Four levels are chases where the Great Wave is right behind you.
+- **Daily Tide:** one course a day that is the same for everyone, with a rotating twist (Low Tide, Gull Day, Big Waves, Mirror Beach, Magnet Madness, Night Run, Ball Storm). Keep a daily streak going for bonus XP, a Flower Crown at 7 days and the Moonscuttle dance at 30. Streak savers cover a missed day.
+- **Sunny Pass:** a free 40-tier reward track. Every mode earns XP. Rewards include hats, trails, crab colours, dances, shells and Golden Shells (2× shells for one run).
+- **Wardrobe:** mix and match any body, 19 hats, 6 trails and 6 victory dances, and upgrade your power-ups.
 - **Obstacles:**
   - Tall ones (sandcastles, crates, boulders, gulls): dodge them.
   - Low ones (logs, deck chairs, urchins, beach balls): hop or dodge.
-  - Waves and gaps in the boardwalk: hop.
+  - Waves: hop.
+  - Island Hop adds bounce pads, tide pools and hourglass shells.
 - **Power-ups:**
   - Shell Magnet pulls shells toward you.
   - Bubble Shield absorbs one crash.
   - Wave Rider lets you surf over everything.
 
   Each has 4 upgrade levels.
-- **Progress:**
-  - Shells unlock crabs (Chill, Blossom, Skipper and Cap'n Pinch). Dazzle is earned by reaching Sunset Lagoon.
-  - Three goals are always active and pay bonus shells.
-  - A banner on the track marks your best distance.
+- **Accessibility:** Reduce Motion, left-handed layout, high-contrast outlines, swipe sensitivity and haptics settings.
 
 ## Turning on GitHub Pages (one time)
 
@@ -58,11 +67,12 @@ Requires Node 20.19+ or 22.12+.
 ```bash
 npm install
 npm run dev              # dev server (also reachable from a phone on the same network)
-npm test                 # unit tests: fairness solver, patterns, autopilot 30 seeds × 5 km, goals, economy, save, audio, quality
+npm test                 # unit tests: fairness solver, patterns, autopilot fairness (incl. every Daily Tide modifier), levels, goals, economy, save + v1→v2 migration, XP/pass/daily, audio, quality
 npm run build            # production build into dist/
 npm run shots -- <label> # real screenshots via Playwright into docs/screenshots/
-node scripts/smoke.mjs   # end-to-end smoke test in Chromium (controls, tutorial, shop, settings, pause, results)
-BALANCE=1 npx vitest run tests/balance.test.ts   # run length / shell income for simulated novice, average and skilled players
+node scripts/smoke.mjs   # end-to-end smoke test in Chromium (controls, tutorial, wardrobe, pass, daily, island hop, settings, pause, results, music)
+node scripts/perf.mjs    # draw-call / triangle budgets per quality tier and zone
+BALANCE=1 npx vitest run tests/balance.test.ts   # run length, shell income and Island Hop attempts for simulated novice, average and skilled players
 ```
 
 ### Debug URL flags
@@ -80,20 +90,23 @@ BALANCE=1 npx vitest run tests/balance.test.ts   # run length / shell income for
 ### How it's built
 
 - **Three.js + TypeScript + Vite**, with no other runtime dependencies besides two self-hosted fonts.
-- **`src/sim/`** is the pure simulation and never imports three.js. It covers player physics, collisions, the spawner and the goals and economy logic.
+- **`src/sim/`** is the pure simulation and never imports three.js. It covers player physics, collisions, the spawner, Island Hop levels and objectives, and the goals and economy logic.
   - The **pattern library** has 33 handcrafted obstacle patterns.
-  - A **fairness solver** checks every pattern against human reaction-time rules, and again at runtime before it is placed. The autopilot test drives the real simulation for 150 km without an unavoidable crash.
+  - A **fairness solver** checks every pattern against human reaction-time rules, and again at runtime before it is placed. Autopilot tests drive the real simulation for hundreds of kilometres, across every level and Daily Tide modifier, without an unavoidable crash.
+- **`src/meta/`** is pure progression logic: XP and the Sunny Pass, the Wardrobe catalogue, Daily Tide dates and streaks, and island gates.
 - **`src/render/`** draws the game:
-  - Matcap "toy" shading with vertex colours.
-  - Scenery tiles merged into a few draw calls, plus instanced shells, shadows and particles.
-  - Sky and ocean shaders.
+  - A "toy" shader family with outlines, shadow maps on High, and wind.
+  - A 37-bone rigged crab with springs, emotes and dances.
+  - Scenery tiles merged into a few draw calls, plus instanced shells, shadows and particles; models switch to low detail past 50 m.
+  - Sky and ocean shaders, and a day-to-night cycle.
   - Auto quality that scales resolution, and between runs the graphics tier.
-- **`src/ui/`** is the DOM/CSS interface. **`src/core/`** has the fixed 120 Hz loop, input, save, audio and quality code.
-- Every tunable lives in **`src/config.ts`**. The design and the plan are in **[`PLAN.md`](PLAN.md)**.
+- **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v2, with v1 migration), synthesised audio and quality code.
+- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2).
 
 ### Performance budgets (measured at the busiest moments)
 
 | Tier | Draw calls | Triangles | Budget |
 |---|---|---|---|
-| High | ≤ 60 | ≤ 80k | 100 / 150k |
-| Low | ≤ 57 | ≤ 56k | 60 / 60k |
+| High | ≤ 71 | ≤ 113k | 100 / 150k |
+| Medium | ≤ 63 | ≤ 93k | 80 / 100k |
+| Low | ≤ 39 | ≤ 49k | 60 / 60k |

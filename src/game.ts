@@ -101,6 +101,7 @@ export class Game {
   /** test hook: a fixed "now" (ms) for Daily Tide dates */
   private fakeNow: number | null = null;
   private tierToast = 0;
+  private rumbleT = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.save = new SaveStore();
@@ -170,7 +171,7 @@ export class Game {
           // keep the v1 field in step so economy / migration stay consistent
           if (slot === 'bodies' && d.crabs.owned.includes(id)) d.crabs.selected = id;
           this.save.save();
-          this.audio.play('tap');
+          this.audio.play('equip');
           this.haptics.play('light');
           this.previewItem(slot, id);
         }
@@ -225,8 +226,9 @@ export class Game {
         else this.openMap();
       },
       map: () => this.openMap(),
-      star: () => {
-        this.audio.play('goal');
+      star: (i: number) => {
+        // three rising stamps
+        this.audio.play('star', { pitch: i * 4 });
         this.haptics.play('light');
       },
     });
@@ -347,6 +349,9 @@ export class Game {
     this.currentLevel = null;
     this.setModifierView(null);
     this.dailyScreen.stop();
+    this.audio.setTrack('beach');
+    this.audio.setZone(0);
+    this.audio.setRumble(0);
     this.ui.setLevelHUD(null);
     this.levelEnd.hide();
     this.applyPendingQuality();
@@ -394,6 +399,8 @@ export class Game {
     this.world.start(opts);
     this.runModifier = opts.modifier ?? null;
     this.setModifierView(this.runModifier);
+    this.audio.setTrack('beach');
+    this.audio.setZone(this.world.zone);
     // Golden Shell: spent at the start of a Beach Run (not on Daily Tide)
     this.runBoost = false;
     if (!this.dailyRun && this.boostOn && this.save.data.boosts > 0) {
@@ -510,6 +517,7 @@ export class Game {
   }
 
   private showPass(): void {
+    this.audio.play('whoosh');
     this.returnTo = 'title';
     this.state = 'pass';
     this.ui.home.hide();
@@ -529,7 +537,7 @@ export class Game {
     }
     if (got.length === 0) return;
     this.save.save();
-    this.audio.play('levelUp');
+    this.audio.play('claim');
     this.haptics.play('success');
     const items = got.filter((r) => r.kind === 'item');
     const shells = got.reduce((a, r) => a + (r.kind === 'shells' ? r.amount : 0), 0);
@@ -591,6 +599,7 @@ export class Game {
   }
 
   private showDaily(): void {
+    this.audio.play('whoosh');
     this.returnTo = 'title';
     this.state = 'daily';
     this.ui.home.hide();
@@ -681,6 +690,7 @@ export class Game {
   }
 
   private showMap(): void {
+    this.audio.play('whoosh');
     this.currentLevel = null;
     this.returnTo = 'title';
     this.state = 'map';
@@ -751,6 +761,7 @@ export class Game {
     this.introT = withIntro ? 0 : 1;
     this.state = withIntro ? 'intro' : 'running';
     this.audio.setMusicMode('run');
+    this.audio.setTrack(cl.def.chase ? 'chase' : 'island');
     this.save.data.stats.runs++;
     this.ui.toast(cl.def.name, { sub: cl.def.chase ? 'Outrun the Great Wave!' : 'Grab all 3 sand dollars', kind: 'gold', life: 2.2 });
   }
@@ -797,7 +808,7 @@ export class Game {
     d.stats.totalDistance += w.distance;
     let reward = { stars: (d.levels[id]?.stars ?? [false, false, false]) as [boolean, boolean, boolean], newStars: 0, firstClear: false, shells: 0, xp: 0, islandCompleted: null as number | null, goldCrab: false };
     if (success) reward = applyLevelResult(d.levels, id, earned, w.levelStats.time);
-    const xp = reward.xp + Math.floor(w.stats.shells / 5);
+    const xp = reward.xp + xpFor({ shells: w.stats.shells });
     d.shells += reward.shells;
     d.xp += xp;
     let islandReward: string | null = null;
@@ -831,8 +842,9 @@ export class Game {
       },
       this.reduceMotion,
     );
+    this.audio.setRumble(0);
     if (success) {
-      this.audio.play('newBest');
+      this.audio.play('win');
       this.haptics.play('success');
     }
   }
@@ -895,6 +907,7 @@ export class Game {
     this.returnTo = 'title';
     this.resetWorldToBeach();
     this.state = 'shop';
+    this.audio.play('whoosh');
     this.shop.open(this.save.data);
     this.ui.showExtra(this.shop.el);
     this.view.shopSpin = 0;
@@ -1234,6 +1247,7 @@ export class Game {
       this.haptics.play('success');
     }
     for (const id of unlocked) this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold', sub: 'Find them in the Wardrobe', life: 3 });
+    if (daily?.firstToday) setTimeout(() => this.audio.play('streakFlame'), 900);
     if (daily?.usedSavers) this.ui.toast('Streak saved!', { kind: 'green', sub: `A streak saver kept your ${daily.streak}-day streak alive`, life: 3 });
     if (daily?.milestone === 7) this.ui.toast('Flower Crown unlocked!', { kind: 'gold', sub: '7-day Daily Tide streak', life: 3.2 });
     if (daily?.milestone === 30) this.ui.toast('Moonscuttle unlocked!', { kind: 'gold', sub: '30-day Daily Tide streak', life: 3.2 });
@@ -1280,6 +1294,13 @@ export class Game {
         // "avoid" rules show green while intact; progress rules turn green once reached
         const ok = progressRule ? ruleState(w.level.def.star3, { ...w.levelStats, finished: true }).met : !rs.lost;
         this.ui.updateLevelHUD((w.dist - w.levelStart) / w.level.length, w.levelStats.dollars, ruleHud(w.level.def.star3, w.levelStats), ok, rs.lost, w.chaseGap);
+        // the Great Wave rumbles louder as it closes in
+        this.rumbleT -= frameDt;
+        if (this.rumbleT <= 0) {
+          this.rumbleT = 0.1;
+          const live = w.chaseGap !== null && (this.state === 'running' || this.state === 'intro');
+          this.audio.setRumble(live ? 1 - Math.min(1, (w.chaseGap as number) / CFG.island.chase.maxGap) : 0);
+        }
       }
       this.goalCheckT -= frameDt;
       if (this.goalCheckT <= 0 && (this.state === 'running' || this.state === 'intro')) {
@@ -1320,7 +1341,7 @@ export class Game {
     for (const ev of events) {
       switch (ev.t) {
         case 'shell':
-          this.audio.play(ev.big ? 'bigShell' : 'shell', { streak: ev.streak });
+          this.audio.play(ev.big ? 'bigShell' : 'shell', { streak: ev.streak, pan: ev.x * 0.12 });
           if (!this.reduceMotion && !this.skipRender) {
             const p = this.view.toScreen(ev.x, ev.y + 0.6, 0);
             this.ui.flyShell(this.runModifier === 'mirror' ? this.canvas.clientWidth - p.x : p.x, p.y, ev.big);
@@ -1337,7 +1358,7 @@ export class Game {
           this.audio.play(ev.hard ? 'slam' : 'land');
           break;
         case 'bump':
-          this.audio.play('bump');
+          this.audio.play('bump', { pan: ev.x * 0.15 });
           this.haptics.play('medium');
           break;
         case 'crash':
@@ -1357,6 +1378,7 @@ export class Game {
           break;
         case 'zoneEnter':
           this.audio.play('zone');
+          this.audio.setZone(ev.zone);
           this.ui.toast(`New area: ${CFG.zoneNames[ev.zone]}!`, { kind: 'green', big: true, sub: ev.first ? `First visit bonus +${CFG.zoneBonus} shells` : undefined, life: 2.6 });
           if (ev.zone === 3 && !this.save.data.crabs.owned.includes('dazzle')) this.ui.toast('Dazzle unlocked!', { kind: 'gold', sub: 'A sparkly new crab', life: 3 });
           break;
@@ -1369,7 +1391,7 @@ export class Game {
           this.ui.toast('NEW BEST!', { kind: 'gold', big: true, life: 2.2 });
           break;
         case 'dollar':
-          this.audio.play('goal');
+          this.audio.play('dollar', { pan: ev.x * 0.12 });
           this.haptics.play('medium');
           break;
         case 'hourglass':
@@ -1377,10 +1399,13 @@ export class Game {
           this.ui.floater('Wave pushed back!', 0.5, 0.36);
           break;
         case 'pad':
-          this.audio.play('hop');
+          this.audio.play('boing');
           break;
         case 'tidepool':
-          this.audio.play('land');
+          this.audio.play('splash');
+          break;
+        case 'gullDive':
+          this.audio.play('gull', { pan: ev.x * 0.15 });
           break;
         case 'tutorial':
           if (ev.step === 'complete') {

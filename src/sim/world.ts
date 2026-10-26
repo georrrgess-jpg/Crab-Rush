@@ -482,7 +482,10 @@ export class World {
       if (e.kind === 'gull') {
         const rel = e.wz - this.dist;
         const ttp = rel / Math.max(this.speed, 1);
-        if (e.state === 0 && ttp <= CFG.gull.warnTime) e.state = 1;
+        if (e.state === 0 && ttp <= CFG.gull.warnTime) {
+          e.state = 1;
+          this.events.push({ t: 'gullDive', x: e.x });
+        }
         if (e.state === 1) {
           const f = Math.min(1, Math.max(0, (CFG.gull.warnTime - ttp) / (CFG.gull.warnTime - CFG.gull.landTime)));
           e.y = CFG.gull.height * (1 - f * f);

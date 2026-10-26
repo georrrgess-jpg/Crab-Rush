@@ -195,6 +195,8 @@ try {
     await page.goto(`${base}?shots&quality=${quality}&reset`, { waitUntil: 'load' });
     await page.waitForFunction(() => window.__crab && window.__crab.ready, null, { timeout: 30000 });
     await page.evaluate(() => document.fonts.ready.then(() => true));
+    // the game loop is manual in shots mode; keep frames flowing so CSS animations advance
+    await page.evaluate(() => { const f = () => requestAnimationFrame(f); f(); });
     log(`${v}: ready`);
     // shop portraits render in the background after boot (async GPU readback)
     await page.waitForFunction(() => window.__crab.game.shop.thumbs.length > 0, null, { timeout: 15000 }).catch(() => {});
@@ -202,6 +204,13 @@ try {
       log(`${v}: scene ${s}`);
       await SCENES[s](page);
       await page.waitForTimeout(250);
+      // software GL in headless Chromium produces frames slowly: settle finite UI animations
+      await page.evaluate(() => {
+        for (const a of document.getAnimations()) {
+          const it = a.effect?.getTiming().iterations;
+          if (it !== Infinity && a.animationName && /^(rt-|cardin|risein)/.test(a.animationName)) a.finish();
+        }
+      });
       const file = path.join(outDir, `${label}-${s}-${v}.png`);
       await page.screenshot({ path: file });
       files.push(file);

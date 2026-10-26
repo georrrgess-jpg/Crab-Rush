@@ -6,7 +6,9 @@
 export type Sfx =
   | 'shell' | 'bigShell' | 'lane' | 'hop' | 'land' | 'slam' | 'bump' | 'crash' | 'powerup' | 'shieldPop'
   | 'rider' | 'closeShave' | 'goal' | 'newBest' | 'zone' | 'tap' | 'purchase' | 'countdown' | 'go' | 'milestone' | 'deny'
-  | 'tick' | 'pop' | 'levelUp';
+  | 'tick' | 'pop' | 'levelUp'
+  // Update 2 (UPDATE2_PLAN.md §7)
+  | 'dollar' | 'win' | 'star' | 'claim' | 'equip' | 'gull' | 'boing' | 'splash' | 'whoosh' | 'streakFlame';
 
 type Gen = (sr: number) => Float32Array;
 
@@ -185,6 +187,74 @@ export const SFX: Record<Sfx, Gen> = {
     bell(sr, midiHz(96), 0.35, x, 0.08, 1);
     return normalize(x, 0.45);
   },
+  /** sand dollar: a sparkling three-bell chord with a shimmer */
+  dollar: (sr) => {
+    const x = buf(sr, 0.9);
+    bell(sr, midiHz(88), 0.6, x, 0, 1);
+    bell(sr, midiHz(92), 0.6, x, 0.04, 0.8);
+    bell(sr, midiHz(95), 0.7, x, 0.08, 0.8);
+    bell(sr, midiHz(100), 0.5, x, 0.16, 0.5);
+    const shimmer = svf(noise(sr, 0.9, (t) => Math.min(1, t * 20) * Math.exp(-t * 5) * 0.25, 21), sr, () => 9000, 0.4, 'hp');
+    return normalize(mix(x, shimmer), 0.7);
+  },
+  /** level win fanfare: brassy arpeggio and a held chord */
+  win: (sr) => {
+    const x = buf(sr, 1.45);
+    const notes: [number, number, number][] = [
+      [67, 0, 0.12], [72, 0.1, 0.12], [76, 0.2, 0.12], [79, 0.3, 0.12], [84, 0.42, 0.9], [76, 0.42, 0.9], [79, 0.42, 0.9],
+    ];
+    for (const [m, at, d] of notes) {
+      const f = midiHz(m);
+      const n = mix(tone(sr, d, () => f * (1 + Math.sin(at * 9) * 0.001), 'square', (t) => Math.min(1, t * 60) * Math.exp(-t * 2.2) * 0.3), tone(sr, d, () => f, 'tri', (t) => Math.exp(-t * 2.2)));
+      const o = Math.floor(at * sr);
+      for (let k = 0; k < n.length && o + k < x.length; k++) x[o + k] = (x[o + k] as number) + (n[k] as number);
+    }
+    return normalize(x, 0.6);
+  },
+  /** star stamp: thump + bell (pitched up per star via playbackRate) */
+  star: (sr) => {
+    const thump = tone(sr, 0.15, (t) => 180 - t * 500, 'sine', (t) => Math.exp(-t * 26));
+    const x = buf(sr, 0.6);
+    bell(sr, midiHz(84), 0.5, x, 0.02, 1);
+    bell(sr, midiHz(91), 0.4, x, 0.05, 0.6);
+    return normalize(mix(thump, x), 0.65);
+  },
+  claim: (sr) => {
+    const x = buf(sr, 0.8);
+    [76, 81, 85, 88].forEach((m, i) => bell(sr, midiHz(m), 0.4, x, i * 0.05, 0.9));
+    const sweep = svf(noise(sr, 0.35, (t) => Math.sin(Math.min(1, t / 0.35) * Math.PI) * 0.5, 13), sr, (t) => 2000 + t * 18000, 0.5, 'bp');
+    return normalize(mix(x, sweep), 0.6);
+  },
+  /** wardrobe equip: soft fabric swish and a click */
+  equip: (sr) => normalize(mix(svf(noise(sr, 0.16, (t) => Math.sin(Math.min(1, t / 0.16) * Math.PI), 17), sr, (t) => 1200 + t * 9000, 0.7, 'bp'), tone(sr, 0.05, () => 1800, 'sine', (t) => (t < 0.11 ? 0 : 1) * Math.exp(-t * 60))), 0.4),
+  /** gull squawk: a wobbling, nasal falling call */
+  gull: (sr) => {
+    const x = buf(sr, 0.5);
+    let ph = 0;
+    for (let i = 0; i < x.length; i++) {
+      const t = i / sr;
+      const call = t < 0.22 ? t / 0.22 : 1 - (t - 0.22) / 0.28;
+      const f = 1400 - t * 1300 + Math.sin(t * 70) * 120;
+      ph += f / sr;
+      const p = ph % 1;
+      x[i] = (p < 0.3 ? 1 : -0.4) * Math.max(0, call) * Math.min(1, t * 200);
+    }
+    return normalize(svf(x, sr, () => 2400, 0.3, 'bp'), 0.4);
+  },
+  /** bounce pad: rubbery rising boing */
+  boing: (sr) => normalize(tone(sr, 0.5, (t) => 160 + t * 900 + Math.sin(t * 70) * (80 * Math.exp(-t * 6)), 'sine', (t) => Math.exp(-t * 6)), 0.55),
+  /** tide pool splash */
+  splash: (sr) => normalize(mix(svf(noise(sr, 0.5, (t) => Math.min(1, t * 80) * Math.exp(-t * 9), 19), sr, (t) => 5000 - t * 7000, 0.6, 'lp'), tone(sr, 0.12, (t) => 700 - t * 2500, 'sine', (t) => Math.exp(-t * 30))), 0.55),
+  /** UI screen transition */
+  whoosh: (sr) => normalize(svf(noise(sr, 0.28, (t) => Math.sin(Math.min(1, t / 0.28) * Math.PI) ** 2, 23), sr, (t) => 400 + t * 7000, 1.2, 'bp'), 0.35),
+  /** daily streak flame: crackle and a warm swell */
+  streakFlame: (sr) => {
+    const r = noiseGen(29);
+    const crackle = buf(sr, 0.7);
+    for (let i = 0; i < crackle.length; i++) crackle[i] = r() > 0.995 ? r() : 0;
+    const swell = tone(sr, 0.7, (t) => 220 + t * 220, 'tri', (t) => Math.sin(Math.min(1, t / 0.7) * Math.PI) * 0.5);
+    return normalize(mix(svf(crackle, sr, () => 3000, 0.5, 'hp'), swell), 0.5);
+  },
   deny: (sr) => normalize(tone(sr, 0.14, () => 170, 'square', (t) => Math.exp(-t * 10)), 0.3),
 };
 
@@ -237,29 +307,31 @@ function toBuffer(ctx: BaseAudioContext, x: Float32Array): AudioBuffer {
   return b;
 }
 
-/** Render the 8-bar beach loop. */
-async function renderMusic(sampleRate: number): Promise<AudioBuffer | null> {
+export type MusicLoop = 'beach' | 'whistle' | 'steel' | 'pad' | 'island' | 'chase';
+/** loops that play in sync on top of the beach loop, one per zone flavour */
+const LAYERS: MusicLoop[] = ['whistle', 'steel', 'pad'];
+const LOOP_BPM: Record<MusicLoop, number> = { beach: 104, whistle: 104, steel: 104, pad: 104, island: 122, chase: 140 };
+const MUSIC_SR = 32000;
+
+/** Render one music loop (8 bars) with an OfflineAudioContext: no CPU cost during play. */
+async function renderMusic(sampleRate: number, kind: MusicLoop = 'beach'): Promise<AudioBuffer | null> {
   const OAC = (globalThis as unknown as { OfflineAudioContext?: typeof OfflineAudioContext; webkitOfflineAudioContext?: typeof OfflineAudioContext }).OfflineAudioContext ??
     (globalThis as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
   if (!OAC) return null;
-  const bpm = 104;
+  const bpm = LOOP_BPM[kind];
   const beat = 60 / bpm;
   const bars = 8;
   const len = bars * 4 * beat;
-  const sr = Math.min(sampleRate, 44100);
+  const sr = Math.min(sampleRate, MUSIC_SR);
+  const layer = LAYERS.includes(kind);
+  const chans = layer ? 1 : 2;
   const tail = 2; // seconds rendered past the loop end and folded back into the start (seamless loop)
-  const ctx = new OAC(2, Math.ceil((len + tail) * sr), sr);
+  const ctx = new OAC(chans, Math.ceil((len + tail) * sr), sr);
   const out = ctx.createGain();
   out.gain.value = 0.9;
   out.connect(ctx.destination);
 
   const C4 = 60;
-  const pl = toBuffer(ctx, pluck(sr, midiHz(C4), 1.4));
-  const mar = toBuffer(ctx, marimba(sr, midiHz(72)));
-  const bass = toBuffer(ctx, bassNote(sr, midiHz(48)));
-  const shaker = toBuffer(ctx, svf(noise(sr, 0.07, (t) => Math.exp(-t * 60), 11), sr, () => 7000, 0.6, 'hp'));
-  const kick = toBuffer(ctx, tone(sr, 0.18, (t) => 120 - t * 350, 'sine', (t) => Math.exp(-t * 22)));
-
   const play = (b: AudioBuffer, at: number, semis: number, gain: number, pan = 0): void => {
     const s = ctx.createBufferSource();
     s.buffer = b;
@@ -267,7 +339,7 @@ async function renderMusic(sampleRate: number): Promise<AudioBuffer | null> {
     const g = ctx.createGain();
     g.gain.value = gain;
     s.connect(g);
-    if (pan !== 0 && ctx.createStereoPanner) {
+    if (pan !== 0 && chans === 2 && ctx.createStereoPanner) {
       const p = ctx.createStereoPanner();
       p.pan.value = pan;
       g.connect(p);
@@ -275,52 +347,160 @@ async function renderMusic(sampleRate: number): Promise<AudioBuffer | null> {
     } else g.connect(out);
     s.start(at);
   };
+  const shaker = (): AudioBuffer => toBuffer(ctx, svf(noise(sr, 0.07, (t) => Math.exp(-t * 60), 11), sr, () => 7000, 0.6, 'hp'));
+  const kick = (): AudioBuffer => toBuffer(ctx, tone(sr, 0.18, (t) => 120 - t * 350, 'sine', (t) => Math.exp(-t * 22)));
 
-  // chords (ukulele voicings as MIDI notes) and bass roots: C G Am F
-  const chords = [
-    [67, 60, 64, 72],
-    [67, 62, 67, 71],
-    [69, 60, 64, 69],
-    [69, 60, 65, 69],
-  ];
-  const roots = [48, 43, 45, 41];
-  // strum pattern in 8ths: D . D U . U D U  (1 = down, -1 = up, 0 = rest)
-  const strum = [1, 0, 1, -1, 0, -1, 1, -1];
-  for (let bar = 0; bar < bars; bar++) {
-    const ci = bar % 4;
-    const chord = chords[ci] as number[];
-    const t0 = bar * 4 * beat;
-    strum.forEach((d, i) => {
-      if (d === 0) return;
-      const at = t0 + i * (beat / 2);
-      const notes = d > 0 ? chord : [...chord].reverse();
-      notes.forEach((m, k) => play(pl, at + k * 0.012, m - C4, d > 0 ? 0.16 : 0.1, -0.25));
-    });
-    // bass on 1 and 3, pickup on the "and" of 4
-    const root = roots[ci] as number;
-    play(bass, t0, root - 48, 0.55);
-    play(bass, t0 + 2 * beat, root - 48 + (ci === 1 ? 0 : 7), 0.45);
-    play(bass, t0 + 3.5 * beat, root - 48 + 12, 0.3);
-    for (let s = 0; s < 16; s++) play(shaker, t0 + s * (beat / 4), 0, s % 2 === 1 ? 0.12 : 0.05, 0.35);
-    play(kick, t0, 0, 0.35);
-    play(kick, t0 + 2 * beat, 0, 0.28);
+  if (kind === 'beach') {
+    const pl = toBuffer(ctx, pluck(sr, midiHz(C4), 1.4));
+    const mar = toBuffer(ctx, marimba(sr, midiHz(72)));
+    const bass = toBuffer(ctx, bassNote(sr, midiHz(48)));
+    const sh = shaker();
+    const kk = kick();
+    // chords (ukulele voicings as MIDI notes) and bass roots: C G Am F
+    const chords = [
+      [67, 60, 64, 72],
+      [67, 62, 67, 71],
+      [69, 60, 64, 69],
+      [69, 60, 65, 69],
+    ];
+    const roots = [48, 43, 45, 41];
+    // strum pattern in 8ths: D . D U . U D U  (1 = down, -1 = up, 0 = rest)
+    const strum = [1, 0, 1, -1, 0, -1, 1, -1];
+    for (let bar = 0; bar < bars; bar++) {
+      const ci = bar % 4;
+      const chord = chords[ci] as number[];
+      const t0 = bar * 4 * beat;
+      strum.forEach((d, i) => {
+        if (d === 0) return;
+        const at = t0 + i * (beat / 2);
+        const notes = d > 0 ? chord : [...chord].reverse();
+        notes.forEach((m, k) => play(pl, at + k * 0.012, m - C4, d > 0 ? 0.16 : 0.1, -0.25));
+      });
+      // bass on 1 and 3, pickup on the "and" of 4
+      const root = roots[ci] as number;
+      play(bass, t0, root - 48, 0.55);
+      play(bass, t0 + 2 * beat, root - 48 + (ci === 1 ? 0 : 7), 0.45);
+      play(bass, t0 + 3.5 * beat, root - 48 + 12, 0.3);
+      for (let k = 0; k < 16; k++) play(sh, t0 + k * (beat / 4), 0, k % 2 === 1 ? 0.12 : 0.05, 0.35);
+      play(kk, t0, 0, 0.35);
+      play(kk, t0 + 2 * beat, 0, 0.28);
+    }
+    // marimba melody: [bar, eighth, midi]
+    const mel: [number, number, number][] = [
+      [0, 0, 76], [0, 1, 79], [0, 2, 81], [0, 3, 79], [0, 4, 76], [0, 6, 74],
+      [1, 0, 74], [1, 2, 79], [1, 4, 83], [1, 5, 81], [1, 6, 79],
+      [2, 0, 84], [2, 2, 81], [2, 4, 79], [2, 5, 76],
+      [3, 0, 77], [3, 2, 81], [3, 4, 79],
+      [4, 0, 76], [4, 1, 79], [4, 2, 84], [4, 4, 81], [4, 5, 79], [4, 6, 76],
+      [5, 0, 74], [5, 1, 76], [5, 2, 79], [5, 4, 74], [5, 6, 71],
+      [6, 0, 69], [6, 1, 72], [6, 2, 76], [6, 4, 79], [6, 6, 81],
+      [7, 0, 79], [7, 2, 77], [7, 4, 76], [7, 6, 74],
+    ];
+    for (const [bar, e, m] of mel) play(mar, bar * 4 * beat + e * (beat / 2), m - 72, 0.32, 0.2);
+  } else if (kind === 'whistle') {
+    // Boardwalk Pier: a breezy whistled counter-melody (sine + vibrato), answering the marimba
+    const wh = toBuffer(ctx, tone(sr, 0.9, (t) => midiHz(84) * (1 + Math.sin(t * 34) * 0.012 * Math.min(1, t * 4)), 'sine', (t) => Math.min(1, t * 18) * Math.exp(-t * 2.2)));
+    const line: [number, number, number][] = [
+      [0, 6, 84], [1, 0, 86], [1, 3, 88], [2, 6, 88], [3, 0, 89], [3, 3, 88], [3, 5, 86],
+      [4, 6, 84], [5, 0, 86], [5, 3, 83], [6, 6, 81], [7, 0, 84], [7, 4, 83], [7, 6, 79],
+    ];
+    for (const [bar, e, m] of line) play(wh, bar * 4 * beat + e * (beat / 2), m - 84, 0.38);
+  } else if (kind === 'steel') {
+    // Tide Pool Cove: rolling steel-drum arpeggios in 16ths over the chords
+    const steel = buf(sr, 0.5);
+    const f = midiHz(72);
+    for (let i = 0; i < steel.length; i++) {
+      const t = i / sr;
+      steel[i] = Math.sin(TAU * f * t + Math.sin(TAU * f * 1.5 * t) * 2 * Math.exp(-t * 7)) * Math.exp(-t * 7) * Math.min(1, t * 600);
+    }
+    const sb = toBuffer(ctx, steel);
+    const arps = [[72, 76, 79, 84], [71, 74, 79, 83], [72, 76, 81, 84], [72, 77, 81, 84]];
+    for (let bar = 0; bar < bars; bar++) {
+      const a = arps[bar % 4] as number[];
+      for (let k = 0; k < 16; k++) {
+        if (k % 8 === 7) continue;
+        const m = a[[0, 1, 2, 3, 2, 1, 2, 3][k % 8] as number] as number;
+        play(sb, bar * 4 * beat + k * (beat / 4), m - 72, k % 4 === 0 ? 0.24 : 0.15);
+      }
+    }
+  } else if (kind === 'pad') {
+    // Sunset Lagoon: warm slow pad swells under everything
+    const padNote = (m: number): Float32Array => {
+      const x = buf(sr, 4 * beat * 1.05);
+      const fq = midiHz(m);
+      for (let i = 0; i < x.length; i++) {
+        const t = i / sr;
+        const env = Math.min(1, t / 0.8) * Math.min(1, (x.length / sr - t) / 0.6);
+        x[i] = (Math.sin(TAU * fq * t) + 0.35 * Math.sin(TAU * fq * 2.003 * t) + 0.2 * Math.sin(TAU * fq * 0.998 * t + 1)) * env;
+      }
+      return x;
+    };
+    const chords = [[60, 64, 67], [59, 62, 67], [57, 60, 64], [57, 60, 65]];
+    const cache = new Map<number, AudioBuffer>();
+    for (let bar = 0; bar < bars; bar++) {
+      for (const m of chords[bar % 4] as number[]) {
+        if (!cache.has(m)) cache.set(m, toBuffer(ctx, padNote(m)));
+        play(cache.get(m) as AudioBuffer, bar * 4 * beat, 0, 0.13);
+      }
+    }
+  } else if (kind === 'island') {
+    // Island Hop: upbeat and bouncy: octave-jumping bass, offbeat plucks, claps and a sunny whistle-marimba tune in G
+    const pl = toBuffer(ctx, pluck(sr, midiHz(C4), 0.6));
+    const mar = toBuffer(ctx, marimba(sr, midiHz(72)));
+    const bass = toBuffer(ctx, tone(sr, 0.22, () => midiHz(48), 'tri', (t) => Math.exp(-t * 9) * Math.min(1, t * 300)));
+    const clap = toBuffer(ctx, svf(noise(sr, 0.12, (t) => (Math.exp(-t * 40) + (t > 0.012 ? Math.exp(-(t - 0.012) * 45) : 0)) * 0.7, 31), sr, () => 1800, 0.8, 'bp'));
+    const sh = shaker();
+    const kk = kick();
+    const roots = [43, 48, 40, 38]; // G C Em D
+    const chords = [[67, 71, 74], [67, 72, 76], [67, 71, 76], [66, 69, 74]];
+    for (let bar = 0; bar < bars; bar++) {
+      const ci = bar % 4;
+      const t0 = bar * 4 * beat;
+      const r = roots[ci] as number;
+      for (let e = 0; e < 8; e++) play(bass, t0 + e * (beat / 2), r - 48 + (e % 2 === 1 ? 12 : 0), e % 2 === 0 ? 0.55 : 0.38);
+      for (let q = 0; q < 4; q++) for (const m of chords[ci] as number[]) play(pl, t0 + q * beat + beat / 2, m - C4, 0.09, -0.3);
+      play(clap, t0 + beat, 0, 0.45, 0.1);
+      play(clap, t0 + 3 * beat, 0, 0.45, 0.1);
+      play(kk, t0, 0, 0.4);
+      play(kk, t0 + 2 * beat, 0, 0.32);
+      for (let k = 0; k < 8; k++) play(sh, t0 + k * (beat / 2) + beat / 4, 0, 0.08, 0.35);
+    }
+    const mel: [number, number, number][] = [
+      [0, 0, 79], [0, 2, 83], [0, 3, 81], [0, 4, 79], [0, 6, 74],
+      [1, 0, 76], [1, 2, 79], [1, 4, 84], [1, 6, 83],
+      [2, 0, 83], [2, 1, 81], [2, 2, 79], [2, 4, 76], [2, 6, 79],
+      [3, 0, 78], [3, 2, 81], [3, 4, 86], [3, 6, 84],
+      [4, 0, 83], [4, 1, 84], [4, 2, 86], [4, 4, 83], [4, 6, 79],
+      [5, 0, 84], [5, 2, 88], [5, 4, 84], [5, 6, 79],
+      [6, 0, 83], [6, 2, 79], [6, 3, 76], [6, 4, 79], [6, 6, 83],
+      [7, 0, 81], [7, 2, 78], [7, 4, 74], [7, 6, 79],
+    ];
+    for (const [bar, e, m] of mel) play(mar, bar * 4 * beat + e * (beat / 2), m - 72, 0.34, 0.2);
+  } else {
+    // Great Wave chase: driving and tense: pulsing 8th bass in A minor, toms, a rising ostinato
+    const bass = toBuffer(ctx, tone(sr, 0.2, () => midiHz(45), 'square', (t) => Math.exp(-t * 10) * Math.min(1, t * 400) * 0.6));
+    const tom = toBuffer(ctx, tone(sr, 0.3, (t) => 140 - t * 160, 'sine', (t) => Math.exp(-t * 12)));
+    const hat = toBuffer(ctx, svf(noise(sr, 0.04, (t) => Math.exp(-t * 90), 37), sr, () => 9000, 0.5, 'hp'));
+    const ost = toBuffer(ctx, tone(sr, 0.16, () => midiHz(69), 'tri', (t) => Math.exp(-t * 14)));
+    const kk = kick();
+    const roots = [45, 41, 48, 43]; // Am F C G
+    const pattern = [0, 7, 12, 7, 0, 7, 12, 15];
+    for (let bar = 0; bar < bars; bar++) {
+      const ci = bar % 4;
+      const t0 = bar * 4 * beat;
+      const r = roots[ci] as number;
+      for (let e = 0; e < 8; e++) play(bass, t0 + e * (beat / 2), r - 45, e % 2 === 0 ? 0.5 : 0.35, -0.15);
+      for (let k = 0; k < 16; k++) play(hat, t0 + k * (beat / 4), 0, k % 4 === 2 ? 0.16 : 0.07, 0.4);
+      for (let q = 0; q < 4; q++) play(kk, t0 + q * beat, 0, 0.42);
+      play(tom, t0 + 3.5 * beat, 0, 0.4, -0.2);
+      play(tom, t0 + 3.75 * beat, -5, 0.4, 0.2);
+      for (let e = 0; e < 8; e++) play(ost, t0 + e * (beat / 2), r - 45 + (pattern[e] as number) + (bar >= 4 ? 12 : 0), 0.13, 0.25);
+    }
   }
-  // marimba melody: [bar, eighth, midi]
-  const mel: [number, number, number][] = [
-    [0, 0, 76], [0, 1, 79], [0, 2, 81], [0, 3, 79], [0, 4, 76], [0, 6, 74],
-    [1, 0, 74], [1, 2, 79], [1, 4, 83], [1, 5, 81], [1, 6, 79],
-    [2, 0, 84], [2, 2, 81], [2, 4, 79], [2, 5, 76],
-    [3, 0, 77], [3, 2, 81], [3, 4, 79],
-    [4, 0, 76], [4, 1, 79], [4, 2, 84], [4, 4, 81], [4, 5, 79], [4, 6, 76],
-    [5, 0, 74], [5, 1, 76], [5, 2, 79], [5, 4, 74], [5, 6, 71],
-    [6, 0, 69], [6, 1, 72], [6, 2, 76], [6, 4, 79], [6, 6, 81],
-    [7, 0, 79], [7, 2, 77], [7, 4, 76], [7, 6, 74],
-  ];
-  for (const [bar, e, m] of mel) play(mar, bar * 4 * beat + e * (beat / 2), m - 72, 0.32, 0.2);
   const rendered = await ctx.startRendering();
   const n = Math.ceil(len * sr);
-  const loop = new AudioBuffer({ numberOfChannels: 2, length: n, sampleRate: sr });
-  for (let ch = 0; ch < 2; ch++) {
+  const loop = new AudioBuffer({ numberOfChannels: chans, length: n, sampleRate: sr });
+  for (let ch = 0; ch < chans; ch++) {
     const src = rendered.getChannelData(ch);
     const dst = loop.getChannelData(ch);
     dst.set(src.subarray(0, n));
@@ -342,6 +522,13 @@ export class Audio {
   private musicFilter: BiquadFilterNode | null = null;
   private musicOut: GainNode | null = null;
   private musicSrc: AudioBufferSourceNode | null = null;
+  /** rendered loops, and the live sources/gains of the current ones */
+  private loops = new Map<MusicLoop, AudioBuffer>();
+  private loopGain = new Map<MusicLoop, GainNode>();
+  private loopSrc = new Map<MusicLoop, AudioBufferSourceNode>();
+  private track: 'beach' | 'island' | 'chase' = 'beach';
+  private zone = 0;
+  private rumbleGain: GainNode | null = null;
   private buffers = new Map<Sfx, AudioBuffer>();
   private mode: 'menu' | 'run' | 'off' = 'menu';
   private lastPlay = new Map<Sfx, number>();
@@ -386,10 +573,7 @@ export class Audio {
       this.unlocked = true;
       this.applyVolumes();
       this.buildSfx();
-      void renderMusic(ctx.sampleRate).then((b) => {
-        if (!b || !this.ctx) return;
-        this.startMusic(b);
-      }).catch(() => {});
+      void this.renderAll().catch(() => {});
     } catch {
       this.ctx = null;
     }
@@ -407,19 +591,127 @@ export class Audio {
     }
   }
 
-  private startMusic(b: AudioBuffer): void {
+  /** Render the beach loop first (music starts), then the zone layers and mode loops one by one. */
+  private async renderAll(): Promise<void> {
     const ctx = this.ctx;
-    if (!ctx || !this.musicBus) return;
+    if (!ctx) return;
+    const beach = await renderMusic(ctx.sampleRate, 'beach');
+    if (!beach || !this.ctx) return;
+    this.loops.set('beach', beach);
+    // the beach loop and its layers start together so they stay in sync
+    this.startLoop('beach', 0);
+    this.musicSrc = this.loopSrc.get('beach') ?? null;
+    this.setMusicMode(this.mode);
+    for (const k of ['whistle', 'steel', 'pad', 'island', 'chase'] as MusicLoop[]) {
+      await new Promise((r) => setTimeout(r, 120));
+      const b = await renderMusic(ctx.sampleRate, k);
+      if (!b || !this.ctx) return;
+      this.loops.set(k, b);
+      if (LAYERS.includes(k)) this.startLoop(k, this.loopOffset());
+    }
+    this.applyMix(0.05);
+  }
+
+  /** where the beach loop is now (layers join in step) */
+  private loopOffset(): number {
+    const ctx = this.ctx;
+    const b = this.loops.get('beach');
+    if (!ctx || !b || this.beachStart < 0) return 0;
+    return (ctx.currentTime - this.beachStart) % b.duration;
+  }
+  private beachStart = -1;
+
+  private startLoop(k: MusicLoop, offset: number): void {
+    const ctx = this.ctx;
+    const b = this.loops.get(k);
+    if (!ctx || !b || !this.musicBus) return;
+    this.loopSrc.get(k)?.stop();
+    let g = this.loopGain.get(k);
+    if (!g) {
+      g = ctx.createGain();
+      g.gain.value = 0;
+      g.connect(this.musicBus);
+      this.loopGain.set(k, g);
+    }
     const src = ctx.createBufferSource();
     src.buffer = b;
     src.loop = true;
-    src.connect(this.musicBus);
-    src.start();
-    this.musicSrc = src;
-    this.setMusicMode(this.mode);
+    src.connect(g);
+    src.start(ctx.currentTime, offset % b.duration);
+    if (k === 'beach') this.beachStart = ctx.currentTime - offset;
+    this.loopSrc.set(k, src);
+    this.applyMix(0.05);
   }
 
-  play(s: Sfx, opt: { streak?: number; pan?: number } = {}): void {
+  /** Gains for the current track and zone (UPDATE2_PLAN.md §7: zones crossfade). */
+  private applyMix(tc = 0.6): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const beach = this.track === 'beach';
+    const want: Record<MusicLoop, number> = {
+      beach: beach ? (this.zone === 3 ? 0.7 : 1) : 0,
+      whistle: beach && this.zone === 1 ? 1 : 0,
+      steel: beach && this.zone === 2 ? 1 : 0,
+      pad: beach && this.zone === 3 ? 1 : 0,
+      island: this.track === 'island' ? 1 : 0,
+      chase: this.track === 'chase' ? 1 : 0,
+    };
+    for (const [k, g] of this.loopGain) {
+      g.gain.cancelScheduledValues(t);
+      g.gain.setTargetAtTime(want[k], t, tc);
+    }
+  }
+
+  /** Which loop plays: Beach Run (with zone layers), Island Hop, or the Great Wave chase. */
+  setTrack(track: 'beach' | 'island' | 'chase'): void {
+    if (track === this.track) return;
+    this.track = track;
+    // mode loops restart from the top so the tune begins with the level
+    if (track !== 'beach' && this.loops.has(track)) this.startLoop(track, 0);
+    this.applyMix(0.35);
+  }
+
+  setZone(z: number): void {
+    if (z === this.zone) return;
+    this.zone = z;
+    this.applyMix(1.2);
+  }
+
+  /** Great Wave rumble: 0 (far/off) .. 1 (right behind) */
+  setRumble(level: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.sfxBus) return;
+    if (!this.rumbleGain) {
+      if (level <= 0) return;
+      const r = noiseGen(41);
+      const x = new Float32Array(ctx.sampleRate * 2);
+      // brown-ish noise, looped
+      let v = 0;
+      for (let i = 0; i < x.length; i++) {
+        v = v * 0.985 + r() * 0.06;
+        x[i] = v;
+      }
+      const fade = 2000;
+      for (let i = 0; i < fade; i++) x[x.length - fade + i] = (x[x.length - fade + i] as number) * (1 - i / fade) + (x[i] as number) * (i / fade);
+      const src = ctx.createBufferSource();
+      src.buffer = toBuffer(ctx, normalize(x, 0.8));
+      src.loop = true;
+      src.loopEnd = (x.length - fade) / ctx.sampleRate;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 420;
+      this.rumbleGain = ctx.createGain();
+      this.rumbleGain.gain.value = 0;
+      src.connect(lp);
+      lp.connect(this.rumbleGain);
+      this.rumbleGain.connect(this.sfxBus);
+      src.start();
+    }
+    this.rumbleGain.gain.setTargetAtTime(Math.max(0, Math.min(1, level)) * 0.9, ctx.currentTime, 0.15);
+  }
+
+  play(s: Sfx, opt: { streak?: number; pan?: number; pitch?: number; muffle?: boolean } = {}): void {
     const ctx = this.ctx;
     if (!ctx || !this.sfxBus || this.sfxVolume <= 0) return;
     const b = this.buffers.get(s);
@@ -435,9 +727,18 @@ export class Audio {
       const step = PENTA[Math.min(PENTA.length - 1, Math.max(0, opt.streak - 1))] as number;
       src.playbackRate.value = Math.pow(2, step / 12);
     }
+    if (opt.pitch) src.playbackRate.value = Math.pow(2, opt.pitch / 12);
     const g = ctx.createGain();
     g.gain.value = s === 'shell' ? 0.7 : 1;
-    src.connect(g);
+    if (opt.muffle) {
+      // behind the camera: duller and quieter
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 900;
+      g.gain.value *= 0.6;
+      src.connect(lp);
+      lp.connect(g);
+    } else src.connect(g);
     if (opt.pan && ctx.createStereoPanner) {
       const p = ctx.createStereoPanner();
       p.pan.value = opt.pan;

@@ -41,3 +41,37 @@ it.skipIf(!process.env.BALANCE)('balance report', () => {
   }
   console.log(`\n${lines.join('\n')}\n`);
 }, 120_000);
+
+/** Island Hop (UPDATE2_PLAN.md §9 Phase G): attempts a simulated player needs to reach the flag. */
+import { LEVELS } from '../src/sim/levelData';
+import { compileLevel } from '../src/sim/levels';
+import { CFG } from '../src/config';
+
+export function levelAttempts(id: string, prof: PilotProfile, maxTries = 8): number {
+  const def = LEVELS.find((l) => l.id === id)!;
+  const cl = compileLevel(def);
+  for (let a = 1; a <= maxTries; a++) {
+    const w = new World();
+    // each attempt plays the same course (fixed level seed) but the player varies a little
+    w.start({ ...defaultRunOptions(), seed: 7, startDist: (CFG.zoneStarts[def.island] as number) + CFG.island.startOffset, level: cl, zonesSeen: [0, 1, 2, 3] });
+    const ap = new Autopilot(w, 3, { ...prof, reaction: prof.reaction * (0.9 + ((a * 37) % 10) / 50) });
+    ap.seekShells = false;
+    let n = 0;
+    while (w.mode === 'running' && n++ < 120 * 400) {
+      ap.update();
+      w.step((1 / 120) * w.timeScale);
+      w.events.length = 0;
+    }
+    if (w.mode === 'finished') return a;
+  }
+  return maxTries + 1;
+}
+
+it.skipIf(!process.env.BALANCE)('island hop attempts report', () => {
+  const lines: string[] = [];
+  for (const [name, prof] of Object.entries(PROFILES)) {
+    const row = LEVELS.map((l) => `${l.id}:${levelAttempts(l.id, prof)}`);
+    lines.push(`${name.padEnd(8)} ${row.join(' ')}`);
+  }
+  console.log(`\nattempts to reach the flag (9 = not in 8)\n${lines.join('\n')}\n`);
+}, 600_000);

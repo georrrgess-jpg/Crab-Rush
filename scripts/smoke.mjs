@@ -36,6 +36,10 @@ try {
   const shaders = await page.evaluate(() => window.__crab.shaderCheck());
   const badShaders = shaders.filter((x) => !x.ok);
   check(shaders.length >= 14 && badShaders.length === 0, `toy shader variants compile and draw (${shaders.length})${badShaders.length ? ': ' + badShaders.map((b) => b.name + ' ' + b.log).join(' | ') : ''}`);
+  // synthesised music: the beach loop, three zone layers and the Island Hop / chase loops
+  await page.evaluate(() => window.__crab.game.audio.unlock());
+  const loops = await page.waitForFunction(() => window.__crab.game.audio.loops.size === 6, null, { timeout: 30000 }).then(() => true).catch(() => false);
+  check(loops, 'all six music loops render');
   await page.keyboard.press('Space');
   await fr(5);
   check(['intro', 'running'].includes((await st()).state), 'Space on the title starts a run');

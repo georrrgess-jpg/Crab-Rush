@@ -241,8 +241,8 @@ level('shore-3', {
 
 ### 6.1 Sunny Pass (the backbone)
 - A free 40-tier track. **XP** comes from every mode:
-  - distance ÷ 10;
-  - shells ÷ 5;
+  - distance ÷ 30 (retuned in Phase G from ÷ 10);
+  - shells ÷ 15 (retuned in Phase G from ÷ 5);
   - goals: 50 each;
   - level stars: 40 each;
   - first clear: 60;
