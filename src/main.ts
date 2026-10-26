@@ -1,5 +1,6 @@
 import '@fontsource/lilita-one/latin-400.css';
 import '@fontsource/fredoka/latin-600.css';
+import './ui/tokens.css';
 import './ui/styles.css';
 import { Game } from './game';
 

@@ -1,0 +1,245 @@
+import * as THREE from 'three';
+import type { ZonePalette } from '../palettes';
+
+/**
+ * "Toy" shading (UPDATE2_PLAN.md §1.2): half-Lambert wrapped sun light between a shadow and a sun
+ * colour, a hemisphere sky/ground term, a rim light and an optional specular dot. Lighting colours
+ * come from shared uniforms so a zone's time of day re-lights every object. Lighting is computed in
+ * view space; the shared direction uniforms are refreshed once per frame by ToyLighting.update().
+ *
+ * Variants (defines): TOY_GLOSS (specular), TOY_LITE (Low tier: no rim/spec), TOY_EMISSIVE (unlit),
+ * TOY_MAP (multiplies a texture; used by ground), plus three's instancing/vertex colours/fog chunks.
+ */
+
+export interface ToyLightingUniforms {
+  [k: string]: THREE.IUniform;
+  uSunDirV: THREE.IUniform<THREE.Vector3>;
+  uUpV: THREE.IUniform<THREE.Vector3>;
+  uSunColor: THREE.IUniform<THREE.Color>;
+  uShadowColor: THREE.IUniform<THREE.Color>;
+  uSkyColor: THREE.IUniform<THREE.Color>;
+  uGroundColor: THREE.IUniform<THREE.Color>;
+  uRimColor: THREE.IUniform<THREE.Color>;
+  /** x exposure, y saturation, z warmth, w rim strength */
+  uGrade: THREE.IUniform<THREE.Vector4>;
+}
+
+const vert = /* glsl */ `
+#include <common>
+#include <uv_pars_vertex>
+#include <color_pars_vertex>
+#include <fog_pars_vertex>
+varying vec3 vNormalV;
+varying vec3 vViewPos;
+void main() {
+  #include <uv_vertex>
+  #include <color_vertex>
+  #include <beginnormal_vertex>
+  #include <defaultnormal_vertex>
+  #include <begin_vertex>
+  #include <project_vertex>
+  #include <fog_vertex>
+  vNormalV = normalize(transformedNormal);
+  vViewPos = mvPosition.xyz;
+}`;
+
+const frag = /* glsl */ `
+#include <common>
+#include <uv_pars_fragment>
+#include <color_pars_fragment>
+#include <fog_pars_fragment>
+uniform vec3 diffuse;
+uniform vec3 uSunDirV;
+uniform vec3 uUpV;
+uniform vec3 uSunColor;
+uniform vec3 uShadowColor;
+uniform vec3 uSkyColor;
+uniform vec3 uGroundColor;
+uniform vec3 uRimColor;
+uniform vec4 uGrade;
+uniform float uGloss;
+uniform float uEmissive;
+#ifdef TOY_MAP
+uniform sampler2D map;
+#endif
+varying vec3 vNormalV;
+varying vec3 vViewPos;
+
+vec3 grade(vec3 c) {
+  c *= uGrade.x;
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, uGrade.y);
+  c *= vec3(1.0 + uGrade.z * 0.06, 1.0, 1.0 - uGrade.z * 0.06);
+  return c;
+}
+
+void main() {
+  vec3 base = diffuse;
+  #ifdef USE_COLOR
+    base *= vColor.rgb;
+  #endif
+  #ifdef TOY_MAP
+    base *= texture2D(map, vMapUv).rgb;
+  #endif
+  vec3 col;
+  #ifdef TOY_EMISSIVE
+    col = base * uEmissive;
+  #else
+    vec3 n = normalize(vNormalV);
+    if (!gl_FrontFacing) n = -n;
+    float ndl = dot(n, uSunDirV);
+    float wrap = ndl * 0.5 + 0.5;
+    wrap *= wrap;
+    vec3 light = mix(uShadowColor, uSunColor, wrap);
+    float hemi = dot(n, uUpV) * 0.5 + 0.5;
+    light += mix(uGroundColor, uSkyColor, hemi) * 0.35;
+    col = base * light;
+    #ifndef TOY_LITE
+      vec3 v = normalize(-vViewPos);
+      float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * uGrade.w;
+      col += uRimColor * rim * (0.4 + 0.6 * hemi);
+      #ifdef TOY_GLOSS
+        vec3 h = normalize(uSunDirV + v);
+        float spec = pow(max(dot(n, h), 0.0), 48.0) * uGloss;
+        col += uSunColor * spec;
+      #endif
+    #endif
+  #endif
+  col = grade(col);
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
+
+const outlineVert = /* glsl */ `
+#include <common>
+#include <color_pars_vertex>
+#include <fog_pars_vertex>
+uniform float uThickness;
+void main() {
+  #include <color_vertex>
+  #include <beginnormal_vertex>
+  #include <begin_vertex>
+  transformed += normalize(objectNormal) * uThickness;
+  #include <project_vertex>
+  #include <fog_vertex>
+}`;
+
+const outlineFrag = /* glsl */ `
+#include <common>
+#include <color_pars_fragment>
+#include <fog_pars_fragment>
+uniform vec3 uInk;
+uniform float uTint;
+void main() {
+  vec3 c = uInk;
+  #ifdef USE_COLOR
+    c = mix(uInk, vColor.rgb * 0.25, uTint);
+  #endif
+  gl_FragColor = vec4(c, 1.0);
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
+
+/** Shared lighting state for every toy material. */
+export class ToyLighting {
+  readonly uniforms: ToyLightingUniforms = {
+    uSunDirV: { value: new THREE.Vector3(0, 1, 0) },
+    uUpV: { value: new THREE.Vector3(0, 1, 0) },
+    uSunColor: { value: new THREE.Color(1.08, 1.02, 0.92) },
+    uShadowColor: { value: new THREE.Color(0.62, 0.68, 0.86) },
+    uSkyColor: { value: new THREE.Color(0.55, 0.75, 1) },
+    uGroundColor: { value: new THREE.Color(0.95, 0.8, 0.6) },
+    uRimColor: { value: new THREE.Color(1, 0.95, 0.85) },
+    uGrade: { value: new THREE.Vector4(1, 1.05, 0, 0.35) },
+  };
+  /** world-space sun direction (normalised) */
+  readonly sunDir = new THREE.Vector3(-0.4, 0.8, 0.45).normalize();
+  private readonly up = new THREE.Vector3(0, 1, 0);
+
+  /** Derive lighting colours from a zone palette (Phase B adds dedicated lighting fields). */
+  fromPalette(p: ZonePalette): void {
+    const u = this.uniforms;
+    this.sunDir.copy(p.sunDir).setY(Math.max(0.35, p.sunDir.y)).normalize();
+    u.uSunColor.value.copy(p.sunColor).multiplyScalar(1.05);
+    u.uShadowColor.value.copy(p.skyMid).lerp(p.groundTint, 0.35).multiplyScalar(0.62);
+    u.uSkyColor.value.copy(p.skyTop);
+    u.uGroundColor.value.setRGB(0.95, 0.8, 0.6).multiply(p.groundTint);
+    u.uRimColor.value.copy(p.skyHorizon).lerp(p.sunColor, 0.4);
+  }
+
+  /** Re-express world directions in view space; call once per frame after the camera moves. */
+  update(camera: THREE.Camera): void {
+    const m = camera.matrixWorldInverse;
+    this.uniforms.uSunDirV.value.copy(this.sunDir).transformDirection(m);
+    this.uniforms.uUpV.value.copy(this.up).transformDirection(m);
+  }
+}
+
+export interface ToyOptions {
+  gloss?: number;
+  lite?: boolean;
+  emissive?: number;
+  map?: THREE.Texture;
+  color?: THREE.ColorRepresentation;
+  vertexColors?: boolean;
+  side?: THREE.Side;
+}
+
+export function makeToy(lighting: ToyLighting, o: ToyOptions = {}): THREE.ShaderMaterial {
+  const defines: Record<string, string> = {};
+  if (o.gloss) defines.TOY_GLOSS = '';
+  if (o.lite) defines.TOY_LITE = '';
+  if (o.emissive !== undefined) defines.TOY_EMISSIVE = '';
+  if (o.map) defines.TOY_MAP = '';
+  const m = new THREE.ShaderMaterial({
+    vertexShader: vert,
+    fragmentShader: frag,
+    defines,
+    fog: true,
+    vertexColors: o.vertexColors ?? true,
+    side: o.side ?? THREE.FrontSide,
+    uniforms: {
+      ...THREE.UniformsLib.fog,
+      ...lighting.uniforms,
+      diffuse: { value: new THREE.Color(o.color ?? 0xffffff) },
+      uGloss: { value: o.gloss ?? 0 },
+      uEmissive: { value: o.emissive ?? 1 },
+      map: { value: o.map ?? null },
+      mapTransform: { value: new THREE.Matrix3() },
+    },
+  });
+  // let three set up the uv/map varyings for TOY_MAP
+  if (o.map) (m as unknown as { map: THREE.Texture }).map = o.map;
+  return m;
+}
+
+/** Inverted-hull outline: back faces pushed out along normals, ink-coloured. */
+export function makeOutline(thickness = 0.035, ink: THREE.ColorRepresentation = 0x3a2416, tint = 0.6): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader: outlineVert,
+    fragmentShader: outlineFrag,
+    side: THREE.BackSide,
+    fog: true,
+    vertexColors: true,
+    uniforms: {
+      ...THREE.UniformsLib.fog,
+      uThickness: { value: thickness },
+      uInk: { value: new THREE.Color(ink) },
+      uTint: { value: tint },
+    },
+  });
+}
+
+/** Every material variant, for shader compile checks. */
+export function toyVariants(l: ToyLighting, map: THREE.Texture): Record<string, THREE.Material> {
+  return {
+    toy: makeToy(l),
+    toyGloss: makeToy(l, { gloss: 0.6 }),
+    toyGold: makeToy(l, { gloss: 1.0, color: 0xfff0c0 }),
+    toyLite: makeToy(l, { lite: true }),
+    toyEmissive: makeToy(l, { emissive: 1.2 }),
+    toyMap: makeToy(l, { map }),
+    outline: makeOutline(),
+  };
+}

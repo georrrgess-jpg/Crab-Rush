@@ -37,6 +37,8 @@ export class EntityViews {
   private signs: THREE.Texture[] = [];
   private bestTex: THREE.CanvasTexture | null = null;
   private bestValue = -1;
+  /** Low tier: fewer meshes per pickup */
+  lite = false;
 
   constructor(private mats: Materials) {
     for (let z = 0; z < CFG.zoneNames.length; z++) {
@@ -147,7 +149,8 @@ export class EntityViews {
         const icon = mesh(g.get(`pu-${kind}`, () => O.powerupIcon(kind)));
         icon.scale.setScalar(1.25);
         const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({ map: M.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }));
-        grp.add(glow, icon, bubble, ring);
+        if (this.lite) grp.add(icon, bubble);
+        else grp.add(glow, icon, bubble, ring);
         v = { obj: grp, key, stamp: 0, shadow: [1.0, 1.0], parts: [icon, ring, glow] };
         v.anim = (vv, ee, t) => {
           const [ic, rg, gl] = vv.parts as THREE.Object3D[];

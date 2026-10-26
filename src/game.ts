@@ -750,6 +750,13 @@ export class Game {
         g.quality = QUALITY[name];
         g.view.setQuality(g.quality);
       },
+      /** compile + draw every toy shader variant (plain and instanced); returns per-variant status */
+      shaderCheck() {
+        return g.view.shaderCheck();
+      },
+      budgets() {
+        return QUALITY;
+      },
       info() {
         return { state: g.state, dist: g.world.dist, mode: g.world.mode, results: g.lastResults, stats: g.view.renderer.stats };
       },

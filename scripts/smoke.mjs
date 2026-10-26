@@ -33,6 +33,9 @@ try {
   const st = () => page.evaluate(() => ({ state: window.__crab.game.state, lane: window.__crab.game.world.player.lane, y: window.__crab.game.world.player.y, grounded: window.__crab.game.world.player.grounded, dist: window.__crab.game.world.dist }));
   const fr = (n) => page.evaluate((k) => window.__crab.frames(k), n);
   check((await st()).state === 'title', 'boots to the title screen');
+  const shaders = await page.evaluate(() => window.__crab.shaderCheck());
+  const badShaders = shaders.filter((x) => !x.ok);
+  check(shaders.length >= 14 && badShaders.length === 0, `toy shader variants compile and draw (${shaders.length})${badShaders.length ? ': ' + badShaders.map((b) => b.name + ' ' + b.log).join(' | ') : ''}`);
   await page.keyboard.press('Space');
   await fr(5);
   check(['intro', 'running'].includes((await st()).state), 'Space on the title starts a run');

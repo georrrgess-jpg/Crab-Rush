@@ -16,6 +16,8 @@ import { Renderer } from './renderer';
 import { Scenery } from './scenery';
 import { ShellRenderer } from './shells';
 import { Sky } from './sky';
+import { ToyLighting, toyVariants } from './shaders/toy';
+import { sandTexture } from './textures';
 
 export type CamMode = 'title' | 'intro' | 'run' | 'shop';
 
@@ -107,6 +109,7 @@ export class GameView {
     this.boardGroup.visible = false;
     this.crab.root.add(this.boardGroup);
 
+    this.applyDetail(quality);
     this.renderer.camera.far = 260;
     this.renderer.camera.updateProjectionMatrix();
     this.applyPalette(0);
@@ -120,7 +123,16 @@ export class GameView {
     this.crab.setSkin(skin);
   }
 
+  /** Low tier trims optional meshes to stay inside its draw-call budget. */
+  private applyDetail(q: QualityPreset): void {
+    const full = q.name !== 'low';
+    this.scenery.glowOn = full;
+    this.backdrop.setDetail(full);
+    this.entities.lite = !full;
+  }
+
   setQuality(q: QualityPreset): void {
+    this.applyDetail(q);
     this.renderer.setQuality(q);
     this.ocean.setQualityWaves(q.oceanWaves);
     this.scenery.setDensity(q.sceneryDensity);
@@ -374,6 +386,50 @@ export class GameView {
     this.dust.update(dt, dist, cam.quaternion);
     this.sparks.update(dt, dist, cam.quaternion);
     this.renderer.render();
+  }
+
+  /** Phase A: shared lighting for the toy shaders (switched on in Phase B). */
+  readonly toyLighting = new ToyLighting();
+
+  /** Compile and render every toy variant into a tiny target; reports shader compile/link problems. */
+  shaderCheck(): { name: string; ok: boolean; log: string }[] {
+    const gl = this.renderer.gl;
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0xffffff, 10, 50);
+    const cam = new THREE.PerspectiveCamera(50, 1, 0.1, 50);
+    cam.position.set(0, 0, 4);
+    cam.updateMatrixWorld();
+    this.toyLighting.fromPalette(ZONE_PALETTES[3]!);
+    this.toyLighting.update(cam);
+    const geo = new THREE.SphereGeometry(1, 12, 8);
+    const col = new Float32Array(geo.attributes.position!.count * 3).fill(0.8);
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const variants = toyVariants(this.toyLighting, sandTexture(false));
+    const rt = new THREE.WebGLRenderTarget(16, 16);
+    const out: { name: string; ok: boolean; log: string }[] = [];
+    for (const [name, mat] of Object.entries(variants)) {
+      for (const instanced of [false, true]) {
+        scene.clear();
+        const mesh = instanced ? new THREE.InstancedMesh(geo, mat, 2) : new THREE.Mesh(geo, mat);
+        if (mesh instanceof THREE.InstancedMesh) {
+          mesh.setMatrixAt(0, new THREE.Matrix4());
+          mesh.setMatrixAt(1, new THREE.Matrix4().makeTranslation(1, 0, 0));
+        }
+        scene.add(mesh);
+        const before = gl.info.programs?.length ?? 0;
+        gl.setRenderTarget(rt);
+        gl.render(scene, cam);
+        gl.setRenderTarget(null);
+        const progs = (gl.info.programs ?? []) as { diagnostics?: { runnable: boolean; programLog: string; fragmentShader: { log: string }; vertexShader: { log: string } } }[];
+        const bad = progs.find((p) => p.diagnostics && !p.diagnostics.runnable);
+        out.push({ name: `${name}${instanced ? '+instanced' : ''}`, ok: !bad, log: bad?.diagnostics ? `${bad.diagnostics.programLog} ${bad.diagnostics.vertexShader.log} ${bad.diagnostics.fragmentShader.log}`.trim() : '' });
+        void before;
+      }
+    }
+    for (const m of Object.values(variants)) m.dispose();
+    geo.dispose();
+    rt.dispose();
+    return out;
   }
 
   get skins(): CrabSkin[] {

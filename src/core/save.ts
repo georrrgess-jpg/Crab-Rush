@@ -1,4 +1,10 @@
-/** Versioned save in localStorage, robust to corruption and private-mode storage errors (PLAN.md §8.4). */
+/** Versioned save in localStorage, robust to corruption and private-mode storage errors (PLAN.md §8.4).
+ * v2 (UPDATE2_PLAN.md §8.2) adds XP/Sunny Pass, the Wardrobe, Island Hop level records, Daily Tide and
+ * boosts; v1 blobs migrate transparently. */
+import { defaultDaily, type DailyState } from '../meta/daily';
+import { PASS_TIERS } from '../meta/xp';
+import { V1_CRAB_HATS, defaultWardrobe, exists, syncFromCrabs, type Slot, type WardrobeState } from '../meta/wardrobe';
+
 export type QualitySetting = 'auto' | 'low' | 'medium' | 'high';
 export type TouchButtons = 'auto' | 'show' | 'hide';
 
@@ -9,6 +15,14 @@ export interface Settings {
   touchButtons: TouchButtons;
   /** null = follow the OS preference */
   reduceMotion: boolean | null;
+  haptics: boolean;
+  leftHanded: boolean;
+  swipeSensitivity: 'low' | 'normal' | 'high';
+}
+
+export interface LevelRecord {
+  stars: [boolean, boolean, boolean];
+  best: number;
 }
 
 export interface LifetimeStats {
@@ -21,8 +35,10 @@ export interface LifetimeStats {
   totalCloseShaves: number;
 }
 
+export const SAVE_VERSION = 2;
+
 export interface SaveData {
-  v: 1;
+  v: 2;
   shells: number;
   best: number;
   stats: LifetimeStats;
@@ -32,13 +48,19 @@ export interface SaveData {
   zonesSeen: number[];
   tutorial: { move: boolean; hop: boolean };
   settings: Settings;
+  xp: number;
+  passClaimed: number[];
+  boosts: number;
+  wardrobe: WardrobeState;
+  levels: Record<string, LevelRecord>;
+  daily: DailyState;
 }
 
 export const SAVE_KEY = 'crabdash.save';
 
 export function defaultSave(): SaveData {
   return {
-    v: 1,
+    v: 2,
     shells: 0,
     best: 0,
     stats: { runs: 0, totalShells: 0, totalDistance: 0, totalHops: 0, totalWaves: 0, totalPowerups: 0, totalCloseShaves: 0 },
@@ -47,7 +69,62 @@ export function defaultSave(): SaveData {
     goals: { active: [], completed: [], progress: {} },
     zonesSeen: [0],
     tutorial: { move: false, hop: false },
-    settings: { music: 0.5, sfx: 0.8, quality: 'auto', touchButtons: 'auto', reduceMotion: null },
+    settings: { music: 0.5, sfx: 0.8, quality: 'auto', touchButtons: 'auto', reduceMotion: null, haptics: true, leftHanded: false, swipeSensitivity: 'normal' },
+    xp: 0,
+    passClaimed: [],
+    boosts: 0,
+    wardrobe: defaultWardrobe(),
+    levels: {},
+    daily: defaultDaily(),
+  };
+}
+
+function sanitizeWardrobe(raw: unknown, ownedCrabs: string[], selected: string): WardrobeState {
+  const w = defaultWardrobe();
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const owned = (r.owned && typeof r.owned === 'object' ? r.owned : {}) as Record<string, unknown>;
+  for (const slot of ['bodies', 'hats', 'trails', 'dances'] as Slot[]) {
+    for (const id of strArr(owned[slot])) if (exists(slot, id) && !w.owned[slot].includes(id)) w.owned[slot].push(id);
+  }
+  syncFromCrabs(w, ownedCrabs);
+  const eq = (r.equipped && typeof r.equipped === 'object' ? r.equipped : null) as Record<string, unknown> | null;
+  if (eq) {
+    if (typeof eq.body === 'string' && w.owned.bodies.includes(eq.body)) w.equipped.body = eq.body;
+    if (typeof eq.hat === 'string' && w.owned.hats.includes(eq.hat)) w.equipped.hat = eq.hat;
+    if (typeof eq.trail === 'string' && w.owned.trails.includes(eq.trail)) w.equipped.trail = eq.trail;
+    if (typeof eq.dance === 'string' && w.owned.dances.includes(eq.dance)) w.equipped.dance = eq.dance;
+  } else {
+    // v1 migration: wear the selected crab with its own hat
+    w.equipped.body = selected;
+    w.equipped.hat = V1_CRAB_HATS[selected] ?? 'straw';
+  }
+  return w;
+}
+
+function sanitizeLevels(raw: unknown): Record<string, LevelRecord> {
+  const out: Record<string, LevelRecord> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!v || typeof v !== 'object') continue;
+    const rec = v as Record<string, unknown>;
+    const st = Array.isArray(rec.stars) ? rec.stars : [];
+    out[id] = { stars: [st[0] === true, st[1] === true, st[2] === true], best: num(rec.best, 0) };
+  }
+  return out;
+}
+
+function sanitizeDaily(raw: unknown): DailyState {
+  const d = defaultDaily();
+  if (!raw || typeof raw !== 'object') return d;
+  const r = raw as Record<string, unknown>;
+  const isKey = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  return {
+    lastDate: isKey(r.lastDate) ? r.lastDate : '',
+    streak: Math.floor(num(r.streak, 0, 0, 100000)),
+    savers: Math.floor(num(r.savers, 0, 0, 2)),
+    bestToday: num(r.bestToday, 0),
+    bestDate: isKey(r.bestDate) ? r.bestDate : '',
+    history: Array.isArray(r.history) ? r.history.filter(isKey).slice(-30) : [],
   };
 }
 
@@ -77,8 +154,12 @@ export function sanitize(raw: unknown): SaveData {
   if (go.progress && typeof go.progress === 'object') {
     for (const [k, v] of Object.entries(go.progress as Record<string, unknown>)) if (typeof v === 'number' && Number.isFinite(v)) progress[k] = v;
   }
+  const crabs = { owned: [...new Set(owned)], selected };
+  const claimed = Array.isArray(r.passClaimed)
+    ? [...new Set(r.passClaimed.filter((t): t is number => typeof t === 'number' && Number.isInteger(t) && t >= 1 && t <= PASS_TIERS))]
+    : [];
   return {
-    v: 1,
+    v: 2,
     shells: Math.floor(num(r.shells, 0)),
     best: num(r.best, 0),
     stats: {
@@ -90,7 +171,7 @@ export function sanitize(raw: unknown): SaveData {
       totalPowerups: num(st.totalPowerups, 0),
       totalCloseShaves: num(st.totalCloseShaves, 0),
     },
-    crabs: { owned: [...new Set(owned)], selected },
+    crabs,
     upgrades: { magnet: Math.floor(num(up.magnet, 0, 0, 4)), shield: Math.floor(num(up.shield, 0, 0, 4)), rider: Math.floor(num(up.rider, 0, 0, 4)) },
     goals: { active: strArr(go.active), completed: strArr(go.completed), progress },
     zonesSeen: Array.isArray(r.zonesSeen) ? [...new Set([0, ...r.zonesSeen.filter((z): z is number => typeof z === 'number' && z >= 0 && z < 4)])] : [0],
@@ -101,7 +182,16 @@ export function sanitize(raw: unknown): SaveData {
       quality: q === 'low' || q === 'medium' || q === 'high' || q === 'auto' ? q : 'auto',
       touchButtons: tb === 'show' || tb === 'hide' || tb === 'auto' ? tb : 'auto',
       reduceMotion: typeof s.reduceMotion === 'boolean' ? s.reduceMotion : null,
+      haptics: bool(s.haptics, true),
+      leftHanded: bool(s.leftHanded, false),
+      swipeSensitivity: s.swipeSensitivity === 'low' || s.swipeSensitivity === 'high' ? s.swipeSensitivity : 'normal',
     },
+    xp: Math.floor(num(r.xp, 0)),
+    passClaimed: claimed,
+    boosts: Math.floor(num(r.boosts, 0, 0, 3)),
+    wardrobe: sanitizeWardrobe(r.wardrobe, crabs.owned, selected),
+    levels: sanitizeLevels(r.levels),
+    daily: sanitizeDaily(r.daily),
   };
 }
 

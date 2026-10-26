@@ -2,6 +2,7 @@
 import { CFG } from '../config';
 import type { SaveData } from '../core/save';
 import type { PowerKind } from './events';
+import { V1_CRAB_HATS, equip, syncFromCrabs } from '../meta/wardrobe';
 
 export const CRAB_ORDER = ['sandy', 'chill', 'blossom', 'skipper', 'pinch', 'dazzle'] as const;
 export const SKILL_UNLOCKS: Record<string, { zone: number; text: string }> = {
@@ -25,13 +26,16 @@ export function buyCrab(save: SaveData, id: string): boolean {
   if (!canBuyCrab(save, id)) return false;
   save.shells -= crabPrice(id);
   save.crabs.owned.push(id);
-  save.crabs.selected = id;
-  return true;
+  syncFromCrabs(save.wardrobe, save.crabs.owned);
+  return selectCrab(save, id);
 }
 
 export function selectCrab(save: SaveData, id: string): boolean {
   if (!ownsCrab(save, id)) return false;
   save.crabs.selected = id;
+  // the v1 shop wears the crab with its own hat (the Wardrobe can mix later)
+  equip(save.wardrobe, 'bodies', id);
+  equip(save.wardrobe, 'hats', V1_CRAB_HATS[id] ?? 'straw');
   return true;
 }
 
@@ -41,6 +45,7 @@ export function grantSkillUnlocks(save: SaveData): string[] {
   for (const [id, cond] of Object.entries(SKILL_UNLOCKS)) {
     if (!ownsCrab(save, id) && save.zonesSeen.includes(cond.zone)) {
       save.crabs.owned.push(id);
+      syncFromCrabs(save.wardrobe, save.crabs.owned);
       out.push(id);
     }
   }

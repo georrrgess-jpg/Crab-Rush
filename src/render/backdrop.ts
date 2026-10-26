@@ -120,6 +120,10 @@ export class Backdrop {
     for (const m of this.group.children) m.frustumCulled = false;
   }
 
+  setDetail(full: boolean): void {
+    for (const b of this.boats) b.visible = full;
+  }
+
   update(time: number, zone: number, p: ZonePalette): void {
     for (const mat of [this.landMat, this.farMat, this.cloudMat]) {
       (mat.uniforms.uHaze as { value: THREE.Color }).value.copy(p.skyHorizon);

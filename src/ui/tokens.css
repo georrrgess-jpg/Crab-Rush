@@ -1,0 +1,76 @@
+/* Design tokens for Update 2 (UPDATE2_PLAN.md §4.1). Screens migrate onto these in Phase D;
+   v1 styles keep working alongside. */
+:root {
+  /* colour */
+  --c-navy-900: #0f2e4d;
+  --c-navy-800: #173f66;
+  --c-teal-700: #1e5e8c;
+  --c-teal-500: #2a78b0;
+  --c-sky-300: #7cc8f2;
+  --c-sky-100: #dff3ff;
+  --c-sand-50: #fffaf0;
+  --c-sand-100: #fff4dc;
+  --c-sand-300: #f6dda6;
+  --c-sand-500: #e9c37e;
+  --c-orange-400: #ffb347;
+  --c-orange-500: #ff8a1f;
+  --c-orange-700: #c4520a;
+  --c-gold-400: #ffd23a;
+  --c-coral-500: #ff5a4a;
+  --c-green-500: #3fbf55;
+  --c-ink: #3a2416;
+  --c-text: var(--c-navy-800);
+  --c-text-muted: var(--c-teal-700);
+
+  /* radius & elevation */
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 24px;
+  --r-pill: 999px;
+  --e-1: 0 2px 0 rgba(15, 46, 77, 0.18);
+  --e-2: 0 5px 0 rgba(15, 46, 77, 0.2), 0 8px 18px rgba(0, 0, 0, 0.12);
+  --e-3: 0 8px 0 rgba(15, 46, 77, 0.22), 0 18px 40px rgba(0, 0, 0, 0.22);
+
+  /* spacing (4 px scale) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+
+  /* type scale */
+  --t-xs: clamp(12px, 2vmin, 14px);
+  --t-sm: clamp(14px, 2.4vmin, 16px);
+  --t-md: clamp(16px, 2.8vmin, 19px);
+  --t-lg: clamp(20px, 3.6vmin, 26px);
+  --t-xl: clamp(26px, 5vmin, 38px);
+  --t-hero: clamp(48px, 12vmin, 110px);
+
+  /* motion */
+  --d-fast: 120ms;
+  --d-med: 220ms;
+  --d-slow: 360ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --d-fast: 1ms; --d-med: 1ms; --d-slow: 1ms; }
+}
+.reduce-motion { --d-fast: 1ms; --d-med: 1ms; --d-slow: 1ms; }
+
+/* router transitions */
+.rt-screen { position: absolute; inset: 0; will-change: transform, opacity; }
+.rt-enter { animation: rt-in var(--d-med) var(--ease-out) both; }
+.rt-exit { animation: rt-out var(--d-fast) var(--ease-in) both; pointer-events: none !important; }
+.rt-enter.rt-slide { animation-name: rt-slide-in; }
+.rt-exit.rt-slide { animation-name: rt-slide-out; }
+.rt-enter.rt-scale { animation-name: rt-scale-in; animation-timing-function: var(--ease-back); }
+@keyframes rt-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rt-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes rt-slide-in { from { opacity: 0; transform: translateX(6%); } to { opacity: 1; transform: none; } }
+@keyframes rt-slide-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-4%); } }
+@keyframes rt-scale-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }

@@ -57,3 +57,66 @@ describe('save', () => {
     expect(s.data.settings.music).toBe(0.1);
   });
 });
+
+describe('save v1 → v2 migration', () => {
+  // a save exactly as written by v1 (build 1)
+  const V1_BLOB = {
+    v: 1,
+    shells: 1234,
+    best: 2875.4,
+    stats: { runs: 42, totalShells: 9000, totalDistance: 51000, totalHops: 800, totalWaves: 120, totalPowerups: 60, totalCloseShaves: 15 },
+    crabs: { owned: ['sandy', 'chill', 'dazzle'], selected: 'chill' },
+    upgrades: { magnet: 2, shield: 1, rider: 0 },
+    goals: { active: ['run1500', 'cove', 'streak30'], completed: ['run300', 'play3'], progress: { run1500: 900 } },
+    zonesSeen: [0, 1, 2, 3],
+    tutorial: { move: true, hop: true },
+    settings: { music: 0.3, sfx: 0.9, quality: 'low', touchButtons: 'show', reduceMotion: true },
+  };
+
+  it('keeps every v1 field and fills v2 defaults', () => {
+    const st = new MemStorage();
+    st.setItem(SAVE_KEY, JSON.stringify(V1_BLOB));
+    const d = new SaveStore(st).data;
+    expect(d.v).toBe(2);
+    expect(d.shells).toBe(1234);
+    expect(d.best).toBe(2875.4);
+    expect(d.stats.runs).toBe(42);
+    expect(d.crabs).toEqual({ owned: ['sandy', 'chill', 'dazzle'], selected: 'chill' });
+    expect(d.upgrades).toEqual({ magnet: 2, shield: 1, rider: 0 });
+    expect(d.goals.completed).toEqual(['run300', 'play3']);
+    expect(d.settings.quality).toBe('low');
+    expect(d.settings.reduceMotion).toBe(true);
+    expect(d.settings.haptics).toBe(true);
+    expect(d.xp).toBe(0);
+    expect(d.levels).toEqual({});
+    expect(d.daily.streak).toBe(0);
+  });
+
+  it('turns owned crabs into wardrobe bodies + hats and wears the selected one', () => {
+    const d = sanitize(V1_BLOB);
+    expect(d.wardrobe.owned.bodies).toEqual(expect.arrayContaining(['sandy', 'chill', 'dazzle']));
+    expect(d.wardrobe.owned.hats).toEqual(expect.arrayContaining(['straw', 'shades', 'tophat']));
+    expect(d.wardrobe.equipped).toMatchObject({ body: 'chill', hat: 'shades' });
+  });
+
+  it('round-trips v2 data and drops junk', () => {
+    const d = sanitize({ ...V1_BLOB, v: 2, xp: 777, passClaimed: [1, 2, 2, 99, 'x'], boosts: 9, wardrobe: { owned: { hats: ['crown', 'bogus'] }, equipped: { body: 'dazzle', hat: 'crown' } }, levels: { 'shore-1': { stars: [true, false, true], best: 61 }, bad: 5 }, daily: { lastDate: '2026-10-25', streak: 4, savers: 7, history: ['2026-10-25', 'nope'] } });
+    expect(d.xp).toBe(777);
+    expect(d.passClaimed).toEqual([1, 2]);
+    expect(d.boosts).toBe(3);
+    expect(d.wardrobe.owned.hats).toContain('crown');
+    expect(d.wardrobe.owned.hats).not.toContain('bogus');
+    expect(d.wardrobe.equipped).toMatchObject({ body: 'dazzle', hat: 'crown' });
+    expect(d.levels).toEqual({ 'shore-1': { stars: [true, false, true], best: 61 } });
+    expect(d.daily).toMatchObject({ lastDate: '2026-10-25', streak: 4, savers: 2, history: ['2026-10-25'] });
+  });
+
+  it('buying a crab in the v1 shop also stocks the wardrobe', async () => {
+    const { buyCrab } = await import('../src/sim/economy');
+    const d = sanitize(V1_BLOB);
+    d.shells = 5000;
+    expect(buyCrab(d, 'pinch')).toBe(true);
+    expect(d.wardrobe.owned.hats).toContain('pirate');
+    expect(d.wardrobe.equipped).toMatchObject({ body: 'pinch', hat: 'pirate' });
+  });
+});

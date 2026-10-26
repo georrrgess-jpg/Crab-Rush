@@ -1,15 +1,22 @@
 # Crab Dash: working rules
 
-Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The full design and build plan is in **`PLAN.md`**; read it before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
+Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is planned in **`UPDATE2_PLAN.md`**. Read both before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
 
 ## Commands
 - `npm run dev`: dev server
 - `npm run build`: production build into `dist/`
-- `npm test`: Vitest (pattern validator, autopilot fairness, save, goals, economy, audio, quality)
+- `npm test`: Vitest (pattern validator, autopilot fairness, save + v1→v2 migration, goals, economy, meta (XP/pass/wardrobe/daily), springs/tweens, router, audio, quality)
 - `npm run shots -- <label> [--no-build] [--only=title,run,...] [--views=phone,desktop,...]`: Playwright screenshots into `docs/screenshots/`. Chromium and Playwright are preinstalled: use `require('playwright')` and never run `playwright install`.
-- `node scripts/smoke.mjs [--no-build]`: end-to-end browser smoke test (controls, tutorial, shop, settings, pause, results)
+- `node scripts/smoke.mjs [--no-build]`: end-to-end browser smoke test (shader compile check, controls, tutorial, shop, settings, pause, rotation, results)
+- `node scripts/perf.mjs [--no-build] [--tiers=high,medium,low]`: draw-call/triangle budget check per tier and zone (exit 1 if over)
 - `BALANCE=1 npx vitest run tests/balance.test.ts`: simulated-player balance report
-- Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`.
+- Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`, `shaderCheck`, `budgets`.
+
+## Where things live (Update 2)
+- `src/meta/`: pure progression logic (XP & Sunny Pass, Wardrobe catalogue, Daily Tide date/streak). Like `src/sim/`, no `three` and no DOM.
+- `src/render/shaders/toy.ts`: toy shader family + outline; `src/render/anim/`: springs and tweens.
+- `src/ui/router.ts` + `src/ui/tokens.css`: screen stack and design tokens for the Phase D UI.
+- Save format is v2 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
 
 ## Rules
 - `src/sim/` never imports `three`. Rendering reads sim state; the sim emits events.

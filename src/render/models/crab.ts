@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PALETTE } from '../../config';
-import { GeoBuilder } from '../geo';
+import { GeoBuilder, mergeAll } from '../geo';
 import type { Materials } from '../materials';
 
 export type HatKind = 'straw' | 'shades' | 'flower' | 'pirate' | 'captain' | 'tophat';
@@ -96,7 +96,6 @@ export class CrabModel {
   /** squash/stretch + lean live on this group, so `root` can be positioned freely */
   private readonly rig = new THREE.Group();
   private readonly bodyMesh: THREE.Mesh;
-  private readonly bellyMesh: THREE.Mesh;
   private readonly head = new THREE.Group();
   private hatMesh: THREE.Mesh | null = null;
   private legs: { pivot: THREE.Group; side: number; idx: number }[] = [];
@@ -115,8 +114,7 @@ export class CrabModel {
     this.root.add(this.rig);
 
     this.bodyMesh = new THREE.Mesh(new THREE.BufferGeometry(), mats.clay);
-    this.bellyMesh = new THREE.Mesh(new THREE.BufferGeometry(), mats.clay);
-    this.rig.add(this.bodyMesh, this.bellyMesh);
+    this.rig.add(this.bodyMesh);
     this.rig.add(this.head);
 
     // legs (3 per side)
@@ -188,8 +186,12 @@ export class CrabModel {
       bb.sphere(skin.dark, 0.08, [0, 0.9, -0.28], [1, 0.5, 1], 8);
       this.bodyMesh.geometry = bb.build();
     }
-    dispose(this.bellyMesh);
-    this.bellyMesh.geometry = new GeoBuilder().sphere(skin.belly, 0.44, [0, 0.43, 0.14], [1.2, 0.66, 0.95], 20).build();
+    // belly merged into the body mesh (one draw call)
+    const belly = new GeoBuilder().sphere(skin.belly, 0.44, [0, 0.43, 0.14], [1.2, 0.66, 0.95], 20).build();
+    const merged = mergeAll([this.bodyMesh.geometry, belly]);
+    this.bodyMesh.geometry.dispose();
+    belly.dispose();
+    this.bodyMesh.geometry = merged;
 
     // legs: thigh up/out then shin down
     const legColor = skin.rainbow ? 0xff7a3a : skin.dark;

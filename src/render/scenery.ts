@@ -212,6 +212,9 @@ export class Scenery {
     }
   }
 
+  /** flames / lanterns (an extra draw call per tile); off on the Low tier */
+  glowOn = true;
+
   setDensity(d: number): void {
     for (const zone of this.variants) for (const v of zone) {
       v.ground.dispose();
@@ -385,7 +388,7 @@ export class Scenery {
         t.ground.material = this.groundMats[zone] as THREE.MeshBasicMaterial;
         t.props.geometry = v.props;
         t.glow.geometry = v.glow ?? EMPTY;
-        t.glow.visible = !!v.glow;
+        t.glow.visible = !!v.glow && this.glowOn;
       }
       t.group.position.z = -(t.k * TILE_LEN - dist);
       // tiles that start beyond the fog are invisible anyway: skip their draw calls
