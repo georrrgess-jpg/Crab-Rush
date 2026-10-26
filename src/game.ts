@@ -3,7 +3,12 @@ import { Audio } from './core/audio';
 import { DebugOverlay, parseFlags, type Flags } from './core/debug';
 import { Input, type Action } from './core/input';
 import { Loop } from './core/loop';
-import { SaveStore } from './core/save';
+import { SaveStore, type Settings } from './core/save';
+import { buyCrab, buyUpgrade, canBuyCrab, grantSkillUnlocks, nextUnlock, selectCrab, upgradeCost } from './sim/economy';
+import { Goals, type RunSnapshot } from './sim/goals';
+import { HowToScreen } from './ui/howto';
+import { SettingsScreen } from './ui/settings';
+import { ShopScreen } from './ui/shop';
 import { Autopilot } from './sim/autopilot';
 import type { GameEvent } from './sim/events';
 import { World, defaultRunOptions, type RunOptions } from './sim/world';
@@ -11,6 +16,7 @@ import { pickQuality } from './render/renderer';
 import { CRAB_SKINS } from './render/models/crab';
 import { GameView, type CamMode } from './render/view';
 import { UI, type GoalView } from './ui/ui';
+import type { PowerKind } from './sim/events';
 
 type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto';
 
@@ -41,6 +47,12 @@ export class Game {
   private returnTo: State = 'title';
   private runStartedWithTutorial = false;
   lastResults: Record<string, number | boolean | string> = {};
+  private goals: Goals;
+  private shop: ShopScreen;
+  private settings: SettingsScreen;
+  private howto: HowToScreen;
+  private goalCheckT = 0;
+  private thumbsReady = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.save = new SaveStore();
@@ -61,6 +73,49 @@ export class Game {
       touch: (a) => this.onAction(a, false),
       tap: () => this.audio.play('tap'),
     });
+    this.goals = new Goals(this.save.data.goals);
+    this.shop = new ShopScreen(CRAB_SKINS, {
+      back: () => this.closeOverlay(),
+      preview: (id) => this.view.setSkin(this.skinOf(id)),
+      select: (id) => {
+        if (selectCrab(this.save.data, id)) {
+          this.save.save();
+          this.audio.play('tap');
+          this.view.setSkin(this.skinOf(id));
+        }
+        this.shop.render(this.save.data);
+      },
+      buyCrab: (id) => {
+        if (buyCrab(this.save.data, id)) {
+          this.save.save();
+          this.audio.play('purchase');
+          this.view.setSkin(this.skinOf(id));
+          this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold' });
+        } else this.audio.play('deny');
+        this.shop.render(this.save.data);
+      },
+      buyUpgrade: (k: PowerKind) => {
+        if (buyUpgrade(this.save.data, k)) {
+          this.save.save();
+          this.audio.play('purchase');
+        } else this.audio.play('deny');
+        this.shop.render(this.save.data);
+      },
+    });
+    this.settings = new SettingsScreen({
+      change: (st) => this.applySettings(st),
+      reset: () => {
+        this.save.reset();
+        this.goals = new Goals(this.save.data.goals);
+        this.view.setSkin(this.skinOf('sandy'));
+        this.ui.toast('Progress erased');
+      },
+      back: () => this.closeOverlay(),
+    });
+    this.howto = new HowToScreen(() => this.closeOverlay());
+    this.ui.addScreen(this.shop.el);
+    this.ui.addScreen(this.settings.el);
+    this.ui.addScreen(this.howto.el);
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
@@ -131,11 +186,8 @@ export class Game {
   // ------------------------------------------------------------------ flow
   private toTitle(): void {
     this.state = 'title';
-    this.world.mode = 'idle';
-    this.world.dist = 0;
-    this.world.prevDist = 0;
-    this.world.entities.length = 0;
-    this.world.shells.length = 0;
+    this.resetWorldToBeach();
+    this.ui.setShopBadge(this.anyAffordable());
     this.input.setPointerEnabled(false);
     this.touchLayer.classList.remove('active');
     this.ui.setTitleInfo(this.save.data.best, this.goalViews());
@@ -236,14 +288,87 @@ export class Game {
     this.input.setPointerEnabled(true);
   }
 
+  private skinOf(id: string) {
+    return CRAB_SKINS.find((k) => k.id === id) ?? CRAB_SKINS[0]!;
+  }
+
   private openShop(): void {
-    this.ui.toast('Crabs & upgrades are coming in the next build!');
+    if (this.state !== 'title' && this.state !== 'results') return;
+    this.audio.play('tap');
+    if (!this.thumbsReady) {
+      this.shop.thumbs = this.view.renderCrabThumbs();
+      this.thumbsReady = true;
+      this.view.setSkin(this.skinOf(this.save.data.crabs.selected));
+    }
+    this.returnTo = 'title';
+    this.resetWorldToBeach();
+    this.state = 'shop';
+    this.shop.open(this.save.data);
+    this.ui.showExtra(this.shop.el);
+    this.view.shopSpin = 0;
   }
+
   private openSettings(): void {
-    this.ui.toast('Settings are coming in the next build!');
+    if (this.state !== 'title' && this.state !== 'paused') return;
+    this.audio.play('tap');
+    this.returnTo = this.state;
+    this.state = 'settings';
+    this.settings.open(this.save.data.settings);
+    this.ui.showExtra(this.settings.el);
   }
+
   private openHowTo(): void {
-    this.ui.toast('Swipe or tap to change lanes, swipe up to hop!');
+    if (this.state !== 'title') return;
+    this.audio.play('tap');
+    this.returnTo = 'title';
+    this.state = 'howto';
+    this.ui.showExtra(this.howto.el);
+  }
+
+  /** Back out of shop / settings / how-to. */
+  private closeOverlay(): void {
+    this.audio.play('tap');
+    this.ui.hideExtras();
+    this.view.setSkin(this.skinOf(this.save.data.crabs.selected));
+    if (this.returnTo === 'paused') {
+      this.state = 'paused';
+      this.ui.show('pause');
+    } else this.toTitle();
+  }
+
+  private applySettings(st: Settings): void {
+    const prev = this.save.data.settings;
+    this.save.data.settings = st;
+    this.save.save();
+    this.audio.setVolumes(st.music, st.sfx);
+    if (st.quality !== prev.quality) {
+      this.quality = pickQuality(this.flags.quality, st.quality);
+      this.view.setQuality(this.quality);
+    }
+    this.view.setReduceMotion(this.reduceMotion);
+    this.ui.setTouchButtons(this.touchButtonsWanted());
+  }
+
+  private resetWorldToBeach(): void {
+    this.world.mode = 'idle';
+    this.world.dist = 0;
+    this.world.prevDist = 0;
+    this.world.entities.length = 0;
+    this.world.shells.length = 0;
+    this.view.resetRun(this.save.data.best);
+  }
+
+  private anyAffordable(): boolean {
+    const d = this.save.data;
+    if (CRAB_SKINS.some((k) => canBuyCrab(d, k.id))) return true;
+    return (['magnet', 'shield', 'rider'] as PowerKind[]).some((k) => {
+      const c = upgradeCost(d.upgrades[k]);
+      return c !== null && d.shells >= c;
+    });
+  }
+
+  private snapshot(): RunSnapshot {
+    return { distance: this.world.distance, stats: this.world.stats, zone: this.world.stats.zonesReached };
   }
 
   // ------------------------------------------------------------------ input
@@ -268,7 +393,9 @@ export class Game {
     if (s === 'results') {
       if ((a === 'confirm' || alsoConfirm) && this.clock - this.resultsAt > 0.6) this.restart();
       else if (a === 'back') this.goHome();
+      return;
     }
+    if ((s === 'shop' || s === 'settings' || s === 'howto') && a === 'back') this.closeOverlay();
   }
 
   // ------------------------------------------------------------------ fixed step
@@ -334,7 +461,9 @@ export class Game {
     const newBest = distance > prevBest && prevBest > 0;
     const pickups = w.stats.shells;
     const bonus = w.stats.bonus;
-    const goalRewards = 0;
+    const snap = this.snapshot();
+    const completedIds = [...this.goals.pending];
+    const { completed, reward: goalRewards } = this.goals.finishRun(snap);
     const total = pickups + bonus + goalRewards;
     d.shells += total;
     if (w.startDist === 0) d.best = Math.max(d.best, distance);
@@ -351,8 +480,10 @@ export class Game {
       d.tutorial.move = true;
       d.tutorial.hop = true;
     }
+    const unlocked = grantSkillUnlocks(d);
     this.save.save();
-    this.lastResults = { distance, pickups, bonus, total, newBest };
+    this.lastResults = { distance, pickups, bonus, total, newBest, goals: completed.length };
+    void completedIds;
 
     this.state = 'results';
     this.resultsAt = this.clock;
@@ -365,22 +496,21 @@ export class Game {
       goalRewards,
       total,
       balance: d.shells,
-      goals: this.goalViews(),
-      unlock: this.nextUnlock(),
+      goals: [
+        ...completed.map((g) => ({ text: g.text, progress: 1, value: '', reward: (CFG.goalRewards[Math.min(g.tier, 4) - 1] as number) ?? 400, done: true })),
+        ...this.goalViews(),
+      ],
+      unlock: nextUnlock(d, Object.fromEntries(CRAB_SKINS.map((k) => [k.id, k.name]))),
       zone: CFG.zoneNames[w.zone] ?? '',
     });
+    this.ui.setShopBadge(this.anyAffordable());
     if (newBest) this.audio.play('newBest');
-  }
-
-  private nextUnlock(): { name: string; have: number; need: number } | null {
-    const d = this.save.data;
-    const crab = CRAB_SKINS.filter((s) => !d.crabs.owned.includes(s.id) && (CFG.crabPrices[s.id] ?? 0) > 0).sort((a, b) => (CFG.crabPrices[a.id] ?? 0) - (CFG.crabPrices[b.id] ?? 0))[0];
-    if (crab) return { name: crab.name, have: d.shells, need: CFG.crabPrices[crab.id] ?? 0 };
-    return null;
+    for (const id of unlocked) this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold', sub: 'Find them in Crabs', life: 3 });
   }
 
   private goalViews(): GoalView[] {
-    return [];
+    const live = this.state === 'running' || this.state === 'paused' || this.state === 'countdown' || this.state === 'intro' || this.state === 'crashing';
+    return this.goals.views(live ? this.snapshot() : null);
   }
 
   // ------------------------------------------------------------------ render
@@ -388,13 +518,22 @@ export class Game {
     if (this.skipRender) return;
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
-    const mode: CamMode = this.state === 'title' ? 'title' : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
-    const dt = this.state === 'paused' ? 0 : frameDt;
+    const mode: CamMode = this.state === 'title' || this.state === 'settings' || this.state === 'howto' ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
+    if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
+    const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
     this.view.frame(this.world, alpha, dt, mode, this.introT);
     if (this.state === 'running' || this.state === 'intro' || this.state === 'crashing' || this.state === 'countdown' || this.state === 'paused') {
       const w = this.world;
       const pk = w.power.kind;
       this.ui.updateHUD(w.runShells, w.distance, pk, pk ? w.power.t / w.power.dur : 0, w.streak);
+      this.goalCheckT -= frameDt;
+      if (this.goalCheckT <= 0 && (this.state === 'running' || this.state === 'intro')) {
+        this.goalCheckT = 0.25;
+        for (const g of this.goals.checkLive(this.snapshot())) {
+          this.audio.play('goal');
+          this.ui.toast(`Goal complete! <span class="price">+${CFG.goalRewards[Math.min(g.tier, 4) - 1] ?? 400}</span>`, { kind: 'green', sub: g.text, life: 2.4 });
+        }
+      }
     }
     if (this.debug) {
       this.debug.update(frameDt, () => {
@@ -456,6 +595,7 @@ export class Game {
         case 'zoneEnter':
           this.audio.play('zone');
           this.ui.toast(`New area: ${CFG.zoneNames[ev.zone]}!`, { kind: 'green', big: true, sub: ev.first ? `First visit bonus +${CFG.zoneBonus} shells` : undefined, life: 2.6 });
+          if (ev.zone === 3 && !this.save.data.crabs.owned.includes('dazzle')) this.ui.toast('Dazzle unlocked!', { kind: 'gold', sub: 'A sparkly new crab', life: 3 });
           break;
         case 'milestone':
           this.audio.play('milestone');
@@ -499,7 +639,16 @@ export class Game {
       },
       setState(name: string) {
         if (name === 'title') g.toTitle();
-        else if (name === 'pause') {
+        else if (name === 'shop') {
+          g.toTitle();
+          g.openShop();
+        } else if (name === 'settings') {
+          g.toTitle();
+          g.openSettings();
+        } else if (name === 'howto') {
+          g.toTitle();
+          g.openHowTo();
+        } else if (name === 'pause') {
           if (g.state !== 'running') g.startRun(false);
           g.pause();
         }

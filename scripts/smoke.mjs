@@ -85,6 +85,51 @@ try {
   check((await st()).state === 'running', 'Play Again restarts instantly (no intro)');
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('crabdash.save')));
   check(saved && saved.stats.runs >= 1, 'progress is saved to localStorage');
+
+  // ---------------- tutorial: slow-mo until the player moves
+  await page.goto(`${base}?shots&reset&seed=5&quality=low`);
+  await page.waitForFunction(() => window.__crab?.ready);
+  await page.evaluate(() => window.__crab.startRun({ seed: 5, autopilot: false, tutorial: true }));
+  let waited = 0;
+  while (waited++ < 40 && (await page.evaluate(() => window.__crab.game.world.timeScale)) === 1) await fr(15);
+  check((await page.evaluate(() => window.__crab.game.world.timeScale)) < 1, 'tutorial slows time before the first sandcastle');
+  check(await page.isVisible('#tutorial .bubble'), 'tutorial prompt is shown');
+  await page.keyboard.press('ArrowLeft');
+  await fr(3);
+  check((await page.evaluate(() => window.__crab.game.world.timeScale)) === 1, 'moving clears the slow-mo');
+
+  // ---------------- shop: buy + wear + upgrade
+  await page.evaluate(() => { window.__crab.grant(1000); window.__crab.setState('shop'); });
+  await fr(3);
+  check((await st()).state === 'shop', 'shop opens');
+  await page.click('.tile:has-text("Chill")');
+  await page.click('.crab-detail .btn');
+  const afterBuy = await page.evaluate(() => window.__crab.game.save.data);
+  check(afterBuy.crabs.owned.includes('chill') && afterBuy.crabs.selected === 'chill' && afterBuy.shells === 550, 'buying Chill spends 450 shells and wears it');
+  await page.click('.tabs button:nth-child(2)');
+  await page.click('.up-card .btn');
+  check((await page.evaluate(() => window.__crab.game.save.data.upgrades.magnet)) === 1, 'buying a magnet upgrade raises its level');
+  await page.keyboard.press('Escape');
+  await fr(2);
+  check((await st()).state === 'title', 'Escape leaves the shop');
+
+  // ---------------- settings + how to play
+  await page.click('button[aria-label="Settings"]');
+  check((await st()).state === 'settings', 'settings open from the title');
+  await page.click('.seg button:has-text("Low")');
+  check((await page.evaluate(() => JSON.parse(localStorage.getItem('crabdash.save')).settings.quality)) === 'low', 'graphics setting is saved');
+  await page.click('#settings .btn.big');
+  check((await st()).state === 'title', 'Done returns to the title');
+  await page.click('button[aria-label="How to play"]');
+  check(await page.isVisible('#howto .howto-card'), 'how-to-play cards are shown');
+  await page.click('#howto .btn.big');
+  check((await st()).state === 'title', 'Got it returns to the title');
+  await page.evaluate(() => window.__crab.startRun({ seed: 2, tutorial: false }));
+  await page.keyboard.press('KeyP');
+  await page.click('#pause .btn:has-text("Settings")');
+  check((await st()).state === 'settings', 'settings open from the pause menu');
+  await page.click('#settings .btn.big');
+  check((await st()).state === 'paused', 'closing settings returns to the pause menu');
   await ctx.close();
 
   // ---------------- phone: touch

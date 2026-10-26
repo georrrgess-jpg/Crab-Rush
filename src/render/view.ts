@@ -331,10 +331,10 @@ export class GameView {
       this.titleSpin += dt;
       const aspect = cam.aspect;
       const portrait = aspect < 1;
-      const r = portrait ? 5.2 : 4.4;
+      const r = portrait ? 6.4 : 4.4;
       const a = Math.sin(this.titleSpin * 0.18) * 0.35 + 0.28;
-      const titlePos = new THREE.Vector3(Math.sin(a) * r, portrait ? 2.3 : 1.7, Math.cos(a) * r);
-      const titleLook = new THREE.Vector3(-0.4, portrait ? 1.6 : 1.3, -3);
+      const titlePos = new THREE.Vector3(Math.sin(a) * r, portrait ? 2.1 : 1.7, Math.cos(a) * r);
+      const titleLook = new THREE.Vector3(-0.3, portrait ? 0.45 : 1.3, -3);
       if (mode === 'title') {
         pos = titlePos;
         look = titleLook;
@@ -345,8 +345,8 @@ export class GameView {
       }
     } else if (mode === 'shop') {
       const portrait = cam.aspect < 1;
-      pos = new THREE.Vector3(0, portrait ? 2.0 : 1.5, portrait ? 4.6 : 3.4);
-      look = new THREE.Vector3(portrait ? 0 : 1.1, portrait ? -0.25 : 0.6, 0);
+      pos = new THREE.Vector3(0, portrait ? 2.0 : 1.9, portrait ? 4.6 : 5.4);
+      look = new THREE.Vector3(portrait ? 0 : 1.5, portrait ? -0.25 : 0.75, 0);
     } else {
       pos = runPos;
       look = runLook;
@@ -372,5 +372,44 @@ export class GameView {
 
   get skins(): CrabSkin[] {
     return CRAB_SKINS;
+  }
+
+  /** Render a portrait of every crab skin into PNG data URLs (shop tiles). One-off cost. */
+  renderCrabThumbs(size = 192): string[] {
+    const gl = this.renderer.gl;
+    const scene = new THREE.Scene();
+    const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
+    cam.position.set(0, 1.75, 4.3);
+    cam.lookAt(0, 0.68, 0);
+    const crab = new CrabModel(this.mats);
+    scene.add(crab.root);
+    const rt = new THREE.WebGLRenderTarget(size, size, { samples: 4 });
+    rt.texture.colorSpace = THREE.SRGBColorSpace;
+    const px = new Uint8Array(size * size * 4);
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d') as CanvasRenderingContext2D;
+    const img = ctx.createImageData(size, size);
+    const prevColor = new THREE.Color();
+    gl.getClearColor(prevColor);
+    const prevAlpha = gl.getClearAlpha();
+    const out: string[] = [];
+    for (const skin of CRAB_SKINS) {
+      crab.setSkin(skin);
+      crab.pose(0, 0.9, 0, 1, false, -1, 0, true);
+      crab.root.rotation.y = -0.25;
+      gl.setRenderTarget(rt);
+      gl.setClearColor(0x000000, 0);
+      gl.clear();
+      gl.render(scene, cam);
+      gl.readRenderTargetPixels(rt, 0, 0, size, size, px);
+      for (let y = 0; y < size; y++) img.data.set(px.subarray((size - 1 - y) * size * 4, (size - y) * size * 4), y * size * 4);
+      ctx.putImageData(img, 0, 0);
+      out.push(c.toDataURL('image/png'));
+    }
+    gl.setRenderTarget(null);
+    gl.setClearColor(prevColor, prevAlpha);
+    rt.dispose();
+    return out;
   }
 }

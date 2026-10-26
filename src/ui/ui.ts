@@ -66,6 +66,8 @@ export class UI {
   private lastDist = -1;
   private lastPower: PowerKind | null = null;
   touchButtonsVisible = false;
+  private crabsBtn!: HTMLButtonElement;
+  private shopBadge = false;
   current: ScreenName = 'none';
   extraScreens: HTMLElement[] = [];
 
@@ -88,8 +90,9 @@ export class UI {
     });
     this.titleGoals = el('div', 'goals-card');
     const menu = el('div', 'menu-row');
+    this.crabsBtn = btn(`${ICON.crab}<span>Crabs</span><i class="dot hidden"></i>`, 'blue small', () => this.h.openShop(), 'Crabs and upgrades');
     menu.append(
-      btn(`${ICON.crab}<span>Crabs</span>`, 'blue small', () => this.h.openShop(), 'Crabs and upgrades'),
+      this.crabsBtn,
       btn(`${ICON.gear}`, 'blue small', () => this.h.openSettings(), 'Settings'),
       btn(`${ICON.help}`, 'blue small', () => this.h.openHowTo(), 'How to play'),
     );
@@ -218,6 +221,12 @@ export class UI {
     this.titleBest.textContent = best > 0 ? `Best: ${fmt(best)} m` : '';
     this.renderGoals(this.titleGoals, goals, 'Goals');
     this.renderGoals(this.pauseGoals, goals, 'Goals');
+  }
+
+  /** A red dot on the Crabs buttons when something is affordable. */
+  setShopBadge(on: boolean): void {
+    this.shopBadge = on;
+    this.crabsBtn.querySelector('.dot')?.classList.toggle('hidden', !on);
   }
 
   setPlayPrompt(keyboard: boolean): void {
@@ -377,7 +386,7 @@ export class UI {
     buttons.style.marginTop = '14px';
     const again = btn(`${ICON.restart}<span>Play Again</span>`, 'big', () => this.h.restart());
     const sub = el('div', 'btn-row');
-    sub.append(btn(`${ICON.crab}<span>Crabs</span>`, 'blue small', () => this.h.openShop()), btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()));
+    sub.append(btn(`${ICON.crab}<span>Crabs</span><i class="dot${this.shopBadge ? '' : ' hidden'}"></i>`, 'blue small', () => this.h.openShop()), btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()));
     buttons.append(again, sub);
     colB.appendChild(buttons);
     grid.append(colA, colB);
