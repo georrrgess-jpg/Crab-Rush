@@ -147,6 +147,9 @@ class Placer {
 class PropKit {
   palms = [0, 1, 2, 3].map((i) => P.palm(100 + i, 5.5 + i * 0.7, 0.8 + i * 0.35));
   palmsDusk = [0, 1].map((i) => P.palm(200 + i, 6 + i, 1.1, 0x7d5129, 0x2f7a43, 0x1f5a32));
+  /** background rows: low-detail palms */
+  palmsFar = [0, 1, 2, 3].map((i) => P.palm(100 + i, 5.5 + i * 0.7, 0.8 + i * 0.35, PALETTE.palmTrunk, PALETTE.palmLeaf, PALETTE.palmLeafDark, true));
+  palmsDuskFar = [0, 1].map((i) => P.palm(200 + i, 6 + i, 1.1, 0x7d5129, 0x2f7a43, 0x1f5a32, true));
   umbrellaRed = P.umbrella(PALETTE.umbrellaRed, PALETTE.umbrellaCream, 0.12);
   umbrellaBlue = P.umbrella(PALETTE.umbrellaBlue, PALETTE.umbrellaCream, -0.1);
   towelA = P.towel(0xff7a1a, 0xfff4dc);
@@ -166,11 +169,11 @@ class PropKit {
   kiosks = [P.kiosk(0xe53935, 0xffffff), P.kiosk(0x2f6fd6, 0xffffff), P.kiosk(0x3dae4f, 0xfff4dc)];
   boats = [P.boat(0xe53935), P.boat(0x2f6fd6), P.boat(0xffc933)];
   buoy = P.buoy();
-  crates = P.crateStack();
+  crates = P.crateStack(0, true);
   cliffs = [0, 1, 2].map((i) => P.cliff(70 + i));
   pools = [0, 1, 2].map((i) => P.tidePool(80 + i));
   corals = [0, 1, 2].map((i) => P.coral(90 + i));
-  urchins = P.urchins();
+  urchins = P.urchins(0, true);
   torch = P.tikiTorch();
   flame = P.flame();
   lanterns = [0xffd23a, 0xff7aa2, 0x7ad0ff].map((c) => P.lantern(c));
@@ -327,7 +330,8 @@ export class Scenery {
         // palms mid + far
         const nPalm = 2 + Math.floor(r() * 2);
         for (let i = 0; i < nPalm; i++) pl.add(palms[Math.floor(r() * palms.length)] as THREE.BufferGeometry, -9 - r() * 9, -(i / nPalm) * L - r() * 6, r() * 6, 0.9 + r() * 0.35, 0, true);
-        for (let i = 0; i < 2; i++) pl.add(palms[Math.floor(r() * palms.length)] as THREE.BufferGeometry, -20 - r() * 12, rz(), r() * 6, 1.2 + r() * 0.4);
+        const far = dusk ? K.palmsDuskFar : K.palmsFar;
+        for (let i = 0; i < 2; i++) pl.add(far[Math.floor(r() * far.length)] as THREE.BufferGeometry, -20 - r() * 12, rz(), r() * 6, 1.2 + r() * 0.4);
         pl.add(K.bush[0] as THREE.BufferGeometry, -15 - r() * 10, rz(), r() * 6, 1.4);
         pl.add(K.bush[1] as THREE.BufferGeometry, -24 - r() * 10, rz(), r() * 6, 1.8);
         if (r() < 0.6) pl.add(K.rocks[Math.floor(r() * 3)] as THREE.BufferGeometry, -7 - r() * 6, rz(), r() * 6);

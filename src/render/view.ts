@@ -166,6 +166,7 @@ export class GameView {
     this.scenery.glowOn = full;
     this.backdrop.setDetail(full);
     this.entities.lite = !full;
+    this.entities.setOutlines(full);
     this.crab.setDetail(full);
     this.feet.mesh.visible = full;
   }
