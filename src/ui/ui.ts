@@ -54,6 +54,8 @@ export class UI {
   private touchR: HTMLButtonElement;
   private shellsVal: HTMLElement;
   private shellsPill: HTMLElement;
+  /** pooled flying shell sprites (pickup → counter) */
+  private flyers: { el: HTMLElement; busy: boolean }[] = [];
   private distVal: HTMLElement;
   private powerRing: HTMLElement;
   private powerArc: SVGCircleElement;
@@ -118,6 +120,11 @@ export class UI {
     this.powerIc = this.powerRing.querySelector('.ic') as HTMLElement;
     this.streakEl = el('div', 'streak hidden');
     left.append(this.shellsPill, this.powerRing, this.streakEl);
+    for (let i = 0; i < 10; i++) {
+      const f = el('div', 'shell-fly', ICON.shell);
+      f.setAttribute('aria-hidden', 'true');
+      this.flyers.push({ el: f, busy: false });
+    }
     const right = el('div', 'right');
     const pauseBtn = btn(ICON.pause, 'blue pause-btn', () => this.h.pause(), 'Pause');
     const dist = el('div', 'pill dist', `<b>0</b><span class="unit">m</span><span class="ico">${ICON.flag}</span>`);
@@ -250,6 +257,37 @@ export class UI {
     this.touchButtonsVisible = visible;
     this.touchL.classList.toggle('hidden', !visible);
     this.touchR.classList.toggle('hidden', !visible);
+  }
+
+  /** A collected shell flies from its screen position to the counter along a curve (UPDATE2_PLAN.md §3.3). */
+  flyShell(x: number, y: number, big: boolean): void {
+    if (this.hud.classList.contains('hidden')) return;
+    const f = this.flyers.find((q) => !q.busy);
+    if (!f) return;
+    if (!f.el.isConnected) this.hud.append(f.el);
+    const r = this.shellsPill.querySelector('.ico')?.getBoundingClientRect() ?? this.shellsPill.getBoundingClientRect();
+    const tx = r.left + r.width / 2;
+    const ty = r.top + r.height / 2;
+    // control point: up and toward the counter so the path arcs
+    const mx = x + (tx - x) * 0.35;
+    const my = Math.max(12, Math.min(y, ty) - 40);
+    f.busy = true;
+    const s0 = big ? 1.5 : 1;
+    const a = f.el.animate(
+      [
+        { transform: `translate(${x}px, ${y}px) translate(-50%, -50%) scale(${s0 * 0.6})`, opacity: 0 },
+        { transform: `translate(${mx}px, ${my}px) translate(-50%, -50%) scale(${s0 * 1.15})`, opacity: 1, offset: 0.35 },
+        { transform: `translate(${tx}px, ${ty}px) translate(-50%, -50%) scale(0.7)`, opacity: 1 },
+      ],
+      { duration: 480, easing: 'cubic-bezier(0.45, 0, 0.55, 1)' },
+    );
+    a.onfinish = () => {
+      f.busy = false;
+      f.el.style.opacity = '0';
+      this.shellsPill.classList.remove('pop');
+      void this.shellsPill.offsetWidth;
+      this.shellsPill.classList.add('pop');
+    };
   }
 
   updateHUD(shells: number, dist: number, power: PowerKind | null, powerFrac: number, streak: number): void {

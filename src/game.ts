@@ -638,6 +638,10 @@ export class Game {
       switch (ev.t) {
         case 'shell':
           this.audio.play(ev.big ? 'bigShell' : 'shell', { streak: ev.streak });
+          if (!this.reduceMotion && !this.skipRender) {
+            const p = this.view.toScreen(ev.x, ev.y + 0.6, 0);
+            this.ui.flyShell(p.x, p.y, ev.big);
+          }
           break;
         case 'laneChange':
           this.audio.play('lane', { pan: ev.dir * 0.4 });

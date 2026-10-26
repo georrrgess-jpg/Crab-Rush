@@ -3,7 +3,7 @@ import { PALETTE } from '../../config';
 
 /** A stylised scallop: a fan of ridged wedges standing upright, hinge at the bottom. */
 export function scallopGeometry(): THREE.BufferGeometry {
-  const ribs = 7;
+  const ribs = 11;
   const spread = Math.PI * 0.88; // fan angle
   const R = 0.34;
   const pos: number[] = [];
@@ -13,6 +13,7 @@ export function scallopGeometry(): THREE.BufferGeometry {
   const hi = new THREE.Color(PALETTE.shellHighlight);
   const edge = new THREE.Color(PALETTE.shellEdge);
   const c = new THREE.Color();
+  const pearl = new THREE.Color(0xfff2f6);
   const push = (x: number, y: number, z: number, color: THREE.Color): number => {
     pos.push(x, y, z);
     col.push(color.r, color.g, color.b);
@@ -36,7 +37,8 @@ export function scallopGeometry(): THREE.BufferGeometry {
     const a = -spread / 2 + ((i + 0.5) / ribs) * spread;
     const mx = Math.sin(a) * R * 1.0;
     const my = -R * 0.55 + Math.cos(a) * R * 1.22;
-    const m = push(mx, my, 0.11, i % 2 === 0 ? hi : base);
+    // pearly ridges: alternate a pale nacre tone with the gold
+    const m = push(mx, my, 0.11, i % 2 === 0 ? c.copy(hi).lerp(pearl, 0.35) : base);
     mids.push(m);
     // inner raised point halfway to the hinge
     c.copy(base);

@@ -6,10 +6,12 @@ import { zoneBlend } from '../sim/zones';
 import { Backdrop } from './backdrop';
 import { CAMERA_ELEVATION } from './camera';
 import { EntityViews } from './entities';
+import { LivingWorld } from './life';
 import { BlobShadows, Footprints, Particles } from './fx';
 import { Materials } from './materials';
 import { CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, IDLE_DRIVE } from './models/crab';
 import { powerupIcon, riderWave } from './models/obstacles';
+import { Spring } from './anim/spring';
 import { Ocean } from './ocean';
 import { NIGHT_PALETTE, ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
 import { Renderer } from './renderer';
@@ -50,12 +52,17 @@ export class GameView {
   private drive: CrabDrive = { running: false, grounded: true, vy: 0, vx: 0, speed: 0, crashT: -1, rider: false };
   private dustT = 0;
   private feet = new Footprints();
+  private life: LivingWorld;
   /** track distance of the last footprint */
   private footT = 0;
   private time = 0;
-  private shakeAmp = 0;
-  private shakeT = 0;
-  private camX = 0;
+  /** camera shake is trauma-based: offset = trauma², trauma decays (UPDATE2_PLAN.md §3.3) */
+  private trauma = 0;
+  private camX = new Spring(0, { freq: 9, damping: 0.8 });
+  private fovPunch = new Spring(0, { freq: 10, damping: 0.55 });
+  private camDip = new Spring(0, { freq: 12, damping: 0.5 });
+  private vOrbit = new THREE.Vector3();
+  private vOrbitLook = new THREE.Vector3();
   private reduceMotion = false;
   private shieldMesh: THREE.Mesh;
   private boardGroup = new THREE.Group();
@@ -90,8 +97,10 @@ export class GameView {
     this.shadows = new BlobShadows(this.mats);
     this.world.add(this.shadows.mesh);
     this.world.add(this.feet.mesh);
+    this.life = new LivingWorld(this.mats);
+    this.world.add(this.life.group);
     this.shells = new ShellRenderer(this.mats);
-    this.world.add(this.shells.mesh, this.shells.glow);
+    this.world.add(this.shells.mesh, this.shells.glow, this.shells.sparkle);
     this.dust = new Particles(this.mats.dustTex, false, 160);
     this.sparks = new Particles(this.mats.sparkTex, true, 160);
     this.dust.limit = Math.floor(quality.maxParticles * 0.6);
@@ -169,6 +178,9 @@ export class GameView {
     this.entities.setOutlines(full);
     this.crab.setDetail(full);
     this.feet.mesh.visible = full;
+    this.shells.sparkle.visible = full;
+    this.life.lite = !full;
+    this.life.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxDpr));
   }
 
   setQuality(q: QualityPreset): void {
@@ -190,16 +202,19 @@ export class GameView {
     this.dust.clear();
     this.feet.clear();
     this.footT = 0;
+    this.life.reset(0);
     this.sparks.clear();
     this.entities.setBest(best);
     this.crab.reset();
-    this.shakeAmp = 0;
+    this.trauma = 0;
+    this.fovPunch.snap(0);
+    this.camDip.snap(0);
   }
 
   shake(amp: number, t: number): void {
     if (this.reduceMotion) return;
-    this.shakeAmp = Math.max(this.shakeAmp, amp);
-    this.shakeT = Math.max(this.shakeT, t);
+    // old (amp, seconds) calls map onto trauma: bigger hits add more
+    this.trauma = Math.min(1, this.trauma + amp * 2.4 + t * 0.4);
   }
 
   private applyPalette(dist: number): void {
@@ -239,10 +254,12 @@ export class GameView {
           break;
         case 'hop':
           this.crab.hop();
+          if (!this.reduceMotion) this.fovPunch.impulse(30);
           this.puff(p.x, w.dist, 6, 0.4);
           break;
         case 'land':
           this.crab.land(ev.hard);
+          if (!this.reduceMotion) this.camDip.impulse(ev.hard ? -2.2 : -1.1);
           this.puff(p.x, w.dist, ev.hard ? 12 : 8, ev.hard ? 0.55 : 0.4);
           if (ev.hard) this.shake(0.08, 0.12);
           break;
@@ -393,13 +410,26 @@ export class GameView {
 
     // camera
     const cam = this.renderer.camera;
-    this.renderer.setFovBoost(running ? Math.min(1, Math.max(0, (speed - 10) / 14)) : 0, pk === 'rider' ? 4 : 0);
-    const followX = running ? px : 0;
-    this.camX += (followX - this.camX) * Math.min(1, dt * 10);
+    this.fovPunch.update(dt);
+    this.camDip.update(dt);
+    this.renderer.setFovBoost(running ? Math.min(1, Math.max(0, (speed - 10) / 14)) : 0, (pk === 'rider' ? 4 : 0) + this.fovPunch.value * 0.12);
+    this.camX.target = running ? px : 0;
+    if (this.reduceMotion) this.camX.snap(this.camX.target);
+    const camX = this.camX.update(dt);
     const d = this.renderer.fitDist;
     const el = CAMERA_ELEVATION;
-    const runPos = this.vRunPos.set(this.camX * 0.4, 0.5 + Math.sin(el) * d, Math.cos(el) * d);
-    const runLook = this.vRunLook.set(this.camX * 0.6, CFG.camera.lookY, -CFG.camera.lookAhead);
+    const runPos = this.vRunPos.set(camX * 0.4, 0.5 + Math.sin(el) * d + this.camDip.value * 0.12, Math.cos(el) * d);
+    const runLook = this.vRunLook.set(camX * 0.6, CFG.camera.lookY + this.camDip.value * 0.06, -CFG.camera.lookAhead);
+    if (crashT >= 0 && mode === 'run' && !this.reduceMotion) {
+      // after a crash the camera swings slowly around to the side, closer to the crab
+      const k = Math.min(1, crashT / 1.4);
+      const e = k * k * (3 - 2 * k);
+      const a = 0.55 + crashT * 0.06;
+      this.vOrbit.set(px + Math.sin(a) * 5.2, 2.6, Math.cos(a) * 5.2);
+      this.vOrbitLook.set(px, 0.5, 0);
+      runPos.lerp(this.vOrbit, e * 0.85);
+      runLook.lerp(this.vOrbitLook, e * 0.85);
+    }
     let pos: THREE.Vector3;
     let look: THREE.Vector3;
     if (mode === 'title' || mode === 'intro') {
@@ -428,12 +458,14 @@ export class GameView {
     }
     this.camPos.copy(pos);
     this.camLook.copy(look);
-    if (this.shakeT > 0) {
-      this.shakeT -= dt;
-      const a = this.shakeAmp * Math.max(0, this.shakeT) * 3;
-      this.camPos.x += (Math.random() - 0.5) * a;
-      this.camPos.y += (Math.random() - 0.5) * a;
-      if (this.shakeT <= 0) this.shakeAmp = 0;
+    if (this.trauma > 0) {
+      // smooth noise-like shake (sums of sines) scaled by trauma²
+      const sh = this.trauma * this.trauma * 0.45;
+      const t = this.time * 31;
+      this.camPos.x += (Math.sin(t) * 0.6 + Math.sin(t * 2.3 + 1.1) * 0.4) * sh;
+      this.camPos.y += (Math.sin(t * 1.7 + 2.3) * 0.6 + Math.sin(t * 3.1) * 0.4) * sh;
+      this.camLook.x += Math.sin(t * 0.9 + 4.0) * sh * 0.5;
+      this.trauma = Math.max(0, this.trauma - dt * 1.8);
     }
     if (this.debugCam) {
       // test hook: a fixed close-up relative to the crab (animation strips)
@@ -452,9 +484,19 @@ export class GameView {
     this.ocean.mesh.position.x = 0;
 
     if (this.feet.mesh.visible) this.feet.update(dt, dist);
+    this.life.update(dt, this.time, dist, zone, this.night);
     this.dust.update(dt, dist, cam.quaternion);
     this.sparks.update(dt, dist, cam.quaternion);
     this.renderer.render();
+  }
+
+  private vScreen = new THREE.Vector3();
+  /** Project a crab-local point (x, y, z in the world group) to CSS pixels; returns a shared vector. */
+  toScreen(x: number, y: number, z: number): THREE.Vector3 {
+    const v = this.vScreen.set(x, y, z).project(this.renderer.camera);
+    const c = this.renderer.gl.domElement.getBoundingClientRect();
+    v.set(c.left + (v.x * 0.5 + 0.5) * c.width, c.top + (0.5 - v.y * 0.5) * c.height, 0);
+    return v;
   }
 
   get toyLighting(): ToyLighting {
