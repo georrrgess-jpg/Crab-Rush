@@ -444,6 +444,7 @@ export class GameView {
     cam.lookAt(this.camLook);
     cam.updateMatrixWorld();
     this.mats.lighting.update(cam);
+    this.mats.lighting.uniforms.uTime.value = this.time;
     this.sky.mesh.position.copy(cam.position);
     this.sky.stars.position.copy(cam.position);
     this.sky.update(this.time, this.night, this.renderer.quality.name !== 'low');

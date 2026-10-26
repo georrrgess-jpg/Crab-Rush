@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PALETTE } from '../config';
-import { GeoBuilder } from './geo';
+import { GeoBuilder, addWind } from './geo';
 
 /** Deterministic tiny RNG for prop variation. */
 export function prng(seed: number): () => number {
@@ -91,7 +91,8 @@ export function palm(seed: number, h = 6, lean = 1.2, trunkCol: number = PALETTE
     const a = (i / 3) * Math.PI * 2 + 0.4;
     b.sphere(0x6b4423, 0.16, [top[0] + Math.cos(a) * 0.22, top[1] - 0.18, top[2] + Math.sin(a) * 0.22], [1, 1, 1], 8);
   }
-  return b.build();
+  // sway grows up the trunk; fronds hang off the top so they swing furthest
+  return addWind(b.build(), (x, y) => Math.pow(Math.max(0, y) / h, 2) * 0.2);
 }
 
 function canopy(colA: number, colB: number, r: number, h: number, panels = 8): THREE.BufferGeometry {
@@ -134,7 +135,8 @@ export function umbrella(colA: number, colB: number, tilt = 0.15): THREE.BufferG
   c.translate(top[0], top[1] - 0.25, top[2]);
   b.raw(c);
   b.sphere(colA, 0.08, [top[0] + Math.sin(tilt) * 0.35, top[1] + 0.32, 0], [1, 1, 1], 6);
-  return b.build();
+  // the canopy rim ripples in the breeze
+  return addWind(b.build(), (x, y, z) => (y > 1.9 && Math.hypot(x - top[0], z) > 0.9 ? -0.025 : 0));
 }
 
 export function towel(colA: number, colB: number): THREE.BufferGeometry {
@@ -198,7 +200,7 @@ export function miniCastle(): THREE.BufferGeometry {
   }
   b.cyl(0x7a5530, 0.015, 0.015, 0.5, [0, 1.35, 0], [0, 0, 0], 4);
   b.box(0xe53935, 0.24, 0.14, 0.02, [0.13, 1.5, 0]);
-  return b.build();
+  return addWind(b.build(), (x, y) => (y > 1.42 && x > 0.02 ? -0.02 * x * 6 : 0));
 }
 
 export function pinkShell(): THREE.BufferGeometry {
@@ -221,7 +223,7 @@ export function tinyCrab(): THREE.BufferGeometry {
 export function seaweed(): THREE.BufferGeometry {
   const b = new GeoBuilder();
   for (let i = 0; i < 4; i++) b.cone(0x3f8f4a, 0.06, 0.5 + i * 0.12, [(i - 1.5) * 0.12, 0.25, (i % 2) * 0.08], [0.1 * (i - 1.5), 0, 0.15 * (i - 1.5)], 4);
-  return b.build();
+  return addWind(b.build(), (x, y) => Math.max(0, y) * 0.12);
 }
 
 // --------------------------------------------------------------- zone 1: boardwalk
@@ -258,7 +260,7 @@ export function boat(col: number): THREE.BufferGeometry {
   b.box(0xfff4dc, 1.0, 0.1, 2.6, [0, 0.42, 0]);
   b.cyl(0x8a5a2b, 0.05, 0.05, 2.6, [0, 1.6, 0.2], [0, 0, 0], 5);
   b.cone(0xffffff, 0.8, 2.2, [0.05, 1.7, -0.2], [0, Math.PI / 2, 0], 3, [0.08, 1, 1]);
-  return b.build();
+  return addWind(b.build(), (x, y) => (y > 0.7 ? -0.03 * (y - 0.7) : 0));
 }
 
 export function buoy(): THREE.BufferGeometry {
@@ -311,7 +313,7 @@ export function coral(seed: number): THREE.BufferGeometry {
     b.seg(c, [0, 0, 0], [Math.cos(a) * 0.3, len, Math.sin(a) * 0.3], 0.07, 0.1, 5);
     b.sphere(c, 0.1, [Math.cos(a) * 0.3, len, Math.sin(a) * 0.3], [1, 1, 1], 5);
   }
-  return b.build();
+  return addWind(b.build(), (x, y) => Math.max(0, y) * 0.05);
 }
 
 export function urchins(): THREE.BufferGeometry {
@@ -361,11 +363,12 @@ export function flame(): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.cone(0xff7a1a, 0.15, 0.45, [0, 2.65, 0], [0, 0, 0], 6);
   b.cone(0xffe14a, 0.08, 0.28, [0, 2.6, 0.02], [0, 0, 0], 6);
-  return b.build();
+  // flames lick upward: flutter weighted toward the tip
+  return addWind(b.build(), (x, y) => -Math.max(0, y - 2.45) * 0.12);
 }
 
 export function lantern(col: number): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.sphere(col, 0.16, [0, 0, 0], [1, 1.2, 1], 8);
-  return b.build();
+  return addWind(b.build(), () => 0.05);
 }

@@ -69,13 +69,15 @@ export class Materials {
   readonly gold = makeToy(this.lighting, { gloss: 1.1, color: 0xfff2c8 });
   /** double-sided variant for thin geometry (fronds, flags) */
   readonly clay2 = makeToy(this.lighting, { side: THREE.DoubleSide });
+  /** clay with vertex wind (scenery props, flags, spines) */
+  readonly clayWind = makeToy(this.lighting, { gloss: 0.12, wind: true });
   private lite = false;
 
   /** Low tier: drop rim and specular terms (one define, recompiles once). */
   setLite(on: boolean): void {
     if (on === this.lite) return;
     this.lite = on;
-    for (const m of [this.clay, this.gloss, this.gold, this.clay2]) {
+    for (const m of [this.clay, this.gloss, this.gold, this.clay2, this.clayWind]) {
       if (on) m.defines.TOY_LITE = '';
       else delete m.defines.TOY_LITE;
       m.needsUpdate = true;

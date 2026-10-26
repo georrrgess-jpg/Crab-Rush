@@ -22,6 +22,8 @@ export interface ToyLightingUniforms {
   uRimColor: THREE.IUniform<THREE.Color>;
   /** x exposure, y saturation, z warmth, w rim strength */
   uGrade: THREE.IUniform<THREE.Vector4>;
+  /** seconds, for wind and other vertex animation */
+  uTime: THREE.IUniform<number>;
 }
 
 const vert = /* glsl */ `
@@ -32,6 +34,10 @@ const vert = /* glsl */ `
 #include <skinning_pars_vertex>
 varying vec3 vNormalV;
 varying vec3 vViewPos;
+#ifdef TOY_WIND
+attribute float wind;
+uniform float uTime;
+#endif
 void main() {
   #include <uv_vertex>
   #include <color_vertex>
@@ -41,6 +47,21 @@ void main() {
   #include <defaultnormal_vertex>
   #include <begin_vertex>
   #include <skinning_vertex>
+  #ifdef TOY_WIND
+    // living world (UPDATE2_PLAN.md §1.7): wind > 0 sways (palms, seaweed), wind < 0 flutters (flags)
+    if (wind != 0.0) {
+      vec4 wp = modelMatrix * vec4(transformed, 1.0);
+      float ph = wp.x * 0.37 + wp.z * 0.23;
+      if (wind > 0.0) {
+        transformed.x += (sin(uTime * 1.6 + ph) + 0.35 * sin(uTime * 3.7 + ph * 2.1)) * wind;
+        transformed.z += sin(uTime * 1.13 + ph * 1.3) * wind * 0.45;
+      } else {
+        float f = -wind;
+        transformed.z += sin(uTime * 9.0 + transformed.x * 7.0 + transformed.y * 3.0 + ph) * f;
+        transformed.y += sin(uTime * 7.0 + transformed.x * 5.0 + ph) * f * 0.35;
+      }
+    }
+  #endif
   #include <project_vertex>
   #include <fog_vertex>
   vNormalV = normalize(transformedNormal);
@@ -160,6 +181,7 @@ export class ToyLighting {
     uGroundColor: { value: new THREE.Color(0.95, 0.8, 0.6) },
     uRimColor: { value: new THREE.Color(1, 0.95, 0.85) },
     uGrade: { value: new THREE.Vector4(1, 1.05, 0, 0.35) },
+    uTime: { value: 0 },
   };
   /** world-space sun direction (normalised) */
   readonly sunDir = new THREE.Vector3(-0.4, 0.8, 0.45).normalize();
@@ -195,6 +217,8 @@ export interface ToyOptions {
   color?: THREE.ColorRepresentation;
   vertexColors?: boolean;
   side?: THREE.Side;
+  /** vertex wind animation from a `wind` attribute */
+  wind?: boolean;
 }
 
 export function makeToy(lighting: ToyLighting, o: ToyOptions = {}): THREE.ShaderMaterial {
@@ -203,6 +227,7 @@ export function makeToy(lighting: ToyLighting, o: ToyOptions = {}): THREE.Shader
   if (o.lite) defines.TOY_LITE = '';
   if (o.emissive !== undefined) defines.TOY_EMISSIVE = '';
   if (o.map) defines.TOY_MAP = '';
+  if (o.wind) defines.TOY_WIND = '';
   const m = new THREE.ShaderMaterial({
     vertexShader: vert,
     fragmentShader: frag,
@@ -220,6 +245,8 @@ export function makeToy(lighting: ToyLighting, o: ToyOptions = {}): THREE.Shader
       mapTransform: { value: new THREE.Matrix3() },
     },
   });
+  // geometries without a wind attribute read 0 (not whatever generic value was left bound)
+  if (o.wind) (m as unknown as { defaultAttributeValues: Record<string, number[]> }).defaultAttributeValues = { color: [1, 1, 1], uv: [0, 0], uv1: [0, 0], wind: [0] };
   // let three set up the uv/map varyings for TOY_MAP
   if (o.map) (m as unknown as { map: THREE.Texture }).map = o.map;
   return m;
@@ -251,6 +278,7 @@ export function toyVariants(l: ToyLighting, map: THREE.Texture): Record<string, 
     toyLite: makeToy(l, { lite: true }),
     toyEmissive: makeToy(l, { emissive: 1.2 }),
     toyMap: makeToy(l, { map }),
+    toyWind: makeToy(l, { wind: true }),
     outline: makeOutline(),
   };
 }

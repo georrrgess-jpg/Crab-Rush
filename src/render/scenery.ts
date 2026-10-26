@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CFG, PALETTE, zoneAt } from '../config';
-import { GeoBuilder, mergeAll, translated } from './geo';
+import { GeoBuilder, addWind, mergeAll, translated } from './geo';
 import type { Materials } from './materials';
 import * as P from './props';
 import { plankTexture, sandTexture } from './textures';
@@ -188,7 +188,7 @@ export class Scenery {
   private variants: Variant[][] = [];
   private kit: PropKit;
   readonly groundMats: THREE.ShaderMaterial[];
-  private glowMat = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false });
+  private glowMat: THREE.ShaderMaterial;
 
   constructor(private mats: Materials, density: number) {
     this.kit = new PropKit();
@@ -197,11 +197,14 @@ export class Scenery {
     const planks = plankTexture();
     // ground is lit by the zone lighting too (UPDATE2_PLAN.md §1.2), so berms and ridges model
     this.groundMats = [sand, planks, wet, sand].map((map) => makeToy(mats.lighting, { map, color: 0xf0f0f0 }));
+    // flames and lanterns: unlit, flickering with the wind attribute
+    this.glowMat = makeToy(mats.lighting, { emissive: 1, wind: true });
+    this.glowMat.fog = false;
     this.buildVariants(density);
     for (let i = 0; i < TILE_COUNT; i++) {
       const group = new THREE.Group();
       const ground = new THREE.Mesh(EMPTY, this.groundMats[0]);
-      const props = new THREE.Mesh(EMPTY, mats.clay);
+      const props = new THREE.Mesh(EMPTY, mats.clayWind);
       const glow = new THREE.Mesh(EMPTY, this.glowMat);
       group.add(ground, props, glow);
       this.group.add(group);
@@ -301,7 +304,7 @@ export class Scenery {
             bb.cone(cols[i % 4] as number, 0.16, 0.32, [s * (hw + 0.3), sag(t) - 0.18, -6 - t * 12], [Math.PI, Math.PI / 2, 0], 3, [1, 1, 0.3]);
           }
         }
-        pl.list.push(bb.build());
+        pl.list.push(addWind(bb.build(), (x, y) => (y < 3.5 ? -0.05 : -0.01)));
       }
     } else {
       const shore = zone === 2 ? 7.4 : 8.4;
@@ -396,6 +399,6 @@ export class Scenery {
 
   glowFlicker(time: number): void {
     const f = 0.85 + Math.sin(time * 13) * 0.08 + Math.sin(time * 7.3) * 0.07;
-    this.glowMat.color.setScalar(f);
+    (this.glowMat.uniforms.uEmissive as { value: number }).value = f;
   }
 }

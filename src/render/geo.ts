@@ -210,9 +210,32 @@ export class GeoBuilder {
   }
 }
 
-/** Merge several already-built geometries (all with position/normal/color). */
+/** Add a per-vertex `wind` weight (see the toy shader's TOY_WIND): >0 sways, <0 flutters. */
+export function addWind(g: THREE.BufferGeometry, fn: (x: number, y: number, z: number) => number): THREE.BufferGeometry {
+  const pa = g.attributes.position as THREE.BufferAttribute;
+  const prev = g.attributes.wind as THREE.BufferAttribute | undefined;
+  const w = new Float32Array(pa.count);
+  for (let i = 0; i < pa.count; i++) w[i] = (prev ? prev.getX(i) : 0) + fn(pa.getX(i), pa.getY(i), pa.getZ(i));
+  g.setAttribute('wind', new THREE.BufferAttribute(w, 1));
+  return g;
+}
+
+/** Merge several already-built geometries (all with position/normal/color; `wind` where present). */
 export function mergeAll(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const m = mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)), false);
+  const anyWind = geos.some((g) => g.attributes.wind);
+  const prepared = geos.map((g) => {
+    let x = g.index ? g.toNonIndexed() : g;
+    if (anyWind && !x.attributes.wind) {
+      if (x === g) x = g.clone();
+      x.setAttribute('wind', new THREE.BufferAttribute(new Float32Array(x.attributes.position!.count), 1));
+    }
+    for (const k of Object.keys(x.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'color' && k !== 'wind') {
+      if (x === g) x = g.clone();
+      x.deleteAttribute(k);
+    }
+    return x;
+  });
+  const m = mergeGeometries(prepared, false);
   if (!m) throw new Error('mergeAll failed');
   return m;
 }
