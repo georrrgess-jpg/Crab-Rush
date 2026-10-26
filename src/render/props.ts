@@ -455,3 +455,148 @@ export function lantern(col: number): THREE.BufferGeometry {
   b.sphere(col, 0.16, [0, 0, 0], [1, 1.2, 1], 8);
   return addWind(b.build(), () => 0.05);
 }
+
+// --------------------------------------------------------------- Update 2 prop expansion (§2.3)
+export function bucketSpade(col: number): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.lathe(col, [[0.16, 0], [0.22, 0.3], [0.2, 0.3], [0.14, 0.02], [0, 0.02]], 12);
+  b.torus(new THREE.Color(col).multiplyScalar(0.8).getHex(), 0.2, 0.02, [0, 0.28, 0], [Math.PI / 2, 0, 0], 12);
+  b.torus(0xf2f2f2, 0.19, 0.012, [0, 0.33, 0], [0, 0, 0], 10, [1, 1, 1]);
+  // spade stuck in the sand beside it
+  b.cyl(0xffc933, 0.025, 0.025, 0.55, [0.38, 0.32, 0.05], [0, 0, -0.25], 5);
+  b.box(0xffc933, 0.2, 0.22, 0.03, [0.32, 0.06, 0.05], [0, 0, -0.25]);
+  return b.build();
+}
+
+export function surfboards(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const cols = [0xff7a1a, 0x3fd6d0, 0xffd23a];
+  for (let i = 0; i < 3; i++) {
+    const c = cols[i] as number;
+    b.sphere(c, 0.32, [i * 0.42 - 0.42, 0.95, i * 0.08], [0.6, 3.2, 0.12], 10, [0.15 - i * 0.05, 0, (i - 1) * 0.12]).paint((x, y, z, cc) => {
+      if (Math.abs(x - (i * 0.42 - 0.42)) < 0.03) cc.set(0xffffff);
+    });
+  }
+  return b.build();
+}
+
+export function lifeguardTower(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const wood = 0xf4f0e6;
+  for (const x of [-0.8, 0.8]) for (const z of [-0.7, 0.7]) b.cyl(wood, 0.07, 0.08, 2.4, [x * 0.8, 1.2, z * 0.8], [z * 0.08, 0, -x * 0.08], 6);
+  b.box(0xe53935, 2.0, 0.12, 1.8, [0, 2.45, 0]);
+  b.box(0xfff4dc, 1.7, 1.0, 1.5, [0, 3.0, 0]);
+  b.box(0x8fd0f7, 1.2, 0.45, 0.04, [0, 3.15, 0.76]);
+  b.cone(0xe53935, 1.4, 0.6, [0, 3.8, 0], [0, Math.PI / 4, 0], 4);
+  // ladder + red cross flag
+  for (let i = 0; i < 6; i++) b.box(wood, 0.6, 0.05, 0.08, [0, 0.3 + i * 0.36, 1.25 - i * 0.07]);
+  b.cyl(0x8a8a90, 0.02, 0.02, 1.0, [0.8, 4.3, -0.6], [0, 0, 0], 4);
+  b.box(0xe53935, 0.5, 0.3, 0.02, [1.06, 4.65, -0.6]);
+  return addWind(b.build(), (x, y) => (y > 4.45 && x > 0.82 ? -0.04 : 0));
+}
+
+export function fishingNet(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  // a net draped over a post rail with a few floats
+  for (let i = 0; i <= 6; i++) {
+    const x = -1 + i / 3;
+    b.tube(0x6f8a7a, [[x, 1.1, 0], [x + 0.05, 0.6, 0.06], [x, 0.1, 0.02]], 0.012, 3, 4, false);
+  }
+  for (let j = 0; j < 4; j++) {
+    const y = 1.05 - j * 0.28;
+    b.tube(0x6f8a7a, [[-1, y, 0.02], [0, y - 0.08, 0.07], [1, y, 0.02]], 0.012, 3, 6, false);
+  }
+  for (const x of [-0.7, 0.1, 0.8]) b.sphere(0xffc933, 0.07, [x, 1.12, 0.03], [1, 1, 1], 6);
+  return addWind(b.build(), (x, y) => (y < 0.9 ? -0.015 * (1 - y) : 0));
+}
+
+export function bench(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  for (let i = 0; i < 3; i++) b.box(0xb98550, 1.8, 0.06, 0.14, [0, 0.48, -0.15 + i * 0.16]);
+  for (let i = 0; i < 2; i++) b.box(0xb98550, 1.8, 0.14, 0.05, [0, 0.75 + i * 0.18, -0.3]);
+  for (const x of [-0.75, 0.75]) {
+    b.box(0x2c3e66, 0.06, 0.48, 0.42, [x, 0.24, 0]);
+    b.box(0x2c3e66, 0.06, 0.5, 0.05, [x, 0.75, -0.3]);
+  }
+  return b.build();
+}
+
+export function postGull(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0x8a5a2b, 0.13, 0.14, 1.4, [0, 0.7, 0], [0, 0, 0], 7);
+  b.sphere(0xfafafa, 0.22, [0, 1.62, 0], [0.9, 0.85, 1.3], 8).paint((x, y, z, c) => {
+    if (y > 1.7 && z < 0.05) c.set(0xb4bec8);
+  });
+  b.sphere(0xfafafa, 0.13, [0, 1.86, 0.16], [1, 1, 1], 8);
+  b.cone(0xffb21f, 0.04, 0.16, [0, 1.85, 0.32], [Math.PI / 2, 0, 0], 5);
+  b.sphere(0x111111, 0.02, [0.06, 1.9, 0.26], [1, 1, 1], 4);
+  b.sphere(0x111111, 0.02, [-0.06, 1.9, 0.26], [1, 1, 1], 4);
+  b.box(0x2a2f38, 0.14, 0.04, 0.2, [0, 1.62, -0.32], [0.4, 0, 0]);
+  return b.build();
+}
+
+export function crabBurrow(seed: number): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  b.lathe(0xd8b98a, [[0.32, 0], [0.24, 0.08], [0.14, 0.06], [0.1, -0.02]], 10);
+  b.cyl(0x3a2a18, 0.11, 0.11, 0.02, [0, 0.0, 0], [0, 0, 0], 10);
+  for (let i = 0; i < 6; i++) {
+    const a = r() * Math.PI * 2;
+    const d = 0.4 + r() * 0.5;
+    b.sphere(0xd8b98a, 0.04 + r() * 0.03, [Math.cos(a) * d, 0.02, Math.sin(a) * d], [1, 0.6, 1], 5);
+  }
+  return b.build();
+}
+
+export function starfishCluster(seed: number): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  const cols = [0xff7a3a, 0xb06ad6, 0xff5a7a, 0xffc933];
+  for (let i = 0; i < 4; i++) {
+    const g = starfish(cols[i % 4] as number);
+    const s = 0.6 + r() * 0.6;
+    g.scale(s, s, s);
+    g.rotateY(r() * 6);
+    g.translate((r() - 0.5) * 1.2, 0, (r() - 0.5) * 1.2);
+    b.raw(g);
+  }
+  return b.build();
+}
+
+export function hammock(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  // two posts and a sagging striped hammock between them
+  for (const x of [-1.6, 1.6]) b.cyl(0x6b4423, 0.09, 0.11, 2.0, [x, 1.0, 0], [0, 0, x * 0.03], 6);
+  const n = 10;
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n;
+    const t1 = (i + 1) / n;
+    const y = (t: number): number => 1.45 - Math.sin(t * Math.PI) * 0.6;
+    const x0 = -1.5 + t0 * 3;
+    const x1 = -1.5 + t1 * 3;
+    b.box(i % 2 ? 0xff7a1a : 0xfff4dc, Math.hypot(x1 - x0, y(t1) - y(t0)) + 0.02, 0.04, 0.8, [(x0 + x1) / 2, (y(t0) + y(t1)) / 2, 0], [0, 0, Math.atan2(y(t1) - y(t0), x1 - x0)]);
+  }
+  return addWind(b.build(), (x, y) => (y < 1.4 && Math.abs(x) < 1.4 ? 0.04 * (1 - Math.abs(x) / 1.4) : 0));
+}
+
+export function bonfireLogs(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    b.tube(0x6b4423, [[Math.cos(a) * 0.5, 0.05, Math.sin(a) * 0.5], [Math.cos(a) * 0.08, 0.45, Math.sin(a) * 0.08]], 0.07, 5, 2, true);
+  }
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    b.ico(0x8a8278, 0.13, [Math.cos(a) * 0.7, 0.06, Math.sin(a) * 0.7], [1, 0.6, 1], 0, 0.2, 40 + i);
+  }
+  return b.build();
+}
+
+/** unlit bonfire flames (glow material) */
+export function bonfireFlame(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cone(0xff5a1a, 0.4, 0.9, [0, 0.6, 0], [0, 0, 0], 7);
+  b.cone(0xffa020, 0.28, 0.7, [0.06, 0.55, 0.05], [0, 0.5, 0], 6);
+  b.cone(0xffe14a, 0.15, 0.45, [-0.02, 0.45, 0.04], [0, 1.0, 0], 5);
+  return addWind(b.build(), (x, y) => -Math.max(0, y - 0.3) * 0.22);
+}

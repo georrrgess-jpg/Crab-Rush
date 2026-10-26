@@ -177,6 +177,17 @@ class PropKit {
   torch = P.tikiTorch();
   flame = P.flame();
   lanterns = [0xffd23a, 0xff7aa2, 0x7ad0ff].map((c) => P.lantern(c));
+  buckets = [0xe53935, 0x2f6fd6, 0x3dae4f].map((c) => P.bucketSpade(c));
+  surfboards = P.surfboards();
+  lifeguard = P.lifeguardTower();
+  net = P.fishingNet();
+  bench = P.bench();
+  postGull = P.postGull();
+  burrows = [0, 1].map((i) => P.crabBurrow(60 + i));
+  starClusters = [0, 1].map((i) => P.starfishCluster(65 + i));
+  hammock = P.hammock();
+  bonfire = P.bonfireLogs();
+  bonfireFlame = P.bonfireFlame();
   constructor() {
     const b = new GeoBuilder();
     b.cyl(0xa8743f, 0.18, 0.22, 1.6, [0, 0.18, 0], [0, 0, Math.PI / 2], 8);
@@ -288,6 +299,10 @@ export class Scenery {
       }
       pl.add(K.boats[(v + 1) % 3] as THREE.BufferGeometry, 12 + r() * 10, rz(), r() * 3, 1.2, -0.2);
       pl.add(K.buoy, 7 + r() * 4, rz(), 0, 1, -0.05);
+      // nets draped on the rails, benches and gulls perched on pilings
+      if (v % 2 === 0) pl.add(K.net, hw + 0.05, -14 - r() * 6, Math.PI / 2, 1, 0, true);
+      if (v !== 2) pl.add(K.bench, -(hw + 0.6), -20, Math.PI / 2, 1, 0, true);
+      pl.add(K.postGull, (r() < 0.5 ? -1 : 1) * (hw + 1.4), rz(), r() * 6, 1, -0.3);
       pl.add(K.buoy, -7 - r() * 4, rz(), 0, 1, -0.05);
       // bunting between lamps
       if (v % 2 === 1) {
@@ -342,6 +357,15 @@ export class Scenery {
         if (r() < 0.45) pl.add(K.miniCastle, 5.2 + r() * 1.5, rz(), r() * 6);
         for (let i = 0; i < 2; i++) pl.add(r() < 0.5 ? K.starfish : K.pinkShell, 4.5 + r() * 2.5, rz(), r() * 6);
         if (r() < 0.4) pl.add(K.seaweed, 7.0 + r(), rz(), r() * 6);
+        // Update 2 props: sand toys, surfboards, a lifeguard tower; hammocks and a bonfire at dusk
+        if (r() < 0.55) pl.add(K.buckets[Math.floor(r() * 3)] as THREE.BufferGeometry, -4.9 - r() * 2.5, rz(), r() * 6);
+        if (r() < 0.5) pl.add(K.surfboards, -6.5 - r() * 3, rz(), 0.3 + r() * 0.6);
+        if (!dusk && v === 2) pl.add(K.lifeguard, -9.5, -14, 0.3, 1, 0, true);
+        if (dusk && (v === 0 || v === 3)) pl.add(K.hammock, -10.5, rz(4, 20), 0.2 + r() * 0.4, 1, 0, true);
+        if (dusk && v === 1) {
+          pl.add(K.bonfire, -7.4, -10, r() * 6, 1, 0, true);
+          pl.addGlow(K.bonfireFlame, -7.4, -10);
+        }
         if (dusk) {
           for (const s of [-1, 1]) {
             for (const z of [-4, -16.5]) {
@@ -365,6 +389,8 @@ export class Scenery {
         for (let i = 0; i < 3; i++) pl.add(r() < 0.5 ? K.starfish : K.starfishPurple, (r() < 0.5 ? -1 : 1) * (4.6 + r() * 2.5), rz(), r() * 6);
         if (r() < 0.6) pl.add(K.urchins, -5 - r() * 2, rz(), r() * 6, 0.6);
         pl.add(K.seaweed, 6.4, rz(), r() * 6);
+        for (let i = 0; i < 2; i++) pl.add(K.burrows[Math.floor(r() * 2)] as THREE.BufferGeometry, (r() < 0.6 ? -1 : 1) * (4.7 + r() * 2.2), rz(), r() * 6);
+        if (r() < 0.6) pl.add(K.starClusters[Math.floor(r() * 2)] as THREE.BufferGeometry, -5.5 - r() * 3, rz(), r() * 6);
       }
     }
 
