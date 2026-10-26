@@ -5,7 +5,8 @@
  */
 export type Sfx =
   | 'shell' | 'bigShell' | 'lane' | 'hop' | 'land' | 'slam' | 'bump' | 'crash' | 'powerup' | 'shieldPop'
-  | 'rider' | 'closeShave' | 'goal' | 'newBest' | 'zone' | 'tap' | 'purchase' | 'countdown' | 'go' | 'milestone' | 'deny';
+  | 'rider' | 'closeShave' | 'goal' | 'newBest' | 'zone' | 'tap' | 'purchase' | 'countdown' | 'go' | 'milestone' | 'deny'
+  | 'tick' | 'pop' | 'levelUp';
 
 type Gen = (sr: number) => Float32Array;
 
@@ -169,6 +170,14 @@ export const SFX: Record<Sfx, Gen> = {
     return normalize(x, 0.65);
   },
   countdown: (sr) => normalize(tone(sr, 0.1, () => 880, 'sine', (t) => Math.exp(-t * 30)), 0.35),
+  // results count-up tick, row landing pop, Sunny Pass tier-up fanfare
+  tick: (sr) => normalize(tone(sr, 0.025, () => 2400, 'sine', (t) => Math.exp(-t * 160)), 0.16),
+  pop: (sr) => normalize(tone(sr, 0.09, (t) => 520 + t * 2600, 'sine', (t) => Math.exp(-t * 38)), 0.3),
+  levelUp: (sr) => {
+    const x = buf(sr, 1.0);
+    [79, 83, 86, 91, 95].forEach((m, i) => bell(sr, midiHz(m), 0.45, x, i * 0.07, 0.9));
+    return normalize(x, 0.6);
+  },
   go: (sr) => normalize(tone(sr, 0.2, (t) => 1100 + t * 900, 'tri', (t) => Math.exp(-t * 14)), 0.4),
   milestone: (sr) => {
     const x = buf(sr, 0.5);

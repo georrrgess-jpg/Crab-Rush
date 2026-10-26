@@ -1,16 +1,15 @@
-import { ICON, HAT_SVG } from './icons';
+import { ICON } from './icons';
 import { btn, el, fmt } from './dom';
 import type { PowerKind } from '../sim/events';
+import { HomeScreen, type HomeData, type HomeHandlers } from './home';
+import { ResultsScreen, type ResultsHandlers, type ResultsView } from './results';
 
 export interface UIHandlers {
-  play(): void;
   pause(): void;
   resume(): void;
   restart(): void;
   home(): void;
-  openShop(): void;
   openSettings(): void;
-  openHowTo(): void;
   touch(a: 'left' | 'right'): void;
   tap(): void;
 }
@@ -23,29 +22,16 @@ export interface GoalView {
   done: boolean;
 }
 
-export interface ResultsData {
-  distance: number;
-  best: number;
-  newBest: boolean;
-  pickups: number;
-  bonus: number;
-  goalRewards: number;
-  total: number;
-  balance: number;
-  goals: GoalView[];
-  unlock: { name: string; have: number; need: number } | null;
-  zone: string;
-}
-
 type ScreenName = 'title' | 'hud' | 'pause' | 'results' | 'none';
 
-/** All DOM UI. Screens are built once and toggled. */
+/** All DOM UI. Screens are built once and toggled (UPDATE2_PLAN.md §4). */
 export class UI {
   private root: HTMLElement;
-  private title: HTMLElement;
+  readonly home: HomeScreen;
+  readonly results: ResultsScreen;
   private hud: HTMLElement;
   private pauseEl: HTMLElement;
-  private results: HTMLElement;
+  private pauseStats: HTMLElement;
   private countdown: HTMLElement;
   private tutorial: HTMLElement;
   private toasts: HTMLElement;
@@ -57,53 +43,24 @@ export class UI {
   /** pooled flying shell sprites (pickup → counter) */
   private flyers: { el: HTMLElement; busy: boolean }[] = [];
   private distVal: HTMLElement;
-  private powerRing: HTMLElement;
-  private powerArc: SVGCircleElement;
+  private powerPie: HTMLElement;
   private powerIc: HTMLElement;
   private streakEl: HTMLElement;
-  private titleBest: HTMLElement;
-  private titleGoals: HTMLElement;
+  private streakNum: HTMLElement;
   private pauseGoals: HTMLElement;
   private lastShells = -1;
   private lastDist = -1;
   private lastPower: PowerKind | null = null;
+  private lastStreak = -1;
+  private lastPie = -1;
   touchButtonsVisible = false;
-  private crabsBtn!: HTMLButtonElement;
-  private shopBadge = false;
   current: ScreenName = 'none';
   extraScreens: HTMLElement[] = [];
 
-  constructor(root: HTMLElement, private h: UIHandlers) {
+  constructor(root: HTMLElement, private h: UIHandlers, homeH: HomeHandlers, resultsH: ResultsHandlers) {
     this.root = root;
-
-    // ---------------- title
-    this.title = el('div', 'screen hidden');
-    this.title.id = 'title';
-    const top = el('div', 'top');
-    top.innerHTML = `<h1 class="logo" aria-label="Crab Dash"><span class="w" data-t="Crab">${HAT_SVG}Crab</span><span class="gap-shell">${ICON.shell}</span><span class="w" data-t="Dash">Dash</span></h1><div><span class="tagline">Beach Run</span></div>`;
-    this.titleBest = el('div', 'best');
-    top.appendChild(this.titleBest);
-    const bottom = el('div', 'bottom');
-    const tap = el('button', 'tap', 'Tap to Play');
-    tap.type = 'button';
-    tap.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.h.play();
-    });
-    this.titleGoals = el('div', 'goals-card');
-    const menu = el('div', 'menu-row');
-    this.crabsBtn = btn(`${ICON.crab}<span>Crabs</span><i class="dot hidden"></i>`, 'blue small', () => this.h.openShop(), 'Crabs and upgrades');
-    menu.append(
-      this.crabsBtn,
-      btn(`${ICON.gear}`, 'blue small', () => this.h.openSettings(), 'Settings'),
-      btn(`${ICON.help}`, 'blue small', () => this.h.openHowTo(), 'How to play'),
-    );
-    bottom.append(tap, this.titleGoals, menu);
-    this.title.append(top, bottom);
-    // tapping empty space on the title also starts
-    this.title.addEventListener('click', (e) => {
-      if (e.target === this.title || (e.target as HTMLElement).classList.contains('top')) this.h.play();
-    });
+    this.home = new HomeScreen(homeH);
+    this.results = new ResultsScreen(resultsH);
 
     // ---------------- HUD
     this.hud = el('div', 'screen hidden');
@@ -111,15 +68,13 @@ export class UI {
     const left = el('div', 'left');
     this.shellsPill = el('div', 'pill shells', `<span class="ico">${ICON.shell}</span><b>0</b>`);
     this.shellsVal = this.shellsPill.querySelector('b') as HTMLElement;
-    this.powerRing = el(
-      'div',
-      'power-ring hidden',
-      `<svg class="ring" viewBox="0 0 54 54"><circle cx="27" cy="27" r="23" fill="#173f66" stroke="#7cc8f2" stroke-width="3"/><circle class="arc" cx="27" cy="27" r="23" fill="none" stroke="#ffd23a" stroke-width="5" stroke-linecap="round" stroke-dasharray="144.5" stroke-dashoffset="0"/></svg><span class="ic"></span>`,
-    );
-    this.powerArc = this.powerRing.querySelector('.arc') as SVGCircleElement;
-    this.powerIc = this.powerRing.querySelector('.ic') as HTMLElement;
-    this.streakEl = el('div', 'streak hidden');
-    left.append(this.shellsPill, this.powerRing, this.streakEl);
+    // power-up timer: a radial pie around the icon
+    this.powerPie = el('div', 'power-pie hidden', '<span class="ic"></span>');
+    this.powerIc = this.powerPie.querySelector('.ic') as HTMLElement;
+    // shell streak meter with a flame that grows
+    this.streakEl = el('div', 'streak-meter hidden', `<span class="fl">${ICON.flame}</span><b>×<span>0</span></b>`);
+    this.streakNum = this.streakEl.querySelector('b span') as HTMLElement;
+    left.append(this.shellsPill, this.powerPie, this.streakEl);
     for (let i = 0; i < 10; i++) {
       const f = el('div', 'shell-fly', ICON.shell);
       f.setAttribute('aria-hidden', 'true');
@@ -157,54 +112,57 @@ export class UI {
     this.countdown = el('div', 'screen hidden');
     this.countdown.id = 'countdown';
 
-    // ---------------- pause
+    // ---------------- pause: a bottom sheet on phones, a side panel on wide screens
     this.pauseEl = el('div', 'screen hidden');
     this.pauseEl.id = 'pause';
-    const pdim = el('div', 'dim');
-    const pp = el('div', 'panel');
-    pp.innerHTML = `<div class="panel-head">Paused</div>`;
-    const pbody = el('div', 'panel-body');
+    const pdim = el('div', 'sheet-dim');
+    pdim.addEventListener('click', () => this.h.resume());
+    const sheet = el('div', 'sheet');
+    sheet.setAttribute('role', 'dialog');
+    sheet.setAttribute('aria-label', 'Paused');
+    sheet.innerHTML = `<div class="grab"></div><div class="sheet-head">Paused</div>`;
+    this.pauseStats = el('div', 'pause-stats');
     const pcol = el('div', 'btn-col');
-    pcol.append(
-      btn(`${ICON.play}<span>Resume</span>`, 'big', () => this.h.resume()),
-      (() => {
-        const row = el('div', 'btn-row');
-        row.append(
-          btn(`${ICON.restart}<span>Restart</span>`, 'blue small', () => this.h.restart()),
-          btn(`${ICON.gear}<span>Settings</span>`, 'blue small', () => this.h.openSettings()),
-          btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()),
-        );
-        return row;
-      })(),
+    const row = el('div', 'btn-row');
+    row.append(
+      btn(`${ICON.restart}<span>Restart</span>`, 'blue small', () => this.h.restart()),
+      btn(`${ICON.gear}<span>Settings</span>`, 'blue small', () => this.h.openSettings()),
+      btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()),
     );
+    pcol.append(btn(`${ICON.play}<span>Resume</span>`, 'big', () => this.h.resume()), row);
     this.pauseGoals = el('div', 'goals-card');
-    this.pauseGoals.style.margin = '14px auto 0';
-    this.pauseGoals.style.width = '100%';
-    pbody.append(pcol, this.pauseGoals);
-    pp.append(pbody);
-    this.pauseEl.append(pdim, pp);
-
-    // ---------------- results
-    this.results = el('div', 'screen hidden');
-    this.results.id = 'results';
+    sheet.append(this.pauseStats, pcol, this.pauseGoals);
+    this.pauseEl.append(pdim, sheet);
 
     this.fade = el('div');
     this.fade.id = 'fade';
 
-    root.append(this.title, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results, this.toasts, this.fade);
+    root.append(this.home.el, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results.el, this.toasts, this.fade);
   }
 
   // ------------------------------------------------------------------ screens
   show(name: ScreenName): void {
+    const prev = this.current;
     this.current = name;
-    this.title.classList.toggle('hidden', name !== 'title');
+    if (name === 'title') this.home.show();
+    else this.home.hide();
     this.hud.classList.toggle('hidden', !(name === 'hud' || name === 'pause'));
     this.pauseEl.classList.toggle('hidden', name !== 'pause');
-    this.results.classList.toggle('hidden', name !== 'results');
+    if (name !== 'results') this.results.hide();
     if (name !== 'hud') this.hideTutorial();
     if (name === 'title' || name === 'results') this.clearToasts();
     for (const s of this.extraScreens) s.classList.add('hidden');
-    if (name === 'pause') (this.pauseEl.querySelector('.btn') as HTMLElement | null)?.focus({ preventScroll: true });
+    if (name === 'pause' && prev !== 'pause') {
+      this.pauseEl.classList.remove('enter');
+      void this.pauseEl.offsetWidth;
+      this.pauseEl.classList.add('enter');
+      (this.pauseEl.querySelector('.btn.big') as HTMLElement | null)?.focus({ preventScroll: true });
+    }
+    if (name === 'hud' && prev !== 'pause') {
+      this.hud.classList.remove('enter');
+      void this.hud.offsetWidth;
+      this.hud.classList.add('enter');
+    }
   }
 
   addScreen(node: HTMLElement): void {
@@ -214,31 +172,41 @@ export class UI {
   }
 
   showExtra(node: HTMLElement): void {
-    this.title.classList.add('hidden');
-    this.results.classList.add('hidden');
+    this.home.hide();
+    this.results.hide();
     this.pauseEl.classList.add('hidden');
     for (const s of this.extraScreens) s.classList.toggle('hidden', s !== node);
+    node.classList.remove('rt-enter');
+    void node.offsetWidth;
+    node.classList.add('rt-enter');
   }
 
   hideExtras(): void {
     for (const s of this.extraScreens) s.classList.add('hidden');
   }
 
-  setTitleInfo(best: number, goals: GoalView[]): void {
-    this.titleBest.textContent = best > 0 ? `Best: ${fmt(best)} m` : '';
-    this.renderGoals(this.titleGoals, goals, 'Goals');
+  setHome(d: HomeData): void {
+    this.home.set(d);
+  }
+
+  showResults(d: ResultsView): void {
+    this.show('results');
+    this.results.show(d);
+  }
+
+  setPauseInfo(goals: GoalView[], dist: number, shells: number): void {
+    this.pauseStats.innerHTML = `<div><span>Distance</span><b>${fmt(dist)} m</b></div><div><span>Shells</span><b>${ICON.shell}${fmt(shells)}</b></div>`;
     this.renderGoals(this.pauseGoals, goals, 'Goals');
   }
 
-  /** A red dot on the Crabs buttons when something is affordable. */
-  setShopBadge(on: boolean): void {
-    this.shopBadge = on;
-    this.crabsBtn.querySelector('.dot')?.classList.toggle('hidden', !on);
+  /** Left-handed HUD: pause and distance on the left, shells on the right. */
+  setLefty(on: boolean): void {
+    this.hud.classList.toggle('lefty', on);
   }
 
-  setPlayPrompt(keyboard: boolean): void {
-    const t = this.title.querySelector('.tap');
-    if (t) t.textContent = keyboard ? 'Press Space to Play' : 'Tap to Play';
+  setReduceMotion(on: boolean): void {
+    this.results.reduceMotion = on;
+    document.getElementById('app')?.classList.toggle('reduce-motion', on);
   }
 
   renderGoals(node: HTMLElement, goals: GoalView[], heading: string): void {
@@ -307,20 +275,42 @@ export class UI {
     }
     if (power !== this.lastPower) {
       this.lastPower = power;
-      this.powerRing.classList.toggle('hidden', !power);
+      this.powerPie.classList.toggle('hidden', !power);
+      this.powerPie.dataset.kind = power ?? '';
       if (power) this.powerIc.innerHTML = ICON[power];
+      this.lastPie = -1;
     }
-    if (power) this.powerArc.style.strokeDashoffset = String(144.5 * (1 - Math.max(0, Math.min(1, powerFrac))));
-    const showStreak = streak >= 10;
-    this.streakEl.classList.toggle('hidden', !showStreak);
-    if (showStreak) this.streakEl.textContent = `Streak ×${streak}`;
+    if (power) {
+      const p = Math.round(Math.max(0, Math.min(1, powerFrac)) * 100);
+      if (p !== this.lastPie) {
+        this.lastPie = p;
+        this.powerPie.style.setProperty('--p', String(p / 100));
+        this.powerPie.classList.toggle('low', p < 25);
+      }
+    }
+    const s = streak >= 5 ? streak : 0;
+    if (s !== this.lastStreak) {
+      this.lastStreak = s;
+      this.streakEl.classList.toggle('hidden', s === 0);
+      if (s > 0) {
+        this.streakNum.textContent = String(s);
+        // the flame grows with the streak and flares on every tenth shell
+        this.streakEl.style.setProperty('--heat', String(Math.min(1, s / 40)));
+        if (s % 10 === 0) {
+          this.streakEl.classList.remove('flare');
+          void this.streakEl.offsetWidth;
+          this.streakEl.classList.add('flare');
+        }
+      }
+    }
   }
 
   resetHUD(): void {
     this.lastShells = -1;
     this.lastDist = -1;
     this.lastPower = null;
-    this.powerRing.classList.add('hidden');
+    this.lastStreak = -1;
+    this.powerPie.classList.add('hidden');
     this.updateHUD(0, 0, null, 0, 0);
   }
 
@@ -392,47 +382,6 @@ export class UI {
   showCountdown(n: number): void {
     this.countdown.classList.toggle('hidden', n <= 0);
     if (n > 0) this.countdown.innerHTML = `<div class="num">${n}</div>`;
-  }
-
-  // ------------------------------------------------------------------ results
-  showResults(d: ResultsData): void {
-    const r = this.results;
-    r.innerHTML = '';
-    const dim = el('div', 'dim');
-    const p = el('div', 'panel');
-    const head = el('div', 'panel-head', d.newBest ? 'New Best!' : 'Wipeout!');
-    const body = el('div', 'panel-body');
-    const grid = el('div', 'res-grid');
-    const colA = el('div', 'ra');
-    colA.innerHTML = `${d.newBest ? '<span class="newbest">NEW BEST!</span>' : ''}<div class="res-dist">${fmt(d.distance)}<span class="unit"> m</span></div><div class="res-sub">${[d.newBest ? `Previous best ${fmt(d.best)} m` : d.best > d.distance ? `${fmt(d.best - d.distance)} m short of your best` : '', d.zone].filter(Boolean).join(' · ')}</div>`;
-    const rows = el('div', 'res-rows');
-    const row = (label: string, val: number, cls = ''): string => `<div class="res-row ${cls}"><span>${label}</span><b>${ICON.shell}${val > 0 && cls !== 'total' ? '+' : ''}${fmt(val)}</b></div>`;
-    rows.innerHTML = row('Shells collected', d.pickups) + (d.bonus > 0 ? row('Bonuses', d.bonus) : '') + (d.goalRewards > 0 ? row('Goals completed', d.goalRewards) : '') + row('Your shells', d.balance, 'total');
-    colA.appendChild(rows);
-    const colB = el('div', 'rb');
-    if (d.unlock) {
-      const u = el('div', 'unlock');
-      const pct = Math.min(100, Math.round((d.unlock.have / d.unlock.need) * 100));
-      u.innerHTML = `<div class="lbl"><span>Next: <b>${d.unlock.name}</b></span><span>${fmt(Math.min(d.unlock.have, d.unlock.need))} / ${fmt(d.unlock.need)}</span></div><div class="bar"><i style="width:0%"></i></div>`;
-      colB.appendChild(u);
-      requestAnimationFrame(() => requestAnimationFrame(() => ((u.querySelector('.bar i') as HTMLElement).style.width = `${pct}%`)));
-    }
-    const goals = el('div', 'goals-card');
-    goals.style.width = '100%';
-    this.renderGoals(goals, d.goals, 'Goals');
-    colB.appendChild(goals);
-    const buttons = el('div', 'btn-col rc');
-    buttons.style.marginTop = '14px';
-    const again = btn(`${ICON.restart}<span>Play Again</span>`, 'big', () => this.h.restart());
-    const sub = el('div', 'btn-row');
-    sub.append(btn(`${ICON.crab}<span>Crabs</span><i class="dot${this.shopBadge ? '' : ' hidden'}"></i>`, 'blue small', () => this.h.openShop()), btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()));
-    buttons.append(again, sub);
-    grid.append(colA, colB, buttons);
-    body.appendChild(grid);
-    p.append(head, body);
-    r.append(dim, p);
-    this.show('results');
-    again.focus({ preventScroll: true });
   }
 
   // ------------------------------------------------------------------ fade

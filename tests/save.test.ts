@@ -90,6 +90,17 @@ describe('save v1 → v2 migration', () => {
     expect(d.xp).toBe(0);
     expect(d.levels).toEqual({});
     expect(d.daily.streak).toBe(0);
+    // Phase D additions default sensibly for old saves
+    expect(d.settings.contrastOutlines).toBe(false);
+    expect(d.stats.runsByCrab).toEqual({});
+    expect(d.stats.longestRun).toBe(0);
+  });
+
+  it('sanitizes the Phase D stats and settings fields', () => {
+    const d = sanitize({ ...V1_BLOB, v: 2, settings: { ...V1_BLOB.settings, contrastOutlines: true }, stats: { ...V1_BLOB.stats, runsByCrab: { sandy: 12.7, chill: -3, dazzle: 'x' }, longestRun: 95.5 } });
+    expect(d.settings.contrastOutlines).toBe(true);
+    expect(d.stats.runsByCrab).toEqual({ sandy: 12 });
+    expect(d.stats.longestRun).toBe(95.5);
   });
 
   it('turns owned crabs into wardrobe bodies + hats and wears the selected one', () => {

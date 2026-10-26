@@ -49,6 +49,8 @@ const SCENES = {
   title: async (p) => {
     await p.evaluate(() => window.__crab.setState('title'));
     await p.evaluate(() => window.__crab.frames(40));
+    // let the Home entrance animation finish
+    await p.waitForTimeout(1400);
   },
   run: async (p) => {
     await p.evaluate(() => window.__crab.startRun({ seed: 7, autopilot: true, tutorial: false }));
@@ -80,7 +82,8 @@ const SCENES = {
     await p.evaluate(() => window.__crab.frames(60 * 12));
     await p.evaluate(() => window.__crab.crash());
     await p.evaluate(() => window.__crab.frames(60 * 1.6));
-    await p.waitForTimeout(1100);
+    // the staged reveal takes a few seconds
+    await p.waitForTimeout(4200);
   },
   pause: async (p) => {
     await p.evaluate(() => window.__crab.startRun({ seed: 5, autopilot: true, tutorial: false }));
@@ -91,6 +94,11 @@ const SCENES = {
   shop: async (p) => {
     await p.evaluate(() => window.__crab.setState('shop'));
     await p.evaluate(() => window.__crab.frames(30));
+  },
+  stats: async (p) => {
+    await p.evaluate(() => window.__crab.setState('stats'));
+    await p.evaluate(() => window.__crab.frames(10));
+    await p.waitForTimeout(600);
   },
   settings: async (p) => {
     await p.evaluate(() => window.__crab.setState('settings'));

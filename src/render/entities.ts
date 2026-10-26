@@ -244,7 +244,7 @@ export class EntityViews {
       case 'gull': {
         const rig = O.makeRig(g.get('gull2', () => O.gullGeometry()), M.clay, O.GULL_JOINTS, this.outlineMat);
         if (rig.line) {
-          rig.line.visible = this.outlinesOn;
+          rig.line.visible = this.outlinesOn || this.contrast;
           this.allOutlines.push(rig.line);
         }
         const inner = new THREE.Group();
@@ -341,7 +341,7 @@ export class EntityViews {
 
   private addOutline(v: View, m: THREE.Mesh, src: THREE.BufferGeometry = m.geometry): THREE.Mesh {
     const ol = new THREE.Mesh(outlineGeo(src), this.outlineMat);
-    ol.visible = this.outlinesOn;
+    ol.visible = this.outlinesOn || this.contrast;
     ol.castShadow = false;
     m.add(ol);
     (v.outlines ??= []).push(ol);
@@ -349,10 +349,22 @@ export class EntityViews {
     return ol;
   }
 
+  /** High-contrast outlines (Settings): thick bright edges so obstacles read for colour-blind players. */
+  setContrast(on: boolean): void {
+    const u = this.outlineMat.uniforms;
+    (u.uInk as { value: THREE.Color }).value.set(on ? 0xffffff : 0x3a2416);
+    (u.uTint as { value: number }).value = on ? 0 : 0.6;
+    (u.uThickness as { value: number }).value = on ? 0.06 : 0.03;
+    this.contrast = on;
+    // contrast outlines show on every tier
+    for (const o of this.allOutlines) o.visible = this.outlinesOn || on;
+  }
+  private contrast = false;
+
   /** Outlines on the crab, obstacles and power-ups: High and Medium only (UPDATE2_PLAN.md §1.3). */
   setOutlines(on: boolean): void {
     this.outlinesOn = on;
-    for (const o of this.allOutlines) o.visible = on;
+    for (const o of this.allOutlines) o.visible = on || this.contrast;
   }
 
   private keyOf(e: Entity): string {

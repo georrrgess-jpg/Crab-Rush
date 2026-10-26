@@ -23,9 +23,14 @@ export class SwipeTracker {
   constructor(
     private emit: ActionSink,
     private screenWidth: () => number,
-    private threshold = CFG.input.swipeThreshold,
+    private threshold: number = CFG.input.swipeThreshold,
     private tapMaxMs = CFG.input.tapMaxMs,
   ) {}
+
+  /** swipe distance in px (Settings → swipe sensitivity) */
+  setThreshold(px: number): void {
+    this.threshold = px;
+  }
 
   down(id: number, x: number, y: number, t: number): void {
     this.tracks.set(id, { sx: x, sy: y, t0: t, swiped: false, lastDir: 0 });
@@ -114,6 +119,12 @@ export class Input {
     el.addEventListener('pointerup', this.onUp);
     el.addEventListener('pointercancel', this.onCancel);
     el.addEventListener('lostpointercapture', this.onCancel);
+  }
+
+  /** Swipe sensitivity: a shorter swipe distance is more sensitive. */
+  setSensitivity(s: 'low' | 'normal' | 'high'): void {
+    const base = CFG.input.swipeThreshold;
+    this.tracker.setThreshold(s === 'high' ? base * 0.7 : s === 'low' ? base * 1.45 : base);
   }
 
   /** Gesture surface only accepts input while a run is active. */

@@ -18,6 +18,8 @@ export interface Settings {
   haptics: boolean;
   leftHanded: boolean;
   swipeSensitivity: 'low' | 'normal' | 'high';
+  /** high-contrast obstacle outlines (colour-blind friendly) */
+  contrastOutlines: boolean;
 }
 
 export interface LevelRecord {
@@ -33,6 +35,10 @@ export interface LifetimeStats {
   totalWaves: number;
   totalPowerups: number;
   totalCloseShaves: number;
+  /** runs played with each body (favourite crab on the Stats page) */
+  runsByCrab: Record<string, number>;
+  /** longest single run in seconds */
+  longestRun: number;
 }
 
 export const SAVE_VERSION = 2;
@@ -63,13 +69,13 @@ export function defaultSave(): SaveData {
     v: 2,
     shells: 0,
     best: 0,
-    stats: { runs: 0, totalShells: 0, totalDistance: 0, totalHops: 0, totalWaves: 0, totalPowerups: 0, totalCloseShaves: 0 },
+    stats: { runs: 0, totalShells: 0, totalDistance: 0, totalHops: 0, totalWaves: 0, totalPowerups: 0, totalCloseShaves: 0, runsByCrab: {}, longestRun: 0 },
     crabs: { owned: ['sandy'], selected: 'sandy' },
     upgrades: { magnet: 0, shield: 0, rider: 0 },
     goals: { active: [], completed: [], progress: {} },
     zonesSeen: [0],
     tutorial: { move: false, hop: false },
-    settings: { music: 0.5, sfx: 0.8, quality: 'auto', touchButtons: 'auto', reduceMotion: null, haptics: true, leftHanded: false, swipeSensitivity: 'normal' },
+    settings: { music: 0.5, sfx: 0.8, quality: 'auto', touchButtons: 'auto', reduceMotion: null, haptics: true, leftHanded: false, swipeSensitivity: 'normal', contrastOutlines: false },
     xp: 0,
     passClaimed: [],
     boosts: 0,
@@ -170,6 +176,8 @@ export function sanitize(raw: unknown): SaveData {
       totalWaves: num(st.totalWaves, 0),
       totalPowerups: num(st.totalPowerups, 0),
       totalCloseShaves: num(st.totalCloseShaves, 0),
+      runsByCrab: countMap(st.runsByCrab),
+      longestRun: num(st.longestRun, 0),
     },
     crabs,
     upgrades: { magnet: Math.floor(num(up.magnet, 0, 0, 4)), shield: Math.floor(num(up.shield, 0, 0, 4)), rider: Math.floor(num(up.rider, 0, 0, 4)) },
@@ -185,6 +193,7 @@ export function sanitize(raw: unknown): SaveData {
       haptics: bool(s.haptics, true),
       leftHanded: bool(s.leftHanded, false),
       swipeSensitivity: s.swipeSensitivity === 'low' || s.swipeSensitivity === 'high' ? s.swipeSensitivity : 'normal',
+      contrastOutlines: bool(s.contrastOutlines, false),
     },
     xp: Math.floor(num(r.xp, 0)),
     passClaimed: claimed,
@@ -193,6 +202,14 @@ export function sanitize(raw: unknown): SaveData {
     levels: sanitizeLevels(r.levels),
     daily: sanitizeDaily(r.daily),
   };
+}
+
+/** string → non-negative integer counts */
+function countMap(v: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!v || typeof v !== 'object') return out;
+  for (const [k, n] of Object.entries(v as Record<string, unknown>)) if (typeof n === 'number' && Number.isFinite(n) && n >= 0) out[k] = Math.floor(n);
+  return out;
 }
 
 interface StorageLike {

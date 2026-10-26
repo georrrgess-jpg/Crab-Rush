@@ -19,12 +19,14 @@ const D3 = `<svg class="dia" viewBox="0 0 220 120">${lanes}${crab(70, 88, 1.25)}
 export class HowToScreen {
   readonly el: HTMLElement;
   constructor(back: () => void) {
-    this.el = el('div', 'screen');
+    this.el = el('div', 'screen page');
     this.el.id = 'howto';
-    const dim = el('div', 'dim');
-    const panel = el('div', 'panel');
-    panel.innerHTML = `<div class="panel-head">How to Play</div>`;
-    const body = el('div', 'panel-body');
+    const dim = el('div', 'page-dim');
+    const panel = el('div', 'page-card wide');
+    const head = el('div', 'page-head');
+    head.append(btn(ICON.back, 'icon ghost back', back, 'Back'), el('h2', '', 'How to Play'));
+    panel.appendChild(head);
+    const body = el('div', 'page-body');
     body.innerHTML = `<div class="howto-cards">
       <div class="howto-card"><div class="hd"><span class="num">1</span>Move left or right</div>${D1}<p>Swipe or tap a side to switch lanes. You can switch in mid-air too.</p></div>
       <div class="howto-card"><div class="hd"><span class="num">2</span>Dodge obstacles</div>${D2}<p>Tall things: dodge. Low things: hop or dodge. Waves: hop! Clipping something from the side only bumps you.</p></div>

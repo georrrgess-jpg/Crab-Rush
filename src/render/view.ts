@@ -13,6 +13,8 @@ import { CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, IDLE_DRIVE } from
 import { powerupIcon, riderWave } from './models/obstacles';
 import { Spring } from './anim/spring';
 import { Ocean } from './ocean';
+import * as P from './props';
+import { GeoBuilder } from './geo';
 import { NIGHT_PALETTE, ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
 import { Renderer } from './renderer';
 import { Scenery } from './scenery';
@@ -53,6 +55,8 @@ export class GameView {
   private dustT = 0;
   private feet = new Footprints();
   private life: LivingWorld;
+  /** Home diorama: a sand mound with an umbrella, towel and bucket around the crab (UPDATE2_PLAN.md §4.3) */
+  private homeSet = new THREE.Group();
   /** track distance of the last footprint */
   private footT = 0;
   private time = 0;
@@ -99,6 +103,26 @@ export class GameView {
     this.world.add(this.feet.mesh);
     this.life = new LivingWorld(this.mats);
     this.world.add(this.life.group);
+    {
+      const mound = new GeoBuilder()
+        .lathe(0xf6dda6, [[0, 0.22], [0.7, 0.2], [1.05, 0.12], [1.35, 0.02], [1.5, 0]], 22)
+        .paint((x, y, z, c) => c.multiplyScalar(0.92 + y * 0.5))
+        .build();
+      const m = new THREE.Mesh(mound, this.mats.clay);
+      const umb = new THREE.Mesh(P.umbrella(0xe53935, 0xfff4dc, 0.18), this.mats.clayWind);
+      umb.position.set(-2.5, 0, -2.4);
+      umb.scale.setScalar(0.95);
+      const towel = new THREE.Mesh(P.towel(0x3fd6d0, 0xfff4dc), this.mats.clay);
+      towel.position.set(1.9, 0.01, -1.0);
+      towel.rotation.y = 0.5;
+      const bucket = new THREE.Mesh(P.bucketSpade(0xffc933), this.mats.clay);
+      bucket.position.set(1.7, 0, -0.3);
+      bucket.scale.setScalar(0.85);
+      bucket.rotation.y = -0.6;
+      this.homeSet.add(m, umb, towel, bucket);
+      for (const o of [m, umb, towel, bucket]) o.castShadow = true;
+      this.world.add(this.homeSet);
+    }
     this.shells = new ShellRenderer(this.mats);
     this.world.add(this.shells.mesh, this.shells.glow, this.shells.sparkle);
     this.dust = new Particles(this.mats.dustTex, false, 160);
@@ -206,10 +230,29 @@ export class GameView {
     this.sparks.clear();
     this.entities.setBest(best);
     this.crab.reset();
+    this.celebrating = false;
     this.trauma = 0;
     this.fovPunch.snap(0);
     this.camDip.snap(0);
   }
+
+  /** Compile every shader program in the scene up front (loader step). */
+  async precompile(): Promise<void> {
+    const r = this.renderer;
+    try {
+      await r.gl.compileAsync(r.scene, r.camera);
+    } catch {
+      r.gl.compile(r.scene, r.camera);
+    }
+  }
+
+  /** Results after a new best: the crab gets up and celebrates instead of lying dizzy. */
+  celebrateResults(): void {
+    this.celebrating = true;
+    this.crab.reset();
+    this.crab.celebrate();
+  }
+  private celebrating = false;
 
   shake(amp: number, t: number): void {
     if (this.reduceMotion) return;
@@ -363,9 +406,14 @@ export class GameView {
     dv.vy = running ? p.vy : 0;
     dv.vx = running ? p.vx : 0;
     dv.speed = speed;
-    dv.crashT = crashT;
+    dv.crashT = this.celebrating ? -1 : crashT;
+    if (this.celebrating) dv.running = false;
     dv.rider = running && w.power.kind === 'rider';
-    this.crab.root.position.set(px, py, 0);
+    // on Home the crab stands on the diorama mound; it scuttles off as the run starts
+    this.homeSet.visible = dist < 30 && (mode === 'title' || mode === 'intro' || mode === 'shop' || (running && dist < 30));
+    this.homeSet.position.set(0, 0, dist);
+    const onMound = Math.max(0, 1 - dist / 1.4);
+    this.crab.root.position.set(px, py + onMound * onMound * 0.22, 0);
     this.crab.root.rotation.y = mode === 'shop' ? this.shopSpin : 0;
     const blink = running && p.invuln > 0 && w.mode === 'running' ? Math.floor(this.time * 16) % 2 === 0 : false;
     this.crab.root.visible = !blink;

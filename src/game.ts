@@ -9,7 +9,11 @@ import { SaveStore, type Settings } from './core/save';
 import { buyCrab, buyUpgrade, canBuyCrab, grantSkillUnlocks, nextUnlock, selectCrab, upgradeCost } from './sim/economy';
 import { Goals, type RunSnapshot } from './sim/goals';
 import { HowToScreen } from './ui/howto';
-import { SettingsScreen } from './ui/settings';
+import { SettingsScreen, StatsScreen } from './ui/settings';
+import { Haptics } from './core/haptics';
+import { PASS_TIERS, tierFromXp, xpFor } from './meta/xp';
+import { claimable } from './meta/pass';
+import type { HomeData } from './ui/home';
 import { ShopScreen } from './ui/shop';
 import { Autopilot } from './sim/autopilot';
 import type { GameEvent } from './sim/events';
@@ -20,7 +24,7 @@ import { GameView, type CamMode } from './render/view';
 import { UI, type GoalView } from './ui/ui';
 import type { PowerKind } from './sim/events';
 
-type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto';
+type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats';
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
@@ -34,6 +38,7 @@ export class Game {
   readonly ui: UI;
   readonly input = new Input();
   readonly audio = new Audio();
+  readonly haptics = new Haptics();
   readonly loop: Loop;
   private debug: DebugOverlay | null = null;
   private autopilot: Autopilot | null = null;
@@ -55,6 +60,8 @@ export class Game {
   private shop: ShopScreen;
   private settings: SettingsScreen;
   private howto: HowToScreen;
+  private stats: StatsScreen;
+  private statsReturn: State = 'title';
   private goalCheckT = 0;
   private thumbsReady = false;
 
@@ -67,18 +74,49 @@ export class Game {
     this.tagQuality();
     const app = document.getElementById('app') as HTMLElement;
     this.touchLayer = document.getElementById('touch-layer') as HTMLElement;
-    this.ui = new UI(document.getElementById('ui') as HTMLElement, {
-      play: () => this.onPlay(),
-      pause: () => this.pause(),
-      resume: () => this.resume(),
-      restart: () => this.restart(),
-      home: () => this.goHome(),
-      openShop: () => this.openShop(),
-      openSettings: () => this.openSettings(),
-      openHowTo: () => this.openHowTo(),
-      touch: (a) => this.onAction(a, false),
-      tap: () => this.audio.play('tap'),
-    });
+    const soon = (what: string): void => {
+      this.audio.play('tap');
+      this.ui.toast(`${what} is on its way!`, { sub: 'Arriving in this update', life: 2 });
+    };
+    this.ui = new UI(
+      document.getElementById('ui') as HTMLElement,
+      {
+        pause: () => this.pause(),
+        resume: () => this.resume(),
+        restart: () => this.restart(),
+        home: () => this.goHome(),
+        openSettings: () => this.openSettings(),
+        touch: (a) => this.onAction(a, false),
+        tap: () => this.audio.play('tap'),
+      },
+      {
+        play: () => this.onPlay(),
+        islands: () => soon('Island Hop'),
+        daily: () => soon('Daily Tide'),
+        wardrobe: () => this.openShop(),
+        pass: () => soon('The Sunny Pass track'),
+        settings: () => this.openSettings(),
+        howto: () => this.openHowTo(),
+        stats: () => this.openStats(),
+        poke: () => {
+          this.audio.play('tap');
+          this.haptics.play('light');
+          this.view.crab.emote();
+        },
+      },
+      {
+        again: () => this.restart(),
+        home: () => this.goHome(),
+        wardrobe: () => this.openShop(),
+        tick: () => this.audio.play('tick'),
+        pop: () => this.audio.play('pop'),
+        levelUp: (tier) => {
+          this.audio.play('levelUp');
+          this.haptics.play('success');
+          this.ui.toast(`Sunny Pass tier ${tier}!`, { kind: 'gold', sub: 'A reward is waiting', life: 2.2 });
+        },
+      },
+    );
     this.goals = new Goals(this.save.data.goals);
     this.shop = new ShopScreen(CRAB_SKINS, {
       back: () => this.closeOverlay(),
@@ -117,11 +155,14 @@ export class Game {
         this.ui.toast('Progress erased');
       },
       back: () => this.closeOverlay(),
+      stats: () => this.openStats(),
     });
     this.howto = new HowToScreen(() => this.closeOverlay());
+    this.stats = new StatsScreen(() => this.closeStats());
     this.ui.addScreen(this.shop.el);
     this.ui.addScreen(this.settings.el);
     this.ui.addScreen(this.howto.el);
+    this.ui.addScreen(this.stats.el);
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
@@ -131,6 +172,13 @@ export class Game {
     const skin = CRAB_SKINS.find((s) => s.id === this.save.data.crabs.selected) ?? CRAB_SKINS[0]!;
     this.view.setSkin(skin);
     this.view.setReduceMotion(this.reduceMotion);
+    this.applyControlSettings();
+    // desktop: the crab's eyes follow the cursor on Home
+    window.addEventListener('pointermove', (e) => {
+      if (this.state !== 'title' || e.pointerType !== 'mouse') return;
+      const r = canvas.getBoundingClientRect();
+      this.view.crab.look(((e.clientX - r.left) / r.width) * 2 - 1, 1 - ((e.clientY - r.top) / r.height) * 2);
+    });
 
     // viewport: pause on real size/orientation changes, not on small toolbar jitters
     let lastW = 0;
@@ -213,6 +261,8 @@ export class Game {
       setTimeout(() => loader.remove(), 500);
     }
     if (this.flags.autopilot && !this.flags.shots) this.startRun(true);
+    const hooks = (window as unknown as { __crab?: { ready: boolean } }).__crab;
+    if (hooks) hooks.ready = true;
     setTimeout(() => this.prepareThumbs(), 1200);
   }
 
@@ -221,11 +271,9 @@ export class Game {
     this.state = 'title';
     this.applyPendingQuality();
     this.resetWorldToBeach();
-    this.ui.setShopBadge(this.anyAffordable());
     this.input.setPointerEnabled(false);
     this.touchLayer.classList.remove('active');
-    this.ui.setTitleInfo(this.save.data.best, this.goalViews());
-    this.ui.setPlayPrompt(this.input.lastDevice === 'keyboard');
+    this.ui.setHome(this.homeData());
     this.ui.show('title');
     this.maybeShowInstallTip();
     this.audio.setMusicMode('menu');
@@ -271,7 +319,31 @@ export class Game {
     this.introT = withIntro ? 0 : 1;
     this.state = withIntro ? 'intro' : 'running';
     this.audio.setMusicMode('run');
-    this.save.data.stats.runs++;
+    const st = this.save.data.stats;
+    st.runs++;
+    const body = this.save.data.crabs.selected;
+    st.runsByCrab[body] = (st.runsByCrab[body] ?? 0) + 1;
+  }
+
+  /** Data for the Home screen. */
+  private homeData(): HomeData {
+    const d = this.save.data;
+    const t = tierFromXp(d.xp);
+    return {
+      best: d.best,
+      shells: d.shells,
+      tier: t.tier,
+      maxTier: PASS_TIERS,
+      tierInto: t.into,
+      tierNeed: t.need,
+      passClaimable: claimable(d).length,
+      goals: this.goalViews(),
+      crabName: this.skinOf(d.crabs.selected).name,
+      wardrobeBadge: this.anyAffordable(),
+      islands: null,
+      daily: null,
+      keyboard: this.input.lastDevice === 'keyboard',
+    };
   }
 
   /** Which control hints to show: touch on phones/tablets, keyboard on computers. */
@@ -307,7 +379,7 @@ export class Game {
     this.state = 'paused';
     this.input.setPointerEnabled(false);
     this.ui.showCountdown(0);
-    this.ui.setTitleInfo(this.save.data.best, this.goalViews());
+    this.ui.setPauseInfo(this.goalViews(), this.world.distance, this.world.runShells);
     this.ui.show('pause');
     this.audio.setMusicMode('menu');
   }
@@ -376,6 +448,40 @@ export class Game {
     this.ui.showExtra(this.settings.el);
   }
 
+  openStats(): void {
+    if (this.state !== 'title' && this.state !== 'settings') return;
+    this.audio.play('tap');
+    this.statsReturn = this.state;
+    this.state = 'stats';
+    const d = this.save.data;
+    const fav = Object.entries(d.stats.runsByCrab).sort((a, b) => b[1] - a[1])[0];
+    this.stats.render({
+      best: d.best,
+      runs: d.stats.runs,
+      totalDistance: d.stats.totalDistance,
+      totalShells: d.stats.totalShells,
+      totalHops: d.stats.totalHops,
+      totalWaves: d.stats.totalWaves,
+      totalPowerups: d.stats.totalPowerups,
+      totalCloseShaves: d.stats.totalCloseShaves,
+      favourite: fav ? this.skinOf(fav[0]).name : '',
+      favouriteRuns: fav ? fav[1] : 0,
+      passTier: tierFromXp(d.xp).tier,
+      islandStars: null,
+      dailyStreak: null,
+    });
+    this.ui.showExtra(this.stats.el);
+  }
+
+  private closeStats(): void {
+    if (this.statsReturn === 'settings') {
+      this.audio.play('tap');
+      this.state = 'settings';
+      this.settings.open(this.save.data.settings);
+      this.ui.showExtra(this.settings.el);
+    } else this.closeOverlay();
+  }
+
   private openHowTo(): void {
     if (this.state !== 'title') return;
     this.audio.play('tap');
@@ -409,6 +515,17 @@ export class Game {
     }
     this.view.setReduceMotion(this.reduceMotion);
     this.ui.setTouchButtons(this.touchButtonsWanted());
+    this.applyControlSettings();
+  }
+
+  /** haptics, swipe sensitivity, left-handed HUD, contrast outlines, motion */
+  private applyControlSettings(): void {
+    const st = this.save.data.settings;
+    this.haptics.enabled = st.haptics;
+    this.input.setSensitivity(st.swipeSensitivity);
+    this.ui.setLefty(st.leftHanded);
+    this.ui.setReduceMotion(this.reduceMotion);
+    this.view.entities.setContrast(st.contrastOutlines);
   }
 
   private resetWorldToBeach(): void {
@@ -457,6 +574,7 @@ export class Game {
       else if (a === 'back') this.goHome();
       return;
     }
+    if (s === 'stats' && a === 'back') return this.closeStats();
     if ((s === 'shop' || s === 'settings' || s === 'howto') && a === 'back') this.closeOverlay();
   }
 
@@ -551,28 +669,38 @@ export class Game {
     this.lastResults = { distance, pickups, bonus, total, newBest, goals: completed.length };
     void completedIds;
 
+    // Sunny Pass XP for the run
+    const xpBefore = d.xp;
+    const xpGained = xpFor({ distance, shells: pickups, goals: completed.length });
+    d.xp += xpGained;
+    d.stats.longestRun = Math.max(d.stats.longestRun, w.time);
+    this.save.save();
+
     this.state = 'results';
     this.resultsAt = this.clock;
     this.applyPendingQuality();
+    if (newBest) this.view.celebrateResults();
     this.ui.showResults({
+      title: newBest ? 'New Best!' : 'Wipeout!',
       distance,
       best: prevBest,
       newBest,
+      zone: CFG.zoneNames[w.zone] ?? '',
       pickups,
       bonus,
-      goalRewards,
-      total,
+      completed: completed.map((g) => ({ text: g.text, reward: (CFG.goalRewards[Math.min(g.tier, 4) - 1] as number) ?? 400 })),
       balance: d.shells,
-      goals: [
-        ...completed.map((g) => ({ text: g.text, progress: 1, value: '', reward: (CFG.goalRewards[Math.min(g.tier, 4) - 1] as number) ?? 400, done: true })),
-        ...this.goalViews(),
-      ],
+      xpBefore,
+      xpGained,
+      goals: this.goalViews(),
       unlock: nextUnlock(d, Object.fromEntries(CRAB_SKINS.map((k) => [k.id, k.name]))),
-      zone: CFG.zoneNames[w.zone] ?? '',
+      wardrobeBadge: this.anyAffordable(),
     });
-    this.ui.setShopBadge(this.anyAffordable());
-    if (newBest) this.audio.play('newBest');
-    for (const id of unlocked) this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold', sub: 'Find them in Crabs', life: 3 });
+    if (newBest) {
+      this.audio.play('newBest');
+      this.haptics.play('success');
+    }
+    for (const id of unlocked) this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold', sub: 'Find them in the Wardrobe', life: 3 });
   }
 
   private goalViews(): GoalView[] {
@@ -645,6 +773,7 @@ export class Game {
           break;
         case 'laneChange':
           this.audio.play('lane', { pan: ev.dir * 0.4 });
+          this.haptics.play('light');
           break;
         case 'hop':
           this.audio.play('hop');
@@ -654,9 +783,11 @@ export class Game {
           break;
         case 'bump':
           this.audio.play('bump');
+          this.haptics.play('medium');
           break;
         case 'crash':
           this.audio.play('crash');
+          this.haptics.play('heavy');
           break;
         case 'closeShave':
           this.audio.play('closeShave');
@@ -701,7 +832,8 @@ export class Game {
   private installHooks(): void {
     const g = this;
     const hooks = {
-      ready: true,
+      /** true once boot() has run (the loader stages construction, shader warm-up and boot) */
+      ready: false,
       game: g,
       startRun(o: { seed?: number; start?: number; autopilot?: boolean; tutorial?: boolean } = {}) {
         if (o.seed !== undefined) g.flags.seed = o.seed;
@@ -722,6 +854,9 @@ export class Game {
         } else if (name === 'settings') {
           g.toTitle();
           g.openSettings();
+        } else if (name === 'stats') {
+          g.toTitle();
+          g.openStats();
         } else if (name === 'howto') {
           g.toTitle();
           g.openHowTo();

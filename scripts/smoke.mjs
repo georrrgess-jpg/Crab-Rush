@@ -82,6 +82,9 @@ try {
   await page.waitForTimeout(200);
   check((await st()).state === 'results', 'a crash leads to the results screen');
   check(await page.isVisible('#results .btn.big'), 'Play Again button is visible');
+  check((await page.evaluate(() => window.__crab.game.save.data.xp)) > 0, 'a run earns Sunny Pass XP');
+  await page.click('#results .res-card .res-big');
+  check(await page.evaluate(() => document.getElementById('results').classList.contains('done')), 'tapping the results card skips the reveal');
   await page.click('#results .btn.big');
   await page.waitForTimeout(400);
   await fr(3);
@@ -117,10 +120,18 @@ try {
   check((await st()).state === 'title', 'Escape leaves the shop');
 
   // ---------------- settings + how to play
-  await page.click('button[aria-label="Settings"]');
+  // Home: nav tabs, play card, Stats page
+  check(await page.isVisible('#home .play-card'), 'Home shows the Play card');
+  await page.click('#home .tab:has-text("Stats")');
+  check((await st()).state === 'stats' && (await page.isVisible('#stats .stat')), 'Stats opens from the Home nav');
+  await page.keyboard.press('Escape');
+  check((await st()).state === 'title', 'Escape leaves Stats');
+  await page.click('#home .tab:has-text("Settings")');
   check((await st()).state === 'settings', 'settings open from the title');
-  await page.click('.seg button:has-text("Low")');
+  await page.click('.set-row:has-text("Quality") .seg button:has-text("Low")');
   check((await page.evaluate(() => JSON.parse(localStorage.getItem('crabdash.save')).settings.quality)) === 'low', 'graphics setting is saved');
+  await page.click('#settings .toggle[aria-label="Left-handed HUD"]');
+  check((await page.evaluate(() => window.__crab.game.save.data.settings.leftHanded)) === true && (await page.evaluate(() => document.getElementById('hud').classList.contains('lefty'))), 'left-handed HUD toggles');
   await page.click('#settings .btn.big');
   check((await st()).state === 'title', 'Done returns to the title');
   await page.click('button[aria-label="How to play"]');
@@ -142,9 +153,9 @@ try {
   await pp.goto(`${base}?shots&reset&notut&seed=99&god&quality=low`);
   await pp.waitForFunction(() => window.__crab?.ready);
   const pst = () => pp.evaluate(() => ({ state: window.__crab.game.state, lane: window.__crab.game.world.player.lane }));
-  await pp.tap('#title .tap', { force: true });
+  await pp.tap('#home .play-card');
   await pp.evaluate(() => window.__crab.frames(70));
-  check((await pst()).state === 'running', 'tapping "Tap to Play" starts a run on a phone');
+  check((await pst()).state === 'running', 'tapping Play starts a run on a phone');
   await pp.touchscreen.tap(80, 500);
   await pp.evaluate(() => window.__crab.frames(20));
   check((await pst()).lane === 0, 'tapping the left half moves left');
