@@ -9,7 +9,7 @@ import { EntityViews } from './entities';
 import { BlobShadows, Particles } from './fx';
 import { Materials } from './materials';
 import { CRAB_SKINS, CrabModel, type CrabSkin } from './models/crab';
-import { powerupIcon, waveSweep } from './models/obstacles';
+import { powerupIcon, riderWave } from './models/obstacles';
 import { Ocean } from './ocean';
 import { ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
 import { Renderer } from './renderer';
@@ -92,9 +92,8 @@ export class GameView {
     this.magnetRing.visible = false;
     this.crab.root.add(this.magnetRing);
     // Wave Rider: little wave + surfboard under the crab
-    const wave = new THREE.Mesh(waveSweep(), this.mats.gloss);
-    wave.scale.set(0.42, 1.2, 1.1);
-    wave.position.set(0, -1.15, 0.2);
+    const wave = new THREE.Mesh(riderWave(), this.mats.gloss);
+    wave.position.set(0, -0.5, 0.45);
     const board = new THREE.Mesh(powerupIcon('rider'), this.mats.clay);
     board.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
     board.scale.set(2.6, 2.6, 2.6);
@@ -164,7 +163,8 @@ export class GameView {
           for (let i = 0; i < (ev.big ? 12 : 4); i++) {
             const a = Math.random() * Math.PI * 2;
             const sp = 1.2 + Math.random() * 1.8;
-            this.sparks.spawn(ev.x + Math.cos(a) * 0.4, ev.y + 0.7, w.dist - 0.3, Math.cos(a) * sp, 2.5 + Math.random() * 2, -1.5, 0.35 + Math.random() * 0.15, ev.big ? 0.3 : 0.18, ev.big ? 0xfff0a0 : 0xffd84a, 6);
+            // player-relative (local) so the burst stays with the crab instead of streaming at the camera
+            this.sparks.spawn(ev.x + Math.cos(a) * 0.4, ev.y + 0.7, -0.2, Math.cos(a) * sp, 2.5 + Math.random() * 2, -0.5, 0.35 + Math.random() * 0.15, ev.big ? 0.3 : 0.18, ev.big ? 0xfff0a0 : 0xffd84a, 6, 0, true);
           }
           break;
         case 'laneChange':

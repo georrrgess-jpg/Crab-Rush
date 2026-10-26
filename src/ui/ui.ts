@@ -282,6 +282,7 @@ export class UI {
     this.lastShells = -1;
     this.lastDist = -1;
     this.lastPower = null;
+    this.powerRing.classList.add('hidden');
     this.updateHUD(0, 0, null, 0, 0);
   }
 
@@ -364,13 +365,13 @@ export class UI {
     const head = el('div', 'panel-head', d.newBest ? 'New Best!' : 'Wipeout!');
     const body = el('div', 'panel-body');
     const grid = el('div', 'res-grid');
-    const colA = el('div');
+    const colA = el('div', 'ra');
     colA.innerHTML = `${d.newBest ? '<span class="newbest">NEW BEST!</span>' : ''}<div class="res-dist">${fmt(d.distance)}<span class="unit"> m</span></div><div class="res-sub">${[d.newBest ? `Previous best ${fmt(d.best)} m` : d.best > d.distance ? `${fmt(d.best - d.distance)} m short of your best` : '', d.zone].filter(Boolean).join(' · ')}</div>`;
     const rows = el('div', 'res-rows');
     const row = (label: string, val: number, cls = ''): string => `<div class="res-row ${cls}"><span>${label}</span><b>${ICON.shell}${val > 0 && cls !== 'total' ? '+' : ''}${fmt(val)}</b></div>`;
     rows.innerHTML = row('Shells collected', d.pickups) + (d.bonus > 0 ? row('Bonuses', d.bonus) : '') + (d.goalRewards > 0 ? row('Goals completed', d.goalRewards) : '') + row('Your shells', d.balance, 'total');
     colA.appendChild(rows);
-    const colB = el('div');
+    const colB = el('div', 'rb');
     if (d.unlock) {
       const u = el('div', 'unlock');
       const pct = Math.min(100, Math.round((d.unlock.have / d.unlock.need) * 100));
@@ -382,14 +383,13 @@ export class UI {
     goals.style.width = '100%';
     this.renderGoals(goals, d.goals, 'Goals');
     colB.appendChild(goals);
-    const buttons = el('div', 'btn-col');
+    const buttons = el('div', 'btn-col rc');
     buttons.style.marginTop = '14px';
     const again = btn(`${ICON.restart}<span>Play Again</span>`, 'big', () => this.h.restart());
     const sub = el('div', 'btn-row');
     sub.append(btn(`${ICON.crab}<span>Crabs</span><i class="dot${this.shopBadge ? '' : ' hidden'}"></i>`, 'blue small', () => this.h.openShop()), btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()));
     buttons.append(again, sub);
-    colB.appendChild(buttons);
-    grid.append(colA, colB);
+    grid.append(colA, colB, buttons);
     body.appendChild(grid);
     p.append(head, body);
     r.append(dim, p);

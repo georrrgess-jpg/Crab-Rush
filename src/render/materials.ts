@@ -71,7 +71,7 @@ export class Materials {
   readonly glowTex = makeRadial([[0, 'rgba(255,240,170,1)'], [0.35, 'rgba(255,200,70,0.55)'], [1, 'rgba(255,180,40,0)']]);
   readonly shadowTex = makeRadial([[0, 'rgba(40,30,10,0.55)'], [0.6, 'rgba(40,30,10,0.25)'], [1, 'rgba(40,30,10,0)']]);
   readonly sparkTex = makeRadial([[0, 'rgba(255,255,255,1)'], [0.4, 'rgba(255,255,255,0.7)'], [1, 'rgba(255,255,255,0)']]);
-  readonly dustTex = makeRadial([[0, 'rgba(255,240,205,0.9)'], [0.6, 'rgba(240,215,160,0.5)'], [1, 'rgba(240,215,160,0)']]);
+  readonly dustTex = makeRadial([[0, 'rgba(255,240,205,0.62)'], [0.6, 'rgba(240,215,160,0.3)'], [1, 'rgba(240,215,160,0)']]);
 
   /** mutable colour materials for tinting (e.g. beach ball seams) are created on demand */
   basic(color: number, opts: Partial<THREE.MeshBasicMaterialParameters> = {}): THREE.MeshBasicMaterial {

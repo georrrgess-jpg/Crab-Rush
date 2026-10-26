@@ -30,7 +30,7 @@ export class ShellRenderer {
     for (const s of shells) {
       if (s.dead) continue;
       const rel = s.wz - dist;
-      if (rel < -6 || rel > far) continue;
+      if (rel < -1.2 || rel > far) continue;
       if (n >= max) break;
       const big = s.big ? 1.7 + Math.sin(time * 6) * 0.12 : 1;
       const spin = time * 2.4 + s.id * 0.7;

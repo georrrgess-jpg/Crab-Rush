@@ -369,10 +369,13 @@ html, body {
 .unlock .lbl { display: flex; justify-content: space-between; font-size: 15px; color: var(--teal); margin-bottom: 4px; }
 .unlock .bar { height: 14px; border-radius: 8px; background: rgba(30, 94, 140, 0.15); overflow: hidden; border: 2px solid #fff; }
 .unlock .bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffd23a, #ff8a1f); transition: width 0.8s ease-out; }
-.res-grid { display: grid; grid-template-columns: 1fr; gap: 0 18px; }
+.res-grid { display: grid; grid-template-columns: 1fr; grid-template-areas: 'a' 'b' 'c'; gap: 0 18px; }
+.res-grid > .ra { grid-area: a; }
+.res-grid > .rb { grid-area: b; }
+.res-grid > .rc { grid-area: c; }
 @media (orientation: landscape) and (min-width: 700px) {
   #results .panel { max-width: min(94vw, 860px); }
-  .res-grid { grid-template-columns: 1fr 1fr; }
+  .res-grid { grid-template-columns: 1fr 1fr; grid-template-areas: 'a b' 'c b'; }
 }
 
 #fade { position: absolute; inset: 0; background: #fff4dc; opacity: 0; pointer-events: none; transition: opacity 0.18s ease; z-index: 50; }
@@ -453,3 +456,30 @@ html, body {
 
 .btn .dot { position: absolute; top: -4px; right: -4px; width: 16px; height: 16px; border-radius: 50%; background: #ff3b30; border: 3px solid #fff; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.2); animation: pulse 1.2s ease-in-out infinite; }
 .btn { position: relative; }
+
+/* =================================================================== short landscape phones */
+@media (orientation: landscape) and (max-height: 520px) {
+  .panel-head { font-size: 22px; padding: 6px 12px 8px; }
+  .panel-body { padding: 10px 14px 12px; }
+  .res-dist { font-size: 46px; }
+  .res-rows { margin: 6px 0; gap: 4px; }
+  .res-row { padding: 4px 10px; }
+  .unlock { margin: 2px 0 8px; }
+  .goals-card { padding: 6px 10px; }
+  .goal { padding: 3px 0; font-size: 14px; }
+  .goal .chk { width: 22px; height: 22px; }
+  .btn.big { font-size: 24px; min-height: 52px; padding: 0.35em 1.2em 0.45em; }
+  .res-grid > .rc { margin-top: 6px !important; }
+  #title .top { margin-top: 0; text-align: left; align-self: flex-start; }
+  #title .logo { font-size: 15vh; }
+  #title .tagline { font-size: 13px; margin-top: 0.4em; }
+  #title .goals-card { position: absolute; right: calc(12px + var(--safe-r)); top: 50%; transform: translateY(-50%); width: min(42vw, 340px); }
+  #title .bottom { align-items: flex-start; width: auto; align-self: flex-start; }
+  #title .tap { font-size: 30px; padding: 4px 8px; }
+  #tutorial .bubble { font-size: 32px; }
+  #tutorial { padding-top: 40vh; }
+}
+@media (max-height: 700px) and (orientation: portrait) {
+  .tile { aspect-ratio: 1 / 0.82; }
+  .shop-panel { max-height: 66%; }
+}

@@ -455,7 +455,7 @@ export class World {
     }
   }
 
-  private activate(kind: PowerKind): void {
+  activate(kind: PowerKind): void {
     if (this.power.kind) this.endPower(false);
     const lvl = this.opts.upgrades[kind] ?? 0;
     const dur = (CFG.powerupDurations[kind] as readonly number[])[lvl] as number;

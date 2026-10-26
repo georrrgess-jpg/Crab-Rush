@@ -267,7 +267,10 @@ export class Scenery {
       for (const x of [-1.1, 1.1]) lines.box(0xe8d2a6, 0.16, 0.02, L, [x, 0.012, -L / 2]);
       pl.list.push(lines.build());
       // lamps
-      for (const s of [-1, 1]) pl.add(K.lamp, s * (hw + 0.3), -(v % 2 === 0 ? 6 : 18), 0, 1, 0, true);
+      for (const s of [-1, 1]) {
+        pl.add(K.lamp, s * (hw + 0.3), -6, 0, 1, 0, true);
+        if (v % 2 === 1) pl.add(K.lamp, s * (hw + 0.3), -18, 0, 1, 0, true);
+      }
       // side platform with a kiosk
       if (v % 2 === 0) {
         const plat = new GeoBuilder().box(0xb98550, 6.5, 0.4, 9, [0, -0.2, 0]).build();
@@ -285,9 +288,17 @@ export class Scenery {
         const bb = new GeoBuilder();
         const cols = [0xe53935, 0xffc933, 0x2f6fd6, 0x3dae4f];
         for (const s of [-1, 1]) {
-          for (let i = 0; i < 10; i++) {
-            const z = -2 - i * 2.2;
-            bb.cone(cols[i % 4] as number, 0.16, 0.32, [s * (hw + 0.3), 3.2 - Math.sin((i / 9) * Math.PI) * 0.5, z], [Math.PI, Math.PI / 2, 0], 3, [1, 1, 0.3]);
+          // string sagging between the two lamps (z -6 → -18), flags hanging from it
+          const sag = (t: number): number => 3.75 - Math.sin(t * Math.PI) * 0.7;
+          const n = 8;
+          for (let i = 0; i < n; i++) {
+            const t0 = i / n;
+            const t1 = (i + 1) / n;
+            bb.seg(0xf2efe6, [s * (hw + 0.3), sag(t0), -6 - t0 * 12], [s * (hw + 0.3), sag(t1), -6 - t1 * 12], 0.02, 0.02, 3);
+          }
+          for (let i = 0; i < 7; i++) {
+            const t = (i + 0.5) / 7;
+            bb.cone(cols[i % 4] as number, 0.16, 0.32, [s * (hw + 0.3), sag(t) - 0.18, -6 - t * 12], [Math.PI, Math.PI / 2, 0], 3, [1, 1, 0.3]);
           }
         }
         pl.list.push(bb.build());

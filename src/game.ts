@@ -653,12 +653,13 @@ export class Game {
           g.pause();
         }
       },
-      /** advance n frames of `dt` seconds; renders only the last one */
+      /** advance n frames of `dt` seconds; only the last 20 are rendered (so camera smoothing settles) */
       frames(n: number, dt = 1 / 60) {
+        const rendered = Math.min(n, 20);
         g.skipRender = true;
-        for (let i = 0; i < n - 1; i++) g.loop.tick(dt);
+        for (let i = 0; i < n - rendered; i++) g.loop.tick(dt);
         g.skipRender = false;
-        g.loop.tick(dt);
+        for (let i = 0; i < rendered; i++) g.loop.tick(dt);
       },
       crash() {
         const w = g.world;

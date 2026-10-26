@@ -203,6 +203,32 @@ export function gullWing(): THREE.BufferGeometry {
   return b.build();
 }
 
+/** Wave Rider: a rounded mound of water with a foam rim that the crab surfs on. */
+export function riderWave(): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(1, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+  const pa = g.attributes.position as THREE.BufferAttribute;
+  const col = new Float32Array(pa.count * 3);
+  const deep = new THREE.Color(PALETTE.oceanMid);
+  const shallow = new THREE.Color(PALETTE.oceanShallow);
+  const foam = new THREE.Color(0xffffff);
+  const c = new THREE.Color();
+  for (let i = 0; i < pa.count; i++) {
+    const y = pa.getY(i);
+    const ang = Math.atan2(pa.getZ(i), pa.getX(i));
+    c.copy(deep).lerp(shallow, Math.min(1, y * 1.6));
+    // frothy crest and a foam band along the rim
+    const froth = Math.max(0, y - 0.72) * 3.2 + (y < 0.12 ? (0.12 - y) * 6 : 0) + Math.max(0, Math.sin(ang * 9)) * 0.08;
+    c.lerp(foam, Math.min(1, froth));
+    col[i * 3] = c.r;
+    col[i * 3 + 1] = c.g;
+    col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.deleteAttribute('uv');
+  g.scale(1.6, 0.42, 2.3);
+  return g;
+}
+
 // ------------------------------------------------------------------ power-ups
 export function powerupIcon(kind: 'magnet' | 'shield' | 'rider'): THREE.BufferGeometry {
   const b = new GeoBuilder();
