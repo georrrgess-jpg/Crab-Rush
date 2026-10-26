@@ -2,11 +2,14 @@
 
 Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The full design and build plan is in **`PLAN.md`**; read it before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
 
-## Commands (created in milestone M0)
+## Commands
 - `npm run dev`: dev server
 - `npm run build`: production build into `dist/`
-- `npm test`: Vitest (pattern validator, autopilot fairness, save, goals, economy)
-- `npm run shots -- <label>`: Playwright screenshots into `docs/screenshots/`. Chromium and Playwright are preinstalled: use `require('playwright')` and never run `playwright install`.
+- `npm test`: Vitest (pattern validator, autopilot fairness, save, goals, economy, audio, quality)
+- `npm run shots -- <label> [--no-build] [--only=title,run,...] [--views=phone,desktop,...]`: Playwright screenshots into `docs/screenshots/`. Chromium and Playwright are preinstalled: use `require('playwright')` and never run `playwright install`.
+- `node scripts/smoke.mjs [--no-build]`: end-to-end browser smoke test (controls, tutorial, shop, settings, pause, results)
+- `BALANCE=1 npx vitest run tests/balance.test.ts`: simulated-player balance report
+- Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`.
 
 ## Rules
 - `src/sim/` never imports `three`. Rendering reads sim state; the sim emits events.

@@ -54,6 +54,11 @@ export class GameView {
   private lastZone = 0;
   private camPos = new THREE.Vector3();
   private camLook = new THREE.Vector3();
+  // scratch vectors (no allocations in the frame loop)
+  private vRunPos = new THREE.Vector3();
+  private vRunLook = new THREE.Vector3();
+  private vTitlePos = new THREE.Vector3();
+  private vTitleLook = new THREE.Vector3();
   private titleSpin = 0;
   shopSpin = 0;
 
@@ -257,7 +262,7 @@ export class GameView {
     fog.near = fogNear;
     fog.far = q.fogFar;
     this.backdrop.update(this.time, zone, this.palette);
-    this.scenery.update(dist, this.palette.groundTint);
+    this.scenery.update(dist, this.palette.groundTint, q.fogFar + 4);
     this.scenery.glowFlicker(this.time);
 
     // entities & shells
@@ -324,8 +329,8 @@ export class GameView {
     this.camX += (followX - this.camX) * Math.min(1, dt * 10);
     const d = this.renderer.fitDist;
     const el = CAMERA_ELEVATION;
-    const runPos = new THREE.Vector3(this.camX * 0.4, 0.5 + Math.sin(el) * d, Math.cos(el) * d);
-    const runLook = new THREE.Vector3(this.camX * 0.6, CFG.camera.lookY, -CFG.camera.lookAhead);
+    const runPos = this.vRunPos.set(this.camX * 0.4, 0.5 + Math.sin(el) * d, Math.cos(el) * d);
+    const runLook = this.vRunLook.set(this.camX * 0.6, CFG.camera.lookY, -CFG.camera.lookAhead);
     let pos: THREE.Vector3;
     let look: THREE.Vector3;
     if (mode === 'title' || mode === 'intro') {
@@ -334,8 +339,8 @@ export class GameView {
       const portrait = aspect < 1;
       const r = portrait ? 6.4 : 4.4;
       const a = Math.sin(this.titleSpin * 0.18) * 0.35 + 0.28;
-      const titlePos = new THREE.Vector3(Math.sin(a) * r, portrait ? 2.1 : 1.7, Math.cos(a) * r);
-      const titleLook = new THREE.Vector3(-0.3, portrait ? 0.45 : 1.3, -3);
+      const titlePos = this.vTitlePos.set(Math.sin(a) * r, portrait ? 2.1 : 1.7, Math.cos(a) * r);
+      const titleLook = this.vTitleLook.set(-0.3, portrait ? 0.45 : 1.3, -3);
       if (mode === 'title') {
         pos = titlePos;
         look = titleLook;
@@ -346,8 +351,8 @@ export class GameView {
       }
     } else if (mode === 'shop') {
       const portrait = cam.aspect < 1;
-      pos = new THREE.Vector3(0, portrait ? 2.0 : 1.9, portrait ? 4.6 : 5.4);
-      look = new THREE.Vector3(portrait ? 0 : 1.5, portrait ? -0.25 : 0.75, 0);
+      pos = this.vTitlePos.set(0, portrait ? 2.0 : 1.9, portrait ? 4.6 : 5.4);
+      look = this.vTitleLook.set(portrait ? 0 : 1.5, portrait ? -0.25 : 0.75, 0);
     } else {
       pos = runPos;
       look = runLook;
@@ -375,8 +380,8 @@ export class GameView {
     return CRAB_SKINS;
   }
 
-  /** Render a portrait of every crab skin into PNG data URLs (shop tiles). One-off cost. */
-  renderCrabThumbs(size = 192): string[] {
+  /** Render a portrait of every crab skin into PNG data URLs (shop tiles). One-off cost; async readback avoids GPU stalls. */
+  async renderCrabThumbs(size = 192): Promise<string[]> {
     const gl = this.renderer.gl;
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
@@ -403,14 +408,17 @@ export class GameView {
       gl.setClearColor(0x000000, 0);
       gl.clear();
       gl.render(scene, cam);
-      gl.readRenderTargetPixels(rt, 0, 0, size, size, px);
+      gl.setRenderTarget(null);
+      gl.setClearColor(prevColor, prevAlpha);
+      await gl.readRenderTargetPixelsAsync(rt, 0, 0, size, size, px);
       for (let y = 0; y < size; y++) img.data.set(px.subarray((size - 1 - y) * size * 4, (size - y) * size * 4), y * size * 4);
       ctx.putImageData(img, 0, 0);
       out.push(c.toDataURL('image/png'));
     }
-    gl.setRenderTarget(null);
-    gl.setClearColor(prevColor, prevAlpha);
     rt.dispose();
+    crab.root.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose();
+    });
     return out;
   }
 }

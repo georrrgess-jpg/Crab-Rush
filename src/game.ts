@@ -3,6 +3,7 @@ import { Audio } from './core/audio';
 import { DebugOverlay, parseFlags, type Flags } from './core/debug';
 import { Input, type Action } from './core/input';
 import { Loop } from './core/loop';
+import { QualityManager } from './core/quality';
 import { SaveStore, type Settings } from './core/save';
 import { buyCrab, buyUpgrade, canBuyCrab, grantSkillUnlocks, nextUnlock, selectCrab, upgradeCost } from './sim/economy';
 import { Goals, type RunSnapshot } from './sim/goals';
@@ -45,6 +46,7 @@ export class Game {
   private skipRender = false;
   private touchLayer: HTMLElement;
   private quality: QualityPreset;
+  private qm: QualityManager;
   private returnTo: State = 'title';
   private runStartedWithTutorial = false;
   lastResults: Record<string, number | boolean | string> = {};
@@ -60,6 +62,7 @@ export class Game {
     if (this.flags.reset) this.save.reset();
     this.quality = pickQuality(this.flags.quality, this.save.data.settings.quality);
     this.view = new GameView(canvas, this.quality);
+    this.qm = new QualityManager(this.quality, this.autoQuality);
     const app = document.getElementById('app') as HTMLElement;
     this.touchLayer = document.getElementById('touch-layer') as HTMLElement;
     this.ui = new UI(document.getElementById('ui') as HTMLElement, {
@@ -127,11 +130,16 @@ export class Game {
     this.view.setSkin(skin);
     this.view.setReduceMotion(this.reduceMotion);
 
-    // viewport
+    // viewport: pause on real size/orientation changes, not on small toolbar jitters
+    let lastW = 0;
+    let lastH = 0;
     const resize = (): void => {
       const r = app.getBoundingClientRect();
       this.view.resize(r.width, r.height);
-      if (this.state === 'running' || this.state === 'intro') this.pause();
+      const big = lastW > 0 && (Math.abs(r.width - lastW) / lastW > 0.1 || Math.abs(r.height - lastH) / lastH > 0.2);
+      lastW = r.width;
+      lastH = r.height;
+      if (big && (this.state === 'running' || this.state === 'intro')) this.pause();
     };
     new ResizeObserver(resize).observe(app);
     resize();
@@ -162,6 +170,19 @@ export class Game {
     this.installHooks();
   }
 
+  private get autoQuality(): boolean {
+    return !this.flags.quality && this.save.data.settings.quality === 'auto';
+  }
+
+  /** Apply a tier change the auto-quality manager asked for (only between runs: it rebuilds scenery). */
+  private applyPendingQuality(): void {
+    const p = this.qm.takePending();
+    if (!p) return;
+    this.quality = p;
+    this.view.setQuality(p);
+    this.view.renderer.setDprScale(1);
+  }
+
   get reduceMotion(): boolean {
     const s = this.save.data.settings.reduceMotion;
     if (s !== null) return s;
@@ -181,11 +202,13 @@ export class Game {
       setTimeout(() => loader.remove(), 500);
     }
     if (this.flags.autopilot && !this.flags.shots) this.startRun(true);
+    setTimeout(() => this.prepareThumbs(), 1200);
   }
 
   // ------------------------------------------------------------------ flow
   private toTitle(): void {
     this.state = 'title';
+    this.applyPendingQuality();
     this.resetWorldToBeach();
     this.ui.setShopBadge(this.anyAffordable());
     this.input.setPointerEnabled(false);
@@ -193,6 +216,7 @@ export class Game {
     this.ui.setTitleInfo(this.save.data.best, this.goalViews());
     this.ui.setPlayPrompt(this.input.lastDevice === 'keyboard');
     this.ui.show('title');
+    this.maybeShowInstallTip();
     this.audio.setMusicMode('menu');
   }
 
@@ -295,17 +319,41 @@ export class Game {
   private openShop(): void {
     if (this.state !== 'title' && this.state !== 'results') return;
     this.audio.play('tap');
-    if (!this.thumbsReady) {
-      this.shop.thumbs = this.view.renderCrabThumbs();
-      this.thumbsReady = true;
-      this.view.setSkin(this.skinOf(this.save.data.crabs.selected));
-    }
+    this.prepareThumbs();
     this.returnTo = 'title';
     this.resetWorldToBeach();
     this.state = 'shop';
     this.shop.open(this.save.data);
     this.ui.showExtra(this.shop.el);
     this.view.shopSpin = 0;
+  }
+
+  /** One-time tip for iPhone/iPad Safari: add to the home screen to play full screen. */
+  private maybeShowInstallTip(): void {
+    if (this.flags.shots || this.save.data.stats.runs < 1) return;
+    const nav = navigator as Navigator & { standalone?: boolean };
+    const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (!ios || nav.standalone) return;
+    try {
+      if (localStorage.getItem('crabdash.tip.a2hs')) return;
+      localStorage.setItem('crabdash.tip.a2hs', '1');
+    } catch {
+      return;
+    }
+    this.ui.toast('Play full screen!', { sub: 'Tap Share, then “Add to Home Screen”', life: 5 });
+  }
+
+  /** Render shop portraits in the background (async GPU readback, no stalls). */
+  private prepareThumbs(): void {
+    if (this.thumbsReady) return;
+    this.thumbsReady = true;
+    void this.view
+      .renderCrabThumbs()
+      .then((t) => {
+        this.shop.thumbs = t;
+        if (this.state === 'shop') this.shop.render(this.save.data);
+      })
+      .catch(() => (this.thumbsReady = false));
   }
 
   private openSettings(): void {
@@ -344,6 +392,8 @@ export class Game {
     if (st.quality !== prev.quality) {
       this.quality = pickQuality(this.flags.quality, st.quality);
       this.view.setQuality(this.quality);
+      this.view.renderer.setDprScale(1);
+      this.qm.setEnabled(this.autoQuality, this.quality);
     }
     this.view.setReduceMotion(this.reduceMotion);
     this.ui.setTouchButtons(this.touchButtonsWanted());
@@ -491,6 +541,7 @@ export class Game {
 
     this.state = 'results';
     this.resultsAt = this.clock;
+    this.applyPendingQuality();
     this.ui.showResults({
       distance,
       best: prevBest,
@@ -519,13 +570,18 @@ export class Game {
 
   // ------------------------------------------------------------------ render
   private render(alpha: number, frameDt: number): void {
-    if (this.skipRender) return;
+    if (this.skipRender) {
+      // test-hook fast-forward: drop effects of skipped frames so they don't all fire at once
+      this.world.events.length = 0;
+      return;
+    }
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
     const mode: CamMode = this.state === 'title' || this.state === 'settings' || this.state === 'howto' ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
     if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
     this.view.frame(this.world, alpha, dt, mode, this.introT);
+    if (this.qm.sample(frameDt * 1000, this.state === 'running')) this.view.renderer.setDprScale(this.qm.dprScale);
     if (this.state === 'running' || this.state === 'intro' || this.state === 'crashing' || this.state === 'countdown' || this.state === 'paused') {
       const w = this.world;
       const pk = w.power.kind;
@@ -548,7 +604,8 @@ export class Game {
           calls: st.calls,
           tris: st.triangles,
           dpr: this.view.renderer.currentDpr,
-          q: this.quality.name,
+          q: `${this.quality.name}${this.autoQuality ? ' (auto)' : ''}`,
+          budget: `${this.quality.drawCalls} calls / ${Math.round(this.quality.triangles / 1000)}k tris`,
           state: this.state,
           speed: this.world.speed,
           dist: Math.floor(this.world.dist),
@@ -664,6 +721,12 @@ export class Game {
         for (let i = 0; i < n - rendered; i++) g.loop.tick(dt);
         g.skipRender = false;
         for (let i = 0; i < rendered; i++) g.loop.tick(dt);
+      },
+      /** advance n frames without rendering (fast-forward) */
+      skip(n: number, dt = 1 / 60) {
+        g.skipRender = true;
+        for (let i = 0; i < n; i++) g.loop.tick(dt);
+        g.skipRender = false;
       },
       crash() {
         const w = g.world;

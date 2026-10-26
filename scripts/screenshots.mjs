@@ -109,7 +109,8 @@ try {
     await page.waitForFunction(() => window.__crab && window.__crab.ready, null, { timeout: 30000 });
     await page.evaluate(() => document.fonts.ready.then(() => true));
     log(`${v}: ready`);
-    await page.waitForTimeout(300);
+    // shop portraits render in the background after boot (async GPU readback)
+    await page.waitForFunction(() => window.__crab.game.shop.thumbs.length > 0, null, { timeout: 15000 }).catch(() => {});
     for (const s of sceneNames) {
       log(`${v}: scene ${s}`);
       await SCENES[s](page);

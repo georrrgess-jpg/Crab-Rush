@@ -369,7 +369,7 @@ export class Scenery {
   }
 
   /** Position tiles around the player; swap geometry when a tile is recycled. */
-  update(dist: number, groundTint: THREE.Color): void {
+  update(dist: number, groundTint: THREE.Color, viewDist = 200): void {
     const kMin = Math.floor((dist - 12) / TILE_LEN);
     for (const t of this.tiles) {
       if (t.k < kMin || t.k >= kMin + TILE_COUNT) {
@@ -388,6 +388,8 @@ export class Scenery {
         t.glow.visible = !!v.glow;
       }
       t.group.position.z = -(t.k * TILE_LEN - dist);
+      // tiles that start beyond the fog are invisible anyway: skip their draw calls
+      t.group.visible = t.k * TILE_LEN - dist < viewDist;
     }
     for (const m of this.groundMats) m.color.copy(groundTint);
   }

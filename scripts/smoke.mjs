@@ -150,6 +150,21 @@ try {
   check((await pst()).lane === 1, 'the on-screen right arrow moves right');
   const pageScroll = await pp.evaluate(() => [window.scrollX, window.scrollY, document.documentElement.scrollWidth <= window.innerWidth]);
   check(pageScroll[0] === 0 && pageScroll[1] === 0 && pageScroll[2], 'no page scroll or horizontal overflow');
+  // rotate the phone mid-run
+  await pp.setViewportSize({ width: 844, height: 390 });
+  await pp.waitForTimeout(200);
+  await pp.evaluate(() => window.__crab.frames(2));
+  check((await pst()).state === 'paused', 'rotating mid-run auto-pauses');
+  const canvasOk = await pp.evaluate(() => { const c = document.getElementById('gl'); return c.clientWidth === 844 && c.clientHeight === 390; });
+  check(canvasOk, 'the canvas follows the new orientation');
+  await pp.tap('#pause .btn.big');
+  await pp.evaluate(() => window.__crab.frames(80));
+  check((await pst()).state === 'running', 'resume works after rotating');
+  // small height jitter (mobile toolbars) must not pause
+  await pp.setViewportSize({ width: 844, height: 370 });
+  await pp.waitForTimeout(200);
+  await pp.evaluate(() => window.__crab.frames(2));
+  check((await pst()).state === 'running', 'small viewport jitter does not pause');
   await pctx.close();
 } finally {
   await browser.close();

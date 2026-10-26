@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GeoBuilder } from './geo';
+import { GeoBuilder, mergeAll } from './geo';
 import type { ZonePalette } from './palettes';
 import { boat } from './props';
 
@@ -80,7 +80,7 @@ export class Backdrop {
   readonly group = new THREE.Group();
   private islandMesh: THREE.Mesh;
   private boats: THREE.Mesh[] = [];
-  private clouds: THREE.Mesh[] = [];
+  private clouds: THREE.Mesh;
   private hillsMesh: THREE.Mesh;
   private landMat = hazeMat(0.28);
   private farMat = hazeMat(0.5);
@@ -106,13 +106,17 @@ export class Backdrop {
       this.boats.push(m);
       this.group.add(m);
     }
+    // all clouds share one merged mesh (one draw call); the group sways slowly
+    const parts: THREE.BufferGeometry[] = [];
     for (let i = 0; i < 7; i++) {
-      const m = new THREE.Mesh(cloud(11 + i * 7), this.cloudMat);
-      m.position.set(-120 + i * 42, 28 + (i % 3) * 9, -170 + (i % 2) * 15);
-      m.scale.setScalar(1 + (i % 3) * 0.3);
-      this.clouds.push(m);
-      this.group.add(m);
+      const g = cloud(11 + i * 7);
+      const s = 1 + (i % 3) * 0.3;
+      g.scale(s, s, s);
+      g.translate(-130 + i * 44, 28 + (i % 3) * 9, -170 + (i % 2) * 15);
+      parts.push(g);
     }
+    this.clouds = new THREE.Mesh(mergeAll(parts), this.cloudMat);
+    this.group.add(this.clouds);
     for (const m of this.group.children) m.frustumCulled = false;
   }
 
@@ -142,9 +146,6 @@ export class Backdrop {
       b.position.y = -0.5 + Math.sin(time * 1.2 + i) * 0.25;
       b.rotation.z = Math.sin(time * 0.9 + i) * 0.05;
     }
-    for (let i = 0; i < this.clouds.length; i++) {
-      const c = this.clouds[i] as THREE.Mesh;
-      c.position.x = -140 + ((i * 42 + time * (0.6 + (i % 3) * 0.2)) % 290);
-    }
+    this.clouds.position.x = Math.sin(time * 0.012) * 22;
   }
 }
