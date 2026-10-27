@@ -78,11 +78,12 @@ export class Rivals {
       const p = w.player;
       const rel = w.dist - playerDist;
       let x = p.x;
-      // never draw a rival through the player: nudge it aside when they share the spot
-      if (Math.abs(rel) < 1.2 && Math.abs(x - playerX) < 1.0) x += x >= playerX ? 0.55 : -0.55;
+      // never draw a rival over the player: close by in the same lane, it edges toward the lane line
+      const near = 1 - Math.abs(rel) / 5;
+      if (near > 0 && Math.abs(x - playerX) < 1.1) x += (x >= playerX ? 1 : -1) * 0.95 * near * (1 - Math.abs(x - playerX) / 1.1);
       v.crab.root.position.set(x, p.y, -rel);
-      // rivals right behind the player would sit in front of the camera: hide them until they catch up
-      const show = rel > -3 && rel < 90;
+      // a rival behind the player would sit between the camera and the player: it appears as it draws level
+      const show = rel > -0.6 && rel < 90;
       v.crab.root.visible = show;
       const d = v.drive;
       d.running = w.mode === 'running';

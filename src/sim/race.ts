@@ -44,7 +44,7 @@ export const RIVALS: Record<string, RivalDef> = {
 };
 
 const START_LANES = [0, 2, 1];
-const START_OFFSETS = [0.4, 0.4, -2.2];
+const START_OFFSETS = [0.4, 0.4, 2.6];
 
 export class Race {
   readonly racers: Racer[] = [];
@@ -67,7 +67,7 @@ export class Race {
       const prof: PilotProfile = { reaction: r.profile.reaction / skill, horizon: r.profile.horizon * skill, hopNoise: r.profile.hopNoise / skill };
       const ap = new Autopilot(w, 3, prof);
       ap.seekShells = true;
-      // a starting grid: two rivals beside the player, one just behind (never stacked on the player)
+      // a starting grid: two rivals beside the player, one just ahead (never stacked on the player)
       const lane = START_LANES[i % START_LANES.length] as number;
       const p = w.player;
       p.lane = p.prevLane = lane;
