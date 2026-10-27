@@ -24,23 +24,25 @@ const views = opt('views', Object.keys(VIEWS).join(',')).split(',');
 
 // screens: how to open them, and the root element to audit
 const SCREENS = {
-  title: { open: "window.__crab.setState('title')", root: '#home' },
+  title: { open: "window.__crab.setState('title')", root: '#home', primary: '#home .mode-card.focus' },
   shop: { open: "window.__crab.setState('shop')", root: '#shop' },
   shophats: { open: "window.__crab.setState('shop'); document.querySelector('#shop [data-tab=\"hats\"]').click()", root: '#shop' },
   pass: { open: "window.__crab.xp(3000, 1); window.__crab.setState('pass')", root: '#pass' },
-  daily: { open: "window.__crab.setState('daily')", root: '#daily' },
+  daily: { open: "window.__crab.setState('daily')", root: '#daily', primary: '#daily .daily-play' },
   map: { open: "window.__crab.setState('map')", root: '#map' },
-  levelintro: { open: "window.__crab.level('shore-3', { intro: true })", root: '#level-intro' },
+  levelintro: { open: "window.__crab.unlockAll(2); window.__crab.level('shore-3', { intro: true })", root: '#level-intro', primary: '#level-intro .btn.big' },
+  levelend: { open: "window.__crab.level('shore-1', { autopilot: true }); window.__crab.skip(60 * 40); window.__crab.frames(60 * 3)", root: '#level-end', primary: '#level-end .btn.big' },
+  chest: { open: "window.__crab.unlockAll(3); window.__crab.setState('map'); window.__crab.game.openIslandChest(0, 0)", root: '#chest', primary: '#chest .btn.big' },
   cove: { open: "window.__crab.setState('cove')", root: '#cove' },
   covefriends: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"friends\"]').click()", root: '#cove' },
   covetrophies: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"trophies\"]').click()", root: '#cove' },
-  whatsnew: { open: "window.__crab.whatsNew()", root: '#whatsnew' },
+  whatsnew: { open: "window.__crab.whatsNew()", root: '#whatsnew', primary: '#whatsnew .btn.green' },
   stats: { open: "window.__crab.setState('stats')", root: '#stats' },
   settings: { open: "window.__crab.setState('settings')", root: '#settings' },
   howto: { open: "window.__crab.setState('howto')", root: '#howto' },
-  pause: { open: "window.__crab.setState('pause')", root: '#pause' },
+  pause: { open: "window.__crab.setState('pause')", root: '#pause', primary: '#pause .btn.big' },
   hud: { open: "window.__crab.startRun({ seed: 3, tutorial: false }); window.__crab.frames(30)", root: '#hud' },
-  results: { open: "window.__crab.startRun({ seed: 3, tutorial: false }); window.__crab.frames(60); window.__crab.crash(); window.__crab.frames(120); document.getElementById('results').click()", root: '#results' },
+  results: { open: "window.__crab.startRun({ seed: 3, tutorial: false }); window.__crab.frames(60); window.__crab.crash(); window.__crab.frames(120); document.getElementById('results').click()", root: '#results', primary: '#results .btn.big' },
 };
 const only = opt('only', '').split(',').filter(Boolean);
 const screens = only.length ? only : Object.keys(SCREENS);
@@ -56,7 +58,7 @@ for (let i = 0; i < 80; i++) {
 }
 
 /** runs in the page: returns a list of problems for the screen root */
-function audit(rootSel) {
+function audit([rootSel, primarySel]) {
   const root = document.querySelector(rootSel);
   if (!root) return [`${rootSel} missing`];
   const out = [];
@@ -115,6 +117,41 @@ function audit(rootSel) {
     const r = e.getBoundingClientRect();
     if (Math.min(r.width, r.height) < 40) out.push(`small target: ${name(e)} (${Math.round(r.width)}×${Math.round(r.height)})`);
   }
+  // 5) the primary action is fully on screen without scrolling (UPDATE4_PLAN.md §2.4)
+  if (primarySel) {
+    const p = document.querySelector(primarySel);
+    if (!p || !vis(p)) out.push(`primary missing: ${primarySel}`);
+    else {
+      const r = p.getBoundingClientRect();
+      const c = clipRect(p);
+      const full = c.left <= r.left + 1 && c.right >= r.right - 1 && c.top <= r.top + 1 && c.bottom >= r.bottom - 1;
+      if (r.top < -1 || r.bottom > innerHeight + 1 || r.left < -1 || r.right > innerWidth + 1 || !full) out.push(`primary not fully visible: ${name(p)}`);
+    }
+  }
+  // 6) minimum font size 12 px for visible text
+  {
+    const seen = new Set();
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.textContent.trim()) continue;
+      const e = n.parentElement;
+      if (!e || seen.has(e) || !vis(e)) continue;
+      seen.add(e);
+      const fs = parseFloat(getComputedStyle(e).fontSize);
+      if (fs < 11.5) out.push(`font ${fs.toFixed(1)}px: ${name(e)}`);
+    }
+  }
+  // 7) header crowding: at most 3 controls in a page header
+  for (const h of root.querySelectorAll('.page-head, .home-top')) {
+    if (!vis(h)) continue;
+    const n = [...h.querySelectorAll('button, [role=button], .kit-wallet, .wallet, .pill')].filter((x) => vis(x) && !x.parentElement.closest('.kit-wallet, .wallet, button')).length;
+    if (n > 3) out.push(`header crowded (${n} items): ${name(h)}`);
+  }
+  // 8) numbers are never cut off
+  for (const e of root.querySelectorAll('.kit-wallet b, .wallet b, .pill b, .res-big, .map-count b')) {
+    if (!vis(e)) continue;
+    if (e.scrollWidth > e.clientWidth + 1 || getComputedStyle(e).textOverflow === 'ellipsis' && e.scrollWidth > e.clientWidth) out.push(`number cut: ${name(e)}`);
+  }
   // 4) horizontal page scroll / controls off screen
   if (document.documentElement.scrollWidth > innerWidth + 1) out.push(`horizontal scroll (${document.documentElement.scrollWidth}>${innerWidth})`);
   for (const e of ctrls) {
@@ -146,7 +183,31 @@ try {
       await page.evaluate(() => {
         for (const a of document.getAnimations()) if (a.effect?.getTiming().iterations !== Infinity) a.finish();
       });
-      const probs = await page.evaluate(audit, S.root);
+      const probs = await page.evaluate(audit, [S.root, S.primary]);
+      // 9) toast clearance: a toast never covers a header, wallet, status bar or action bar
+      const tprob = await page.evaluate(async () => {
+        window.__crab.game.ui.toast('Toast lane check', { sub: 'audit' });
+        await new Promise((r) => setTimeout(r, 450));
+        const t = [...document.querySelectorAll('#toasts .toast')].pop();
+        // software GL in headless runs the animation clock slowly: settle the entrance first
+        for (const a of t?.getAnimations() ?? []) if (a.animationName === 'toastIn') a.finish();
+        if (!t) return [];
+        const tr = t.getBoundingClientRect();
+        const out = [];
+        for (const n of document.querySelectorAll('.page-head, .home-top, .kit-wallet, .wallet, .page-actions, .cove-top, .cove-gift, #hud > .left, #hud > .right')) {
+          const r = n.getBoundingClientRect();
+          if (r.width < 1 || r.height < 1) continue;
+          let hidden = false;
+          for (let p = n; p; p = p.parentElement) { const cs = getComputedStyle(p); if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) { hidden = true; break; } }
+          if (hidden) continue;
+          const ox = Math.min(tr.right, r.right) - Math.max(tr.left, r.left);
+          const oy = Math.min(tr.bottom, r.bottom) - Math.max(tr.top, r.top);
+          if (ox > 2 && oy > 2) out.push(`toast covers ${n.className || n.id} (toast ${Math.round(tr.top)}-${Math.round(tr.bottom)}, it ${Math.round(r.top)}-${Math.round(r.bottom)}, lane ${document.getElementById('toasts').style.top})`);
+        }
+        document.getElementById('toasts').innerHTML = '';
+        return out;
+      });
+      probs.push(...tprob);
       if (probs.length) {
         fails += probs.length;
         console.log(`FAIL ${v.padEnd(10)} ${s}`);

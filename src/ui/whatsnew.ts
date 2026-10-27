@@ -62,7 +62,9 @@ export class WhatsNewSheet {
     });
     const go = btn(`${ICON.check}<span>Let's go!</span>`, 'small green', () => this.close());
     acts.append(visit, go);
-    this.card.append(list, acts);
+    const scroller = el('div', 'wn-scroll');
+    scroller.appendChild(list);
+    this.card.append(scroller, acts);
     this.el.classList.remove('hidden', 'out');
     this.el.classList.remove('in');
     void this.el.offsetWidth;

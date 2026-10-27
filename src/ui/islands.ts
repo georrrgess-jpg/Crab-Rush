@@ -1,4 +1,5 @@
 import { btn, el, fmt } from './dom';
+import { actionBar } from './kit';
 import { ICON } from './icons';
 
 /** Island Hop screens (UPDATE2_PLAN.md §4.3): the island map, the level intro and the level end. */
@@ -221,19 +222,18 @@ export class LevelIntro {
           ${row(`<span class="dollar-ico"></span>`, 'Grab all 3 golden sand dollars', d.stars[1])}
           ${row(ICON.trophy, d.rule, d.stars[2])}
         </div>`;
-    this.card.innerHTML = `<div class="page-head"><h2>${title}</h2></div>
+    this.card.innerHTML = `<div class="page-head" data-toast-avoid><h2>${title}</h2></div>
       <div class="page-body">
         <div class="lv-title"><span class="lv-isl">${d.island} · ${d.bonus ? 'bonus' : `${d.index}/6`}</span><b>${d.name}</b></div>
         ${preview}
         ${objs}
         ${d.best > 0 ? `<div class="lv-best">Best time ${d.best.toFixed(1)} s</div>` : ''}
       </div>`;
-    const body = this.card.querySelector('.page-body') as HTMLElement;
+    // Play is pinned in the action bar so it is visible without scrolling
+    (this.card.querySelector('.page-head') as HTMLElement).prepend(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back to the map'));
     const go = btn(`${ICON.play}<span>Play</span>`, 'big', () => this.h.play(d.id));
     const back = btn(`${ICON.back}<span>Map</span>`, 'blue small', () => this.h.back());
-    const bar = el('div', 'res-buttons');
-    bar.append(go, back);
-    body.appendChild(bar);
+    this.card.appendChild(actionBar(back, go));
     requestAnimationFrame(() => go.focus({ preventScroll: true }));
   }
 }
@@ -288,10 +288,9 @@ export class LevelEnd {
       row.append(btn(`${ICON.restart}<span>Retry</span>`, 'blue small', () => this.h.retry()), btn(`${ICON.island}<span>Map</span>`, 'blue small', () => this.h.map()));
       bar.append(row);
     } else {
-      bar.append(btn(`${ICON.restart}<span>Retry</span>`, 'big', () => this.h.retry()));
-      const row = el('div', 'btn-row');
-      row.append(btn(`${ICON.island}<span>Map</span>`, 'blue small', () => this.h.map()));
-      bar.append(row);
+      // Map and Retry share one row: the primary action stays big without pushing Map off screen
+      bar.classList.add('one-row');
+      bar.append(btn(`${ICON.island}<span>Map</span>`, 'blue small', () => this.h.map()), btn(`${ICON.restart}<span>Retry</span>`, 'big', () => this.h.retry()));
     }
     this.card.appendChild(bar);
     this.el.classList.remove('hidden');

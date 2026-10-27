@@ -1,4 +1,5 @@
 import { ICON } from './icons';
+import { toastCorner, toastTop } from './kit';
 import { btn, el, fmt } from './dom';
 import type { PowerKind } from '../sim/events';
 import { HomeScreen, type HomeData, type HomeHandlers } from './home';
@@ -435,6 +436,10 @@ export class UI {
     const t = el('div', `toast ${opts.kind ?? ''}${opts.big ? ' big' : ''}`, `${text}${opts.sub ? `<small>${opts.sub}</small>` : ''}`);
     const life = opts.life ?? 2;
     t.style.setProperty('--life', `${life}s`);
+    // the toast lane: just under whatever header, wallet or HUD row is showing
+    const corner = toastCorner() && [...document.querySelectorAll<HTMLElement>('.res-card, .chest-card')].some((n) => n.offsetParent !== null);
+    this.toasts.classList.toggle('corner', corner);
+    this.toasts.style.top = corner ? '' : `${Math.round(toastTop())}px`;
     this.toasts.appendChild(t);
     while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
     setTimeout(() => t.remove(), (life + 0.4) * 1000);

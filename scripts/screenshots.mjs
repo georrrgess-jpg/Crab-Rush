@@ -82,7 +82,7 @@ const SCENES = {
     await p.waitForTimeout(700);
   },
   levelintro: async (p) => {
-    await p.evaluate(() => { window.__crab.level('shore-3', { intro: true }); window.__crab.frames(10); });
+    await p.evaluate(() => { window.__crab.unlockAll(2); window.__crab.level('shore-3', { intro: true }); window.__crab.frames(10); });
     await p.waitForTimeout(500);
   },
   level: async (p) => {
@@ -169,7 +169,8 @@ const SCENES = {
       window.__crab.frames(10);
     });
     await p.waitForTimeout(900);
-    await p.evaluate(() => document.querySelector('#daily .dt-almanac')?.scrollIntoView({ block: 'end' }));
+    await p.evaluate(() => (document.querySelectorAll('#daily .dt-chip')[1] ?? document.querySelector('#daily .dt-chip'))?.click());
+    await p.waitForTimeout(500);
     await p.waitForTimeout(300);
   },
   whatsnew: async (p) => {

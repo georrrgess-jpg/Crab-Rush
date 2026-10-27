@@ -3,6 +3,7 @@ import { FRIENDS, type QuestDef } from '../meta/friends';
 import { FAMILIES, TIER_NAMES } from '../meta/achievements';
 import { ITEM_BY_ID } from '../meta/wardrobe';
 import { btn, el, fmt } from './dom';
+import { Wallet } from './kit';
 import { COVE_ICON, PEARL } from './home';
 import { ICON } from './icons';
 
@@ -58,6 +59,7 @@ const MEDAL = ['#cd7f32', '#c0c8d0', '#ffd23a'];
 export class CoveScreen {
   readonly el: HTMLElement;
   private top: HTMLElement;
+  private wallet = new Wallet('cove-wallet');
   private giftBtn: HTMLButtonElement;
   private plotLayer: HTMLElement;
   private plots: HTMLButtonElement[] = [];
@@ -76,6 +78,7 @@ export class CoveScreen {
     const back = btn(ICON.back, 'blue round', () => this.h.back(), 'Back');
     this.top.appendChild(back);
     this.top.appendChild(el('div', 'cove-stats'));
+    this.top.appendChild(this.wallet.el);
     this.giftBtn = el('button', 'cove-gift') as HTMLButtonElement;
     this.giftBtn.type = 'button';
     this.giftBtn.addEventListener('click', (e) => {
@@ -128,7 +131,8 @@ export class CoveScreen {
   render(d: CoveData): void {
     this.data = d;
     const pct = Math.round((d.comfort / d.maxComfort) * 100);
-    (this.top.querySelector('.cove-stats') as HTMLElement).innerHTML = `<span class="cove-comfort">${HEART}<span class="cc-col"><span class="cc-lbl">Comfort <b>${d.comfort}</b></span><span class="bar"><i style="width:${pct}%"></i></span></span></span><span class="pill">${ICON.shell}<b>${fmt(d.shells)}</b></span><span class="pill pearl">${PEARL}<b>${fmt(d.pearls)}</b></span>`;
+    (this.top.querySelector('.cove-stats') as HTMLElement).innerHTML = `<span class="cove-comfort">${HEART}<span class="cc-col"><span class="cc-lbl">Comfort <b>${d.comfort}</b></span><span class="bar"><i style="width:${pct}%"></i></span></span></span>`;
+    this.wallet.set(d.shells, d.pearls);
     this.updateGifts(d);
     for (const b of this.tabBtns) {
       const on = b.dataset.tab === this.tab;

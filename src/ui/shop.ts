@@ -6,6 +6,7 @@ import { ITEMS, type Item, type Slot, owns, unseen } from '../meta/wardrobe';
 import type { CrabSkin } from '../render/models/crab';
 import { btn, el, fmt } from './dom';
 import { DANCE_SVG, ICON, TRAIL_SVG } from './icons';
+import { Sheet, Wallet } from './kit';
 
 export interface ShopHandlers {
   back(): void;
@@ -51,7 +52,10 @@ const EQUIP_KEY: Record<Slot, 'body' | 'hat' | 'trail' | 'dance'> = { bodies: 'b
 export class ShopScreen {
   readonly el: HTMLElement;
   private body: HTMLElement;
-  private balance: HTMLElement;
+  /** pinned under the grid: the previewed item's name, source and Wear / Buy button */
+  private foot: HTMLElement;
+  private wallet = new Wallet();
+  private outfitSheet = new Sheet('outfit-sheet');
   private tabBtns: HTMLButtonElement[] = [];
   private tab: Tab = 'bodies';
   private previewId: Record<Slot, string> = { bodies: 'sandy', hats: 'straw', trails: 'sand', dances: 'clap' };
@@ -67,8 +71,8 @@ export class ShopScreen {
     const top = el('div', 'top-bar');
     const back = btn(ICON.back, 'blue round', () => this.h.back(), 'Back');
     const title = el('h2', '', 'Wardrobe');
-    this.balance = el('div', 'pill', `<span class="ico">${ICON.shell}</span><b>0</b>`);
-    top.append(back, title, this.balance);
+    top.dataset.toastAvoid = '';
+    top.append(back, title, this.wallet.el);
     const stage = el('div', 'shop-stage');
     const panel = el('div', 'panel shop-panel');
     const tabs = el('div', 'tabs wtabs');
@@ -86,8 +90,9 @@ export class ShopScreen {
       tabs.appendChild(b);
     }
     this.body = el('div', 'shop-body');
-    panel.append(tabs, this.body);
-    this.el.append(top, stage, panel);
+    this.foot = el('div', 'shop-foot');
+    panel.append(tabs, this.body, this.foot);
+    this.el.append(top, stage, panel, this.outfitSheet.el);
   }
 
   open(save: SaveData): void {
@@ -99,7 +104,7 @@ export class ShopScreen {
 
   render(save: SaveData): void {
     this.last = save;
-    (this.balance.querySelector('b') as HTMLElement).textContent = fmt(save.shells);
+    this.wallet.set(save.shells, save.pearls);
     for (const b of this.tabBtns) {
       const on = b.dataset.tab === this.tab;
       b.classList.toggle('on', on);
@@ -117,6 +122,8 @@ export class ShopScreen {
       }
     }
     this.body.innerHTML = '';
+    this.foot.innerHTML = '';
+    if (this.outfitSheet.open) this.fillOutfitSheet(save);
     if (this.tab === 'upgrades') this.renderUpgrades(save);
     else {
       this.renderOutfits(save);
@@ -224,13 +231,24 @@ export class ShopScreen {
       const again = btn(ICON.restart, 'icon small blue', () => this.h.preview('dances', item.id), 'Play the dance again');
       d.insertBefore(again, action);
     }
-    this.body.appendChild(d);
+    this.foot.appendChild(d);
   }
 
-  /** three saved looks and a Surprise Me button */
+  /** Outfits (opens the sheet with the three saved looks) and Surprise Me */
   private renderOutfits(save: SaveData): void {
-    const bar = el('div', 'outfits');
-    bar.appendChild(el('span', 'of-lbl', 'Outfits'));
+    const bar = el('div', 'outfits v4');
+    const saved = save.outfits.filter(Boolean).length;
+    const ob = btn(`<span class="of-ico">${OUTFIT_ICO}</span><span>Outfits</span><small>${saved}/3</small>`, 'small blue of-open', () => {
+      this.fillOutfitSheet(save);
+      this.outfitSheet.show('Outfits');
+    }, 'Saved outfits');
+    bar.append(ob, btn(`${ICON.sparkle}<span>Surprise me</span>`, 'small surprise', () => this.h.surprise(), 'Wear a random outfit'));
+    this.body.appendChild(bar);
+  }
+
+  /** the outfit slots: wear a saved look, or save the current one */
+  private fillOutfitSheet(save: SaveData): void {
+    const bar = el('div', 'outfits sheet-outfits');
     save.outfits.forEach((o, i) => {
       const slot = el('span', `of-slot${o ? ' saved' : ''}`);
       const wear = el('button', 'of-wear', o ? `<b>${i + 1}</b>` : `<b>${i + 1}</b><small>empty</small>`) as HTMLButtonElement;
@@ -248,11 +266,12 @@ export class ShopScreen {
         e.stopPropagation();
         this.h.saveOutfit(i);
       });
-      slot.append(wear, sv);
+      const lbl = el('span', 'of-desc', o ? `${nameOf('bodies', o.body)} · ${nameOf('hats', o.hat)}` : 'Save your current look here');
+      slot.append(wear, lbl, sv);
       bar.appendChild(slot);
     });
-    bar.appendChild(btn(`${ICON.sparkle}<span>Surprise me</span>`, 'small surprise', () => this.h.surprise(), 'Wear a random outfit'));
-    this.body.appendChild(bar);
+    this.outfitSheet.body.innerHTML = '';
+    this.outfitSheet.body.appendChild(bar);
   }
 
   private renderUpgrades(save: SaveData): void {
@@ -275,6 +294,11 @@ export class ShopScreen {
       this.body.appendChild(card);
     }
   }
+}
+
+const OUTFIT_ICO = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M14 6l6 4 6-4 9 6-4 7-4-2v17H13V17l-4 2-4-7z" fill="#fff"/></svg>`;
+function nameOf(slot: Slot, id: string): string {
+  return ITEMS.find((i) => i.slot === slot && i.id === id)?.name ?? id;
 }
 
 function order(id: string): number {

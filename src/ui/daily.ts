@@ -1,5 +1,6 @@
 import { MODIFIERS, type Modifier } from '../meta/daily';
 import { btn, el, fmt } from './dom';
+import { Sheet, actionBar, pageHead } from './kit';
 import { countdown } from './home';
 import { ICON } from './icons';
 
@@ -41,6 +42,8 @@ export interface DailyData {
 export class DailyScreen {
   readonly el: HTMLElement;
   private body: HTMLElement;
+  private actions: HTMLElement;
+  private sheet = new Sheet('daily-sheet');
   private timer = 0;
   private msLeft = 0;
 
@@ -48,11 +51,11 @@ export class DailyScreen {
     this.el = el('div', 'screen page daily');
     this.el.id = 'daily';
     const card = el('div', 'page-card daily-card');
-    const head = el('div', 'page-head');
-    head.append(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back'), el('h2', '', 'Daily Tide'));
+    const { head } = pageHead('Daily Tide', () => this.h.back());
     this.body = el('div', 'page-body daily-body');
-    card.append(head, this.body);
-    this.el.append(el('div', 'page-dim'), card);
+    this.actions = actionBar();
+    card.append(head, this.body, this.actions);
+    this.el.append(el('div', 'page-dim'), card, this.sheet.el);
   }
 
   render(d: DailyData): void {
@@ -76,7 +79,7 @@ export class DailyScreen {
       ms.insertAdjacentHTML('beforeend', `<div class="dm${m.got ? ' got' : ''}"><span class="dm-art">${m.art}</span><span class="dm-col"><span class="dm-name">${m.name}</span><span class="bar"><i style="width:${m.got ? 100 : pct}%"></i></span><span class="dm-sub">${m.got ? 'Unlocked' : `${m.days}-day streak · ${Math.min(d.streak, m.days)}/${m.days}`}</span></span></div>`);
     }
     const play = btn(`${ICON.play}<span>${d.playedToday ? 'Play again' : 'Play'}</span>`, 'big daily-play', () => this.h.play());
-    const foot = el('div', 'dt-foot', `New tide in <b class="cd">${countdown(d.msLeft)}</b> · Everyone gets the same course today`);
+    const foot = el('div', 'dt-foot', `New tide in <b class="cd">${countdown(d.msLeft)}</b> · Everyone gets the same course`);
     const extra: HTMLElement[] = [];
     if (d.calendar) {
       const best = Math.max(1, ...d.calendar.map((c) => c.score));
@@ -93,7 +96,20 @@ export class DailyScreen {
         .join('')}`;
       extra.push(al);
     }
-    this.body.append(hero, stats, week, rewards, ms, play, foot, ...extra);
+    // the calendar and the almanac open in a sheet so the main page stays short
+    const more = el('div', 'dt-more');
+    const [cal, alm] = extra;
+    if (cal) more.appendChild(btn(`${ICON.calendar}<span>Last 30 days</span>`, 'small blue dt-chip', () => this.openSheet('Last 30 days', cal), 'Show the last 30 days'));
+    if (alm) more.appendChild(btn(`${MODIFIER_SVG[d.modifier]}<span>Tide almanac</span>`, 'small blue dt-chip', () => this.openSheet('Tide almanac', alm), 'Show the coming tides'));
+    const colA = el('div', 'dt-col-a');
+    colA.append(hero, stats, week);
+    const colB = el('div', 'dt-col-b');
+    colB.append(rewards, ms, more);
+    this.body.append(colA, colB);
+    this.actions.innerHTML = '';
+    const pc = el('div', 'dt-playcol');
+    pc.append(play, foot);
+    this.actions.appendChild(pc);
     clearInterval(this.timer);
     this.timer = window.setInterval(() => {
       this.msLeft -= 1000;
@@ -101,6 +117,12 @@ export class DailyScreen {
       if (cd) cd.textContent = countdown(this.msLeft);
     }, 1000);
     requestAnimationFrame(() => play.focus({ preventScroll: true }));
+  }
+
+  private openSheet(title: string, content: HTMLElement): void {
+    this.sheet.body.innerHTML = '';
+    this.sheet.body.appendChild(content);
+    this.sheet.show(title);
   }
 
   stop(): void {

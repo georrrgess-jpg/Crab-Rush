@@ -135,11 +135,20 @@ try {
   // ---------------- settings + how to play
   // Home: nav tabs, play card, Stats page
   check(await page.isVisible('#home .play-card'), 'Home shows the Play card');
-  await page.click('#home .tab:has-text("Stats")');
-  check((await st()).state === 'stats' && (await page.isVisible('#stats .stat')), 'Stats opens from the Home nav');
+  // More sheet items: wait for the sheet's slide-in to finish before tapping
+  const openMoreItem = async (item) => {
+    const open = await page.evaluate(() => { const c = document.getElementById('home-more').classList; return !c.contains('hidden') && !c.contains('out'); });
+    if (!open) await page.click('#home .tab:has-text("More")');
+    await page.waitForFunction(() => document.querySelector('#home-more .ks-panel').getAnimations().every((a) => a.playState !== 'running'));
+    await page.click(`#home-more .sheet-item[data-item="${item}"]`);
+  };
+  await page.click('#home .tab:has-text("More")');
+  check(await page.isVisible('#home-more .sheet-item'), 'the More tab opens its sheet');
+  await openMoreItem('stats');
+  check((await st()).state === 'stats' && (await page.isVisible('#stats .stat')), 'Stats opens from the More sheet');
   await page.keyboard.press('Escape');
   check((await st()).state === 'title', 'Escape leaves Stats');
-  await page.click('#home .tab:has-text("Settings")');
+  await openMoreItem('settings');
   check((await st()).state === 'settings', 'settings open from the title');
   await page.click('.set-row:has-text("Quality") .seg button:has-text("Low")');
   check((await page.evaluate(() => JSON.parse(localStorage.getItem('crabdash.save')).settings.quality)) === 'low', 'graphics setting is saved');
@@ -147,7 +156,7 @@ try {
   check((await page.evaluate(() => window.__crab.game.save.data.settings.leftHanded)) === true && (await page.evaluate(() => document.getElementById('hud').classList.contains('lefty'))), 'left-handed HUD toggles');
   await page.click('#settings .btn.big');
   check((await st()).state === 'title', 'Done returns to the title');
-  await page.click('button[aria-label="How to play"]');
+  await openMoreItem('how to play');
   check(await page.isVisible('#howto .howto-card'), 'how-to-play cards are shown');
   await page.click('#howto .btn.big');
   check((await st()).state === 'title', 'Got it returns to the title');

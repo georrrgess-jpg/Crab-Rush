@@ -1,0 +1,287 @@
+/* Update 4 screen kit and phone-first layouts (UPDATE4_PLAN.md §2). Loaded after screens.css.
+   Size classes come from <html data-size="compact|short|regular"> (src/ui/kit.ts). */
+
+/* =================================================================== kit: wallet */
+.kit-wallet { display: inline-flex; align-items: center; gap: 2px; height: 44px; padding: 0 10px 0 4px; border-radius: var(--r-pill); background: rgba(255, 250, 240, 0.96); border: 3px solid #fff; box-shadow: var(--e-1); font-family: var(--font-display); color: #b5660a; flex: none; }
+.kit-wallet .kw-row { display: inline-flex; align-items: center; gap: 3px; padding: 0 4px; font-size: 19px; line-height: 1; }
+.kit-wallet .kw-row + .kw-row { border-left: 2px solid rgba(181, 102, 10, 0.18); padding-left: 7px; }
+.kit-wallet .kw-p { color: #7a5ab8; }
+.kit-wallet .kw-ico { width: 26px; height: 26px; display: inline-flex; }
+.kit-wallet .kw-ico svg { width: 100%; height: 100%; }
+.kit-wallet b { font-weight: 400; font-variant-numeric: tabular-nums; }
+.kit-wallet.bump { animation: kwbump 0.35s var(--ease-back); }
+@keyframes kwbump { 40% { transform: scale(1.1); } }
+.page-head .kit-wallet { height: 40px; background: rgba(255, 255, 255, 0.92); border-color: rgba(255, 255, 255, 0.6); }
+.page-head .kit-wallet .kw-row { font-size: 17px; }
+
+/* =================================================================== kit: header and action bar */
+.kit-head { min-height: 60px; }
+.kit-head .kit-title { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kit-spacer { flex: 1 1 0; min-width: 0; }
+.page-head .btn.icon.back { flex: none; }
+.page-actions { display: flex; gap: var(--s-2); align-items: stretch; padding: var(--s-2) var(--s-3) calc(var(--s-2)); background: linear-gradient(180deg, rgba(255, 250, 240, 0.7), var(--c-sand-50) 40%); border-top: 2px solid rgba(30, 94, 140, 0.1); flex: none; }
+.page-actions .btn { flex: 1 1 0; min-width: 0; }
+.page-actions .btn.big { flex: 2 1 0; }
+.page-actions:empty { display: none; }
+
+/* =================================================================== kit: bottom sheet */
+.kit-sheet { position: absolute; inset: 0; z-index: 30; display: flex; align-items: flex-end; justify-content: center; pointer-events: auto; }
+.kit-sheet.hidden { display: none; }
+.ks-dim { position: absolute; inset: 0; background: rgba(15, 46, 77, 0.55); }
+.ks-panel { position: relative; width: min(100%, 560px); max-height: 82%; display: flex; flex-direction: column; border-radius: var(--r-lg) var(--r-lg) 0 0; background: var(--c-sand-50); border: 4px solid #fff; border-bottom: 0; box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.3); padding-bottom: var(--safe-b); transition: transform 0.12s; }
+.ks-grab { align-self: center; width: 64px; height: 24px; flex: none; cursor: grab; touch-action: none; display: grid; place-items: center; }
+.ks-grab::before { content: ''; width: 48px; height: 6px; border-radius: 3px; background: rgba(23, 63, 102, 0.25); }
+.ks-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: 0 var(--s-3) var(--s-2) var(--s-4); }
+.ks-title { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: var(--t-lg); color: var(--c-navy-800); }
+.ks-close { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+.ks-close svg { transform: rotate(-90deg); }
+.ks-body { overflow-y: auto; padding: 0 var(--s-4) var(--s-4); display: flex; flex-direction: column; gap: var(--s-2); touch-action: pan-y; }
+.kit-sheet.in .ks-dim { animation: rt-in var(--d-med) var(--ease-out) both; }
+.kit-sheet.in .ks-panel { animation: sheetup var(--d-slow) var(--ease-back) both; }
+.kit-sheet.out .ks-dim { animation: rt-out 0.2s ease-in both; }
+.kit-sheet.out .ks-panel { animation: sheetdown 0.2s ease-in both; }
+@keyframes sheetdown { to { transform: translateY(100%); } }
+html[data-size='short'] .ks-panel { max-height: 94%; width: min(100%, 640px); }
+.sheet-list { display: flex; flex-direction: column; gap: var(--s-2); }
+.sheet-item { display: flex; align-items: center; gap: var(--s-3); min-height: 56px; padding: var(--s-2) var(--s-3); border: 0; border-radius: var(--r-md); background: #fff; box-shadow: var(--e-1); color: var(--c-navy-800); font-family: var(--font-display); font-size: 18px; text-align: left; cursor: pointer; }
+.sheet-item .si-ico { width: 40px; height: 40px; flex: none; border-radius: 12px; display: grid; place-items: center; background: var(--c-teal-500); }
+.sheet-item .si-ico svg { width: 66%; height: 66%; }
+.sheet-item small { display: block; font-family: var(--font-body); font-size: 13px; color: var(--c-teal-700); }
+.sheet-item:active { transform: scale(0.98); }
+
+/* =================================================================== toasts: placed by the toast lane (kit.toastTop) */
+html[data-size='compact'] .toast, html[data-size='short'] .toast { font-size: 17px; padding: 6px 16px 7px; max-width: calc(100vw - 32px); }
+html[data-size='compact'] .toast.big, html[data-size='short'] .toast.big { font-size: 26px; }
+
+/* =================================================================== pages on phones: full-bleed sheets */
+html[data-size='compact'] .screen.page { padding: 0; }
+html[data-size='compact'] .screen.page > .page-card { width: 100%; height: 100%; max-height: none; border-radius: 0; border: 0; box-shadow: none; }
+html[data-size='compact'] .page-head { padding: calc(var(--s-2) + var(--safe-t)) calc(var(--s-3) + var(--safe-r)) var(--s-2) calc(var(--s-3) + var(--safe-l)); }
+html[data-size='compact'] .page-head h2 { font-size: 26px; }
+html[data-size='compact'] .page-body { padding: var(--s-3) calc(var(--s-3) + var(--safe-r)) var(--s-4) calc(var(--s-3) + var(--safe-l)); flex: 1 1 auto; min-height: 0; }
+html[data-size='compact'] .page-actions { padding: var(--s-2) calc(var(--s-3) + var(--safe-r)) calc(var(--s-2) + var(--safe-b)) calc(var(--s-3) + var(--safe-l)); }
+html[data-size='compact'] .rt-enter .page-card { animation: rt-slide-in var(--d-med) var(--ease-out) both; }
+html[data-size='short'] .screen.page { padding: calc(6px + var(--safe-t)) calc(var(--s-3) + var(--safe-r)) calc(6px + var(--safe-b)) calc(var(--s-3) + var(--safe-l)); }
+html[data-size='short'] .screen.page > .page-card { height: 100%; max-height: none; }
+html[data-size='short'] .page-head { min-height: 0; padding-top: 4px; padding-bottom: 4px; }
+html[data-size='short'] .page-head h2 { font-size: 24px; }
+html[data-size='short'] .page-head .btn.icon { width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+html[data-size='short'] .page-body { flex: 1 1 auto; min-height: 0; padding-top: var(--s-2); }
+html[data-size='short'] .page-actions { padding-top: 6px; padding-bottom: 6px; }
+.page-card > .page-body { flex: 1 1 auto; min-height: 0; }
+
+/* =================================================================== Home v4 (UPDATE4_PLAN.md §2.3) */
+#home.v4 .home-top { gap: var(--s-2); }
+#home.v4 .home-top-r { flex: none; }
+#home.v4 .pass-pill.profile { flex: 1 1 auto; max-width: 280px; min-width: 0; }
+#home.v4 .profile .col { min-width: 0; }
+#home.v4 .profile .txt { overflow: hidden; text-overflow: ellipsis; }
+#home.v4 .home-modes { position: relative; padding-top: 14px; }
+#home.v4 .home-modes > .goals-chip { position: absolute; top: 0; left: 6%; z-index: 3; height: 40px; min-height: 40px; padding: 0 12px 0 8px; font-size: 15px; display: inline-flex; }
+#home.v4 .home-modes > .goals-chip.hidden { display: none; }
+#home.v4 .home-modes > .boost-chip { top: 2px; right: 6%; height: 36px; }
+#home.v4.carousel-x .mc-track { padding: 12px 8% 6px; }
+#home.v4.carousel-x .mode-card.big { flex: 0 0 84%; }
+.sheet-goals { display: flex; flex-direction: column; }
+.sheet-goals .hgoal { font-size: 16px; padding: 10px 0; }
+.sheet-goals .hgoal .bar { height: 8px; }
+
+/* compact portrait phones: fewer layers, everything one size down */
+html[data-size='compact'] #home.v4 { gap: 6px; padding-top: calc(var(--s-2) + var(--safe-t)); }
+html[data-size='compact'] #home.v4 .pass-pill.profile { height: 50px; }
+html[data-size='compact'] #home.v4 .pf-ava { width: 44px; height: 44px; }
+html[data-size='compact'] #home.v4 .pf-img { width: 37px; height: 37px; }
+html[data-size='compact'] #home.v4 .profile .pf-title { font-size: 15px; }
+html[data-size='compact'] #home.v4 .profile .txt { font-size: 12px; }
+html[data-size='compact'] #home.v4 .home-brand .logo { font-size: clamp(44px, 12.5vw, 64px); }
+html[data-size='compact'] #home.v4 .home-tag { display: none; }
+html[data-size='compact'] #home.v4.carousel-x .mode-card.big { min-height: 104px; }
+html[data-size='compact'] #home.v4 .mc-dots { display: none; }
+html[data-size='compact'] #home.v4 .home-nav .tab { min-height: 54px; font-size: 13px; }
+html[data-size='compact'] #home.v4 .home-nav .tab .ti { width: 26px; height: 26px; }
+
+/* landscape phones: brand + crab on the left, the carousel in a column on the right, nav along the bottom */
+html[data-size='short'] #home.v4 {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 48%);
+  grid-template-areas: 'top top' 'left modes' 'stage modes' 'nav nav';
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  column-gap: var(--s-3);
+}
+html[data-size='short'] #home.v4 .home-left { align-items: flex-start; }
+html[data-size='short'] #home.v4 .home-brand { text-align: left; padding: 0 0 0 4px; }
+html[data-size='short'] #home.v4 .home-brand .logo { font-size: clamp(34px, 10vh, 46px); }
+html[data-size='short'] #home.v4 .home-goals { display: none !important; }
+html[data-size='short'] #home.v4 .home-modes { grid-area: modes; align-self: center; width: 100%; padding-top: 18px; }
+html[data-size='short'] #home.v4.carousel-x .mc-track { padding: 10px 6% 4px; margin: 0; }
+html[data-size='short'] #home.v4.carousel-x .mode-card.big { flex: 0 0 88%; min-height: 108px; }
+html[data-size='short'] #home.v4 .home-nav { width: min(100%, 560px); justify-self: start; }
+html[data-size='short'] #home.v4 .mc-arrow { display: none !important; }
+html[data-size='short'] #home.v4 .pass-pill.profile { max-width: 260px; }
+#home.v4 .profile .col { gap: 4px; justify-content: center; }
+#home.v4 .profile .pf-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#home.v4 .profile .pf-row .bar { flex: 1 1 auto; min-width: 40px; height: 9px; }
+#home.v4 .profile .pf-row .txt { flex: none; font-family: var(--font-display); font-size: 12px; opacity: 0.9; }
+#home.v4.carousel-x .mc-track { -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+html[data-size='regular'][data-orient='land'] #home.v4 .home-modes > .goals-chip { display: none; }
+/* Home turns pointer events off for its layout children; sheets inside it must take taps */
+#home > .kit-sheet { pointer-events: auto; }
+
+/* =================================================================== Wardrobe v4 */
+#shop .top-bar .kit-wallet { margin-left: auto; }
+.shop-panel { min-height: 0; }
+.shop-body { flex: 1 1 auto; min-height: 0; }
+.shop-foot { flex: none; padding: 0 12px 10px; background: var(--c-sand-50); border-top: 2px solid rgba(30, 94, 140, 0.1); }
+.shop-foot:empty { display: none; }
+.shop-foot .crab-detail { margin-top: 8px; box-shadow: var(--e-1); }
+.outfits.v4 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; flex-wrap: nowrap; }
+.outfits.v4 .btn { margin: 0; min-height: 46px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.outfits.v4 .of-ico { width: 22px; height: 22px; display: inline-flex; }
+.outfits.v4 .of-ico svg { width: 100%; height: 100%; }
+.outfits.v4 small { font-family: var(--font-body); font-size: 13px; opacity: 0.85; }
+.sheet-outfits { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.sheet-outfits .of-slot { display: flex; align-items: center; background: #fff; }
+.sheet-outfits .of-wear { min-width: 64px; min-height: 60px; }
+.sheet-outfits .of-wear small { font-size: 12px; }
+.sheet-outfits .of-desc { flex: 1; min-width: 0; padding: 0 10px; font-size: 14px; color: var(--c-navy-800); }
+.sheet-outfits .of-save { width: 60px; min-height: 60px; }
+.of-wear small, .dye-cost, .tile .badge { font-size: 12px; }
+html[data-size='compact'] #shop { padding: calc(6px + var(--safe-t)) calc(8px + var(--safe-r)) calc(6px + var(--safe-b)) calc(8px + var(--safe-l)); gap: 4px; }
+html[data-size='compact'] #shop .top-bar h2 { font-size: 30px; }
+html[data-size='compact'] .shop-stage { flex: 1 1 26%; min-height: 120px; }
+html[data-size='compact'] .shop-panel { max-height: 68%; flex: 1 1 auto; }
+html[data-size='compact'] .tabs button { min-height: 50px; padding: 6px 2px 8px; font-size: 15px; }
+html[data-size='compact'] .shop-body { padding: 10px; }
+html[data-size='compact'] .crab-detail { padding: 8px 10px; gap: 8px; }
+html[data-size='compact'] .crab-detail .nm { font-size: 19px; }
+html[data-size='compact'] .crab-detail .bl { font-size: 13px; }
+html[data-size='short'] #shop { padding-top: calc(4px + var(--safe-t)); padding-bottom: calc(4px + var(--safe-b)); gap: 4px; }
+html[data-size='short'] #shop .top-bar h2 { font-size: 28px; }
+html[data-size='short'] .tabs button { min-height: 44px; padding: 4px 2px; font-size: 15px; }
+html[data-size='short'] .shop-panel { max-height: 100%; height: 100%; }
+html[data-size='short'] .shop-foot { padding-bottom: 6px; }
+html[data-size='short'] .crab-detail { flex-wrap: nowrap; padding: 6px 10px; margin-top: 6px; }
+html[data-size='short'] .crab-detail .nm { font-size: 18px; }
+html[data-size='short'] .crab-detail .bl { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-size='short'] .crab-detail .dyes { flex: none; gap: 4px; }
+html[data-size='short'] .dye { width: 36px; height: 36px; min-height: 36px; }
+html[data-size='short'] .outfits.v4 { margin-bottom: 6px; }
+html[data-size='short'] .outfits.v4 .btn { min-height: 42px; }
+
+/* =================================================================== Daily Tide v4 */
+.daily-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); align-content: start; }
+.dt-col-a, .dt-col-b { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
+.dt-more { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-2); }
+.dt-chip { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 48px; padding: 0 10px; font-size: 16px; }
+.dt-chip svg { width: 26px; height: 26px; flex: none; }
+.dt-playcol { flex: 1; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.dt-playcol .daily-play { width: 100%; }
+.dt-foot { font-size: 12px; }
+#daily-sheet .dt-cal, #daily-sheet .dt-almanac { display: flex; flex-direction: column; gap: 6px; }
+#daily-sheet .dt-sec { display: none; }
+.cd-day small, .dw small, .dm-sub, .al-row small, .al-when small { font-size: 12px !important; }
+html[data-size='compact'] .dt-hero { padding: 8px 10px; gap: 10px; }
+html[data-size='compact'] .dt-art { width: 60px; height: 60px; padding: 7px; }
+html[data-size='compact'] .dt-name { font-size: 26px; }
+html[data-size='compact'] .dt-desc { font-size: 14px; }
+html[data-size='compact'] .dt-stat { padding: 6px 2px; }
+html[data-size='compact'] .dt-stat b { font-size: 22px; }
+html[data-size='compact'] .dm { padding: 6px 8px; }
+html[data-size='short'] .daily-card { width: min(100%, 860px); }
+html[data-size='short'] .daily-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+html[data-size='short'] .dt-art { width: 56px; height: 56px; padding: 6px; }
+html[data-size='short'] .dt-name { font-size: 24px; }
+html[data-size='short'] .dt-hero { padding: 6px 10px; }
+html[data-size='short'] .dt-playcol { flex-direction: row; align-items: center; gap: 10px; }
+html[data-size='short'] .dt-playcol .daily-play { flex: 0 0 52%; min-height: 52px; }
+html[data-size='regular'][data-orient='land'] .daily-card { width: min(100%, 900px); }
+html[data-size='regular'][data-orient='land'] .daily-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+
+/* =================================================================== Sunny Pass v4 */
+.ph-lbl { white-space: nowrap; }
+.pt-kind { font-size: 12px; }
+.pass-track { -webkit-mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, transparent, #000 18px, #000 calc(100% - 18px), transparent); padding-left: 14px; padding-right: 14px; }
+html[data-size='compact'] .pass-hero-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+html[data-size='compact'] .pass-hero { padding: 6px 10px; gap: 8px; }
+html[data-size='compact'] .ph-tier { width: 46px; height: 46px; }
+html[data-size='compact'] .ph-tier b { font-size: 19px; }
+html[data-size='compact'] .ph-lbl { font-size: 17px; }
+html[data-size='compact'] .ph-xp { font-size: 12px; }
+html[data-size='compact'] .pass-all { padding: 0 12px; min-height: 48px; font-size: 16px; }
+html[data-size='compact'] .pass-all svg { width: 18px; height: 18px; }
+html[data-size='compact'] .pt { width: 104px; min-height: 156px; }
+html[data-size='compact'] .pt.big { width: 120px; }
+html[data-size='compact'] .pass-how { font-size: 13px; }
+html[data-size='short'] .pass-hero { padding: 4px 10px; }
+html[data-size='short'] .ph-tier { width: 42px; height: 42px; }
+.pt-art { overflow: hidden; flex: none; }
+.pt-art img { width: 100%; height: 100%; object-fit: contain; }
+.pt-kind { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; }
+.pt-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-size='short'] .pass-track { padding-top: 14px; padding-bottom: 8px; }
+html[data-size='short'] .pt { min-height: 0; padding-bottom: 8px; }
+html[data-size='short'] .pt-art { height: 44px; width: 64px; }
+html[data-size='short'] .pass-next { min-height: 0; }
+html[data-size='short'] .pass-next .pn-art { width: 30px; height: 30px; }
+.pass-track, .pass-hero-row, .pass-next { flex: none; }
+html[data-size='short'] .pass-next { display: none; }
+
+/* =================================================================== Crab Cove v4: one status bar */
+.cove-top { flex-wrap: nowrap; }
+.cove-top .cove-stats { flex: 1 1 auto; min-width: 0; justify-content: flex-start; flex-wrap: nowrap; }
+.cove-top .cove-comfort { min-width: 0; max-width: 280px; flex: 1 1 auto; }
+.cove-top .cove-comfort .cc-lbl { white-space: nowrap; }
+.cove-top .kit-wallet { margin-left: auto; }
+html[data-size='compact'] #cove { padding-top: calc(6px + var(--safe-t)); gap: 6px; }
+html[data-size='compact'] .cove-top .btn.round { width: 48px; height: 48px; min-width: 48px; min-height: 48px; }
+html[data-size='compact'] .cove-comfort { padding: 2px 10px 2px 3px; }
+html[data-size='compact'] .cove-comfort > svg { width: 28px; height: 28px; }
+html[data-size='compact'] .cove-comfort .cc-lbl { font-size: 14px; }
+html[data-size='compact'] .cove-top .kit-wallet { height: 42px; padding-right: 8px; }
+html[data-size='compact'] .cove-top .kit-wallet .kw-row { font-size: 17px; }
+html[data-size='compact'] .cove-top .kit-wallet .kw-ico { width: 22px; height: 22px; }
+html[data-size='compact'] .cove-gift { min-height: 48px; }
+html[data-size='compact'] .cove-gift b { font-size: 17px; }
+html[data-size='short'] #cove { padding-top: calc(4px + var(--safe-t)); padding-bottom: calc(4px + var(--safe-b)); gap: 4px; }
+html[data-size='short'] .cove-top .cove-comfort { max-width: 200px; }
+html[data-size='short'] .cove-gift { position: absolute; top: calc(6px + var(--safe-t)); left: 50%; transform: translateX(-50%); min-height: 44px; padding: 3px 14px 3px 3px; z-index: 4; }
+html[data-size='short'] .cove-gift small { display: none; }
+html[data-size='short'] .cove-gift .cg-ico { width: 34px; height: 34px; }
+html[data-size='short'] .cove-gift.ready { animation: none; }
+
+/* =================================================================== level intro, results, level end: pinned actions */
+.lv-card .page-actions .btn.big { flex: 2 1 0; }
+.res-card { padding-bottom: 0; }
+.res-card > .res-buttons { position: sticky; bottom: 0; z-index: 2; margin: auto calc(-1 * var(--s-4)) 0; padding: var(--s-2) var(--s-4) calc(var(--s-3)); background: linear-gradient(180deg, rgba(255, 250, 240, 0), var(--c-sand-50) 22%); }
+html[data-size='compact'] .res-card { width: 100%; }
+html[data-size='compact'] .res-big { font-size: 64px; }
+html[data-size='short'] .res-card > .res-buttons { margin: 0; padding: 4px 0 8px; background: var(--c-sand-50); }
+.res-buttons.one-row { flex-direction: row; align-items: stretch; }
+.res-buttons.one-row .btn.small { flex: 1 1 0; }
+.res-buttons.one-row .btn.big { flex: 2 1 0; width: auto; }
+html[data-size='short'] .lv-end .res-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: var(--s-4); align-content: start; }
+html[data-size='short'] .lv-end .res-head { grid-column: 1 / -1; }
+html[data-size='short'] .lv-end .lv-name, html[data-size='short'] .lv-end .res-list { grid-column: 1; }
+html[data-size='short'] .lv-end .bigstars, html[data-size='short'] .lv-end .lv-rewards, html[data-size='short'] .lv-end .lv-unlock, html[data-size='short'] .lv-end .res-buttons { grid-column: 2; }
+html[data-size='short'] .lv-end .bigstars { grid-row: 2 / 4; height: 76px; align-self: center; }
+html[data-size='short'] .lv-end .lv-rewards .rw { padding: 2px 10px 2px 4px; font-size: 16px; }
+html[data-size='short'] .bigstar { width: 56px; height: 56px; }
+html[data-size='short'] .bigstar:nth-child(2) { width: 70px; height: 70px; }
+html[data-size='short'] .lv-end .lv-rewards { grid-row: 4; margin: 0; }
+html[data-size='short'] .lv-end .res-buttons { grid-row: 5; }
+html[data-size='short'] .lv-end .bigstars { grid-row: 2 / 4; }
+#toasts.corner { top: auto !important; bottom: calc(8px + var(--safe-b)); left: calc(8px + var(--safe-l)); right: auto; align-items: flex-start; }
+#toasts.corner .toast { font-size: 15px; padding: 4px 12px 5px; }
+#toasts.corner .toast small { font-size: 12px; }
+.cove-grid .tile .cmf { font-size: 12px; }
+/* the goals chip floats on the card's top edge: sit it fully above the card */
+#home.v4 .home-modes { padding-top: 44px; }
+#home.v4 .home-modes > .goals-chip { top: 0; }
+#home.v4 .home-modes > .boost-chip { top: 0; height: 40px; min-height: 40px; }
+html[data-size='short'] #home.v4 .home-modes { padding-top: 40px; }
+html[data-size='short'] .dye { width: 40px; height: 40px; min-height: 40px; }
+.wn-card { overflow: hidden; }
+.wn-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 calc(-1 * var(--s-2)); padding: 0 var(--s-2); }
+.wn-acts { flex: none; }
+html[data-size='compact'] .wn-card { padding: var(--s-3); gap: var(--s-2); }
+html[data-size='compact'] .wn-row { padding: 6px 10px 6px 6px; }
+html[data-size='compact'] .wn-txt small { font-size: 12px; }

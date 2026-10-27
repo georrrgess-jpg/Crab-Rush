@@ -1,6 +1,7 @@
 import { btn, el, fmt } from './dom';
 import { BOOST_SVG, HAT_SVG, ICON } from './icons';
 import type { GoalView } from './ui';
+import { Sheet, Wallet, onSizeClass } from './kit';
 
 /** Everything the Home screen shows (UPDATE3_PLAN.md §2). */
 export interface HomeData {
@@ -79,8 +80,10 @@ interface Card {
 export class HomeScreen {
   readonly el: HTMLElement;
   private profile: HTMLButtonElement;
-  private wallet: HTMLElement;
-  private pearlPill: HTMLElement;
+  private wallet: Wallet;
+  private more: Sheet;
+  private goalsSheet = new Sheet('home-goals-sheet');
+  private goalsSheetList = el('div', 'sheet-goals');
   private passNext: HTMLElement;
   private goalsEl: HTMLElement;
   private goalsChip: HTMLButtonElement;
@@ -98,7 +101,7 @@ export class HomeScreen {
   private timer = 0;
 
   constructor(private h: HomeHandlers) {
-    this.el = el('div', 'screen home v3 hidden');
+    this.el = el('div', 'screen home v3 v4 hidden');
     this.el.id = 'home';
 
     // ---- top bar: profile card + wallet
@@ -106,7 +109,7 @@ export class HomeScreen {
     this.profile = el('button', 'pass-pill profile') as HTMLButtonElement;
     this.profile.type = 'button';
     this.profile.setAttribute('aria-label', 'Sunny Pass and profile');
-    this.profile.innerHTML = `<span class="pf-ava"><span class="pf-ring"></span><span class="pf-img">${ICON.crab}</span><span class="pf-tier"><b>0</b></span></span><span class="col"><span class="lbl pf-title">Beach Rookie</span><span class="bar"><i></i></span><span class="txt"></span></span><i class="dot hidden"></i>`;
+    this.profile.innerHTML = `<span class="pf-ava"><span class="pf-ring"></span><span class="pf-img">${ICON.crab}</span><span class="pf-tier"><b>0</b></span></span><span class="col"><span class="lbl pf-title">Beach Rookie</span><span class="pf-row"><span class="bar"><i></i></span><span class="txt"></span></span></span><i class="dot hidden"></i>`;
     this.profile.addEventListener('click', (e) => {
       e.stopPropagation();
       this.h.pass();
@@ -114,11 +117,10 @@ export class HomeScreen {
     this.passDot = this.profile.querySelector('.dot') as HTMLElement;
     this.passNext = el('span', 'pass-next-chip hidden');
     this.profile.appendChild(this.passNext);
-    this.wallet = el('div', 'wallet', `<span class="ico">${ICON.shell}</span><b>0</b>`);
-    this.pearlPill = el('div', 'wallet pearls hidden', `<span class="ico">${PEARL}</span><b>0</b>`);
-    const help = btn(ICON.help, 'icon ghost', () => this.h.howto(), 'How to play');
+    // one wallet pill (shells and pearls); help lives in the More sheet
+    this.wallet = new Wallet('home-wallet');
     const right = el('div', 'home-top-r');
-    right.append(this.wallet, this.pearlPill, help);
+    right.append(this.wallet.el);
     top.append(this.profile, right);
 
     // ---- logo + goals
@@ -128,7 +130,9 @@ export class HomeScreen {
     this.goalsChip.type = 'button';
     this.goalsChip.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.el.classList.toggle('goals-open');
+      // the goals list opens as a sheet (it only sits inline on wide landscape screens)
+      this.goalsSheetList.innerHTML = this.goalsEl.innerHTML;
+      this.goalsSheet.show('Goals');
     });
     this.goalsEl = el('div', 'home-goals');
 
@@ -210,7 +214,7 @@ export class HomeScreen {
     });
     const prev = btn(ICON.back, 'icon ghost mc-arrow prev', () => this.step(-1), 'Previous mode');
     const next = btn(ICON.back, 'icon ghost mc-arrow next', () => this.step(1), 'Next mode');
-    modes.append(this.boost, this.track, prev, next, this.dots);
+    modes.append(this.goalsChip, this.boost, this.track, prev, next, this.dots);
 
     // ---- bottom nav with a sliding bubble
     this.nav = el('nav', 'home-nav');
@@ -235,13 +239,35 @@ export class HomeScreen {
     this.wardrobeDot = wardrobe.querySelector('.dot') as HTMLElement;
     const tabs = [tab(ICON.home, 'Home', () => {}, true), wardrobe, tab(ICON.sun, 'Pass', () => this.h.pass())];
     if (this.h.cove) tabs.push(tab(COVE_ICON, 'Cove', () => this.h.cove?.()));
-    tabs.push(tab(ICON.chart, 'Stats', () => this.h.stats()), tab(ICON.gear, 'Settings', () => this.h.settings()));
+    // Stats, Settings and How to play share the More sheet: five tabs fit a 360 px phone
+    tabs.push(tab(MORE_ICON, 'More', () => this.openMore()));
     this.nav.append(...tabs);
+    this.more = new Sheet('home-more');
+    const item = (icon: string, label: string, sub: string, on: () => void, color = ''): HTMLButtonElement => {
+      const b = el('button', 'sheet-item', `<span class="si-ico"${color ? ` style="background:${color}"` : ''}>${icon}</span><span>${label}<small>${sub}</small></span>`) as HTMLButtonElement;
+      b.type = 'button';
+      b.dataset.item = label.toLowerCase();
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.more.close();
+        on();
+      });
+      return b;
+    };
+    const list = el('div', 'sheet-list');
+    list.append(
+      item(ICON.chart, 'Stats', 'Records, totals and your favourite crab', () => this.h.stats()),
+      item(ICON.gear, 'Settings', 'Sound, controls, graphics and accessibility', () => this.h.settings(), '#5a7a9a'),
+      item(ICON.help, 'How to play', 'Controls, obstacles and power-ups', () => this.h.howto(), '#3fbf55'),
+    );
+    this.more.body.appendChild(list);
 
     const left = el('div', 'home-left');
-    left.append(brand, this.goalsChip, this.goalsEl);
-    this.el.append(top, left, stage, modes, this.nav);
+    left.append(brand, this.goalsEl);
+    this.goalsSheet.body.appendChild(this.goalsSheetList);
+    this.el.append(top, left, stage, modes, this.nav, this.more.el, this.goalsSheet.el);
     window.addEventListener('resize', () => this.layout());
+    onSizeClass(() => this.layout());
   }
 
   /** narrow screens scroll the carousel sideways; wide ones stack the cards */
@@ -250,6 +276,11 @@ export class HomeScreen {
     this.el.classList.toggle('carousel-x', x);
     const on = this.nav.querySelector('.tab.on') as HTMLElement | null;
     if (on) this.moveBubble(on, true);
+  }
+
+  private openMore(): void {
+    const homeTab = this.nav.querySelector('.tab') as HTMLElement;
+    this.more.show('More', () => this.moveBubble(homeTab));
   }
 
   private moveBubble(b: HTMLElement, instant = false): void {
@@ -295,14 +326,14 @@ export class HomeScreen {
     const frac = d.tier >= d.maxTier ? 1 : d.tierInto / Math.max(1, d.tierNeed);
     (p.querySelector('.bar i') as HTMLElement).style.width = `${Math.round(frac * 100)}%`;
     (p.querySelector('.pf-ring') as HTMLElement).style.setProperty('--p', String(frac));
-    (p.querySelector('.txt') as HTMLElement).textContent = d.tier >= d.maxTier ? 'Pass complete!' : `Tier ${d.tier} · ${fmt(d.tierInto)}/${fmt(d.tierNeed)} XP`;
+    // the tier number is on the avatar badge; the row shows XP into the next tier
+    (p.querySelector('.txt') as HTMLElement).textContent = d.tier >= d.maxTier ? 'Complete!' : `${fmt(d.tierInto)}/${fmt(d.tierNeed)}`;
+    p.setAttribute('aria-label', `${d.title ?? 'Sunny Pass'}: tier ${d.tier}, ${fmt(d.tierInto)} of ${fmt(d.tierNeed)} XP. Open the Sunny Pass`);
     (p.querySelector('.pf-title') as HTMLElement).textContent = d.title ?? 'Sunny Pass';
     const img = p.querySelector('.pf-img') as HTMLElement;
     if (d.avatar && !img.querySelector(`img[src="${d.avatar}"]`)) img.innerHTML = `<img alt="" src="${d.avatar}">`;
     this.passDot.classList.toggle('hidden', d.passClaimable <= 0);
-    (this.wallet.querySelector('b') as HTMLElement).textContent = fmt(d.shells);
-    this.pearlPill.classList.toggle('hidden', d.pearls === undefined);
-    (this.pearlPill.querySelector('b') as HTMLElement).textContent = fmt(d.pearls ?? 0);
+    this.wallet.set(d.shells, d.pearls);
     this.wardrobeDot.classList.toggle('hidden', !d.wardrobeBadge);
     this.boost.classList.toggle('hidden', d.boosts <= 0);
     this.boost.classList.toggle('on', d.boostOn);
@@ -338,7 +369,8 @@ export class HomeScreen {
 
     // goals
     const done = d.goals.filter((g) => g.done).length;
-    this.goalsChip.innerHTML = `<span class="gi">${ICON.trophy}</span>Goals <b>${done}/${d.goals.length}</b>`;
+    this.goalsChip.innerHTML = `<span class="gi">${ICON.trophy}</span><span class="gl">Goals</span> <b>${done}/${d.goals.length}</b>`;
+    this.goalsChip.setAttribute('aria-label', `Goals: ${done} of ${d.goals.length} done`);
     this.goalsChip.classList.toggle('hidden', d.goals.length === 0);
     this.goalsEl.innerHTML = '';
     for (const g of d.goals) {
@@ -369,6 +401,8 @@ export class HomeScreen {
   hide(): void {
     this.el.classList.add('hidden');
     this.el.classList.remove('goals-open');
+    if (this.more.open) this.more.close();
+    if (this.goalsSheet.open) this.goalsSheet.close();
     clearInterval(this.timer);
   }
 
@@ -397,5 +431,6 @@ function split(word: string): string {
   return [...word].map((ch, i) => `<span class="ch" style="--i:${i}">${ch}</span>`).join('');
 }
 
+const MORE_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="10" cy="20" r="4" fill="#fff"/><circle cx="20" cy="20" r="4" fill="#fff"/><circle cx="30" cy="20" r="4" fill="#fff"/></svg>`;
 export const PEARL = `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="21" r="14" fill="#e8dcfa" stroke="#8a72c0" stroke-width="2"/><circle cx="23" cy="24" r="9" fill="#d4c2f4"/><circle cx="15" cy="15" r="4.5" fill="#fff"/></svg>`;
 export const COVE_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 33h28" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/><path d="M10 31V19h20v12" fill="#fff"/><path d="M6 20 20 8l14 12z" fill="#fff"/><rect x="17" y="23" width="6" height="8" fill="#6a3fb0"/></svg>`;

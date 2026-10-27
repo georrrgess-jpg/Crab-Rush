@@ -758,7 +758,9 @@ export class GameView {
       const r = portrait ? 6.4 : 4.4;
       const a = Math.sin(this.titleSpin * 0.18) * 0.35 + 0.28;
       const titlePos = this.vTitlePos.set(Math.sin(a) * r + this.parX * 0.35, (portrait ? 2.1 : 1.7) + this.parY * 0.2, Math.cos(a) * r);
-      const titleLook = this.vTitleLook.set(-0.3, portrait ? 0.45 : 1.3, -3);
+      // landscape phones: aim right of the crab so it sits in the left half, clear of the mode cards
+      const lx = portrait || window.innerHeight >= 480 ? -0.3 : 0.9 + Math.min(0.9, Math.max(0, aspect - 1.4) * 0.8);
+      const titleLook = this.vTitleLook.set(lx, portrait ? 0.45 : 1.3, -3);
       if (mode === 'title') {
         pos = titlePos;
         look = titleLook;
@@ -788,7 +790,8 @@ export class GameView {
     } else if (mode === 'shop') {
       const portrait = cam.aspect < 1;
       pos = this.vTitlePos.set(0, portrait ? 2.0 : 1.9, portrait ? 4.6 : 5.4);
-      look = this.vTitleLook.set(portrait ? 0 : 1.5, portrait ? -0.25 : 0.75, 0);
+      // landscape phones: the panel takes half the screen, so the crab moves further left
+      look = this.vTitleLook.set(portrait ? 0 : window.innerHeight < 480 ? 2.9 : 1.5, portrait ? -0.25 : 0.75, 0);
     } else {
       pos = runPos;
       look = runLook;
