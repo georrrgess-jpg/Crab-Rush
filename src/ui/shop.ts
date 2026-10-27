@@ -7,6 +7,7 @@ import type { CrabSkin } from '../render/models/crab';
 import { btn, el, fmt } from './dom';
 import { DANCE_SVG, ICON, TRAIL_SVG } from './icons';
 import { Sheet, Wallet } from './kit';
+import { tabIndicator } from './motion';
 
 export interface ShopHandlers {
   back(): void;
@@ -56,6 +57,7 @@ export class ShopScreen {
   private foot: HTMLElement;
   private wallet = new Wallet();
   private outfitSheet = new Sheet('outfit-sheet');
+  private tabLine: (b: HTMLElement | null) => void = () => {};
   private tabBtns: HTMLButtonElement[] = [];
   private tab: Tab = 'bodies';
   private previewId: Record<Slot, string> = { bodies: 'sandy', hats: 'straw', trails: 'sand', dances: 'clap' };
@@ -89,6 +91,7 @@ export class ShopScreen {
       this.tabBtns.push(b);
       tabs.appendChild(b);
     }
+    this.tabLine = tabIndicator(tabs);
     this.body = el('div', 'shop-body');
     this.foot = el('div', 'shop-foot');
     panel.append(tabs, this.body, this.foot);
@@ -121,6 +124,9 @@ export class ShopScreen {
         dot.classList.toggle('hidden', n <= 0);
       }
     }
+    const on = this.tabBtns.find((b) => b.classList.contains('on')) ?? null;
+    this.tabLine(on);
+    requestAnimationFrame(() => this.tabLine(on));
     this.body.innerHTML = '';
     this.foot.innerHTML = '';
     if (this.outfitSheet.open) this.fillOutfitSheet(save);

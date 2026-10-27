@@ -5,6 +5,7 @@
  */
 import { btn, el, fmt } from './dom';
 import { ICON } from './icons';
+import { staggerIn } from './motion';
 
 export type SizeClass = 'compact' | 'short' | 'regular';
 
@@ -176,6 +177,8 @@ export class Sheet {
     void this.el.offsetWidth;
     this.el.classList.add('in');
     (this.panel.querySelector('button') as HTMLElement | null)?.focus({ preventScroll: true });
+    const list = this.body.firstElementChild as HTMLElement | null;
+    if (list) staggerIn(list.children.length > 1 ? list : this.body, ':scope > *', 10);
   }
   close(): void {
     if (!this.open) return;

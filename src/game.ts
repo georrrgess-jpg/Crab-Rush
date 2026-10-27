@@ -863,6 +863,7 @@ export class Game {
     this.save.save();
     this.audio.play('giftCollect');
     this.haptics.play('success');
+    this.coveScreen.flyGifts(n);
     this.ui.toast(`+${fmt(n)} shells`, { kind: 'gold', sub: 'Tide Gifts collected', life: 2 });
     this.checkTrophies();
     this.renderCove();
@@ -949,7 +950,7 @@ export class Game {
     const d = this.save.data;
     const t = tierFromXp(d.xp);
     const bonus = t.tier >= PASS_TIERS ? { ready: bonusReady(d.xp, d.passBonus), into: bonusProgress(d.xp), need: BONUS_XP } : undefined;
-    return { tier: t.tier, into: t.into, need: t.need, claimed: d.passClaimed, boosts: d.boosts, thumbs: this.shop.thumbs, bonus };
+    return { tier: t.tier, into: t.into, need: t.need, claimed: d.passClaimed, boosts: d.boosts, thumbs: this.shop.thumbs, bonus, shells: d.shells, pearls: d.pearls };
   }
 
   openPass(): void {
@@ -983,7 +984,7 @@ export class Game {
       if (!r) continue;
       got.push(r);
       this.passScreen.render(this.passData(), false);
-      this.passScreen.burst(t);
+      this.passScreen.burst(t, r.kind === 'shells' ? r.amount : 0);
     }
     if (got.length === 0) return;
     this.save.save();

@@ -2,6 +2,7 @@ import { btn, el, fmt } from './dom';
 import { BOOST_SVG, HAT_SVG, ICON } from './icons';
 import type { GoalView } from './ui';
 import { Sheet, Wallet, onSizeClass } from './kit';
+import { morphFrom } from './motion';
 
 /** Everything the Home screen shows (UPDATE3_PLAN.md §2). */
 export interface HomeData {
@@ -156,6 +157,8 @@ export class HomeScreen {
       c.innerHTML = `${ART[id]}<span class="mc-shade"></span><span class="mc-ico">${icon}</span><span class="mc-col"><span class="mc-title pc-label">${title}</span><span class="mc-sub pc-sub"></span></span><span class="mc-cta">${ICON.play}</span><span class="mc-badge hidden"></span><span class="shine"></span>`;
       c.addEventListener('click', (e) => {
         e.stopPropagation();
+        // other modes grow out of their card; Play hands over to the camera's run intro instead
+        if (id !== 'beach') morphFrom(c);
         on();
       });
       c.addEventListener('focus', () => this.setFocus(this.cards.findIndex((k) => k.el === c), false));
@@ -268,6 +271,19 @@ export class HomeScreen {
     this.el.append(top, left, stage, modes, this.nav, this.more.el, this.goalsSheet.el);
     window.addEventListener('resize', () => this.layout());
     onSizeClass(() => this.layout());
+    // parallax: card art layers drift with the pointer (desktop) or the device tilt (phones)
+    const setPar = (x: number, y: number): void => {
+      this.el.style.setProperty('--px', x.toFixed(3));
+      this.el.style.setProperty('--py', y.toFixed(3));
+    };
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse' || this.el.classList.contains('hidden')) return;
+      setPar((e.clientX / innerWidth - 0.5) * 2, (e.clientY / innerHeight - 0.5) * 2);
+    }, { passive: true });
+    window.addEventListener('deviceorientation', (e) => {
+      if (this.el.classList.contains('hidden') || e.gamma === null || e.beta === null) return;
+      setPar(Math.max(-1, Math.min(1, e.gamma / 25)), Math.max(-1, Math.min(1, (e.beta - 45) / 25)));
+    }, { passive: true });
   }
 
   /** narrow screens scroll the carousel sideways; wide ones stack the cards */

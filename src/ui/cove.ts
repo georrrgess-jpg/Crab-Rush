@@ -4,6 +4,7 @@ import { FAMILIES, TIER_NAMES } from '../meta/achievements';
 import { ITEM_BY_ID } from '../meta/wardrobe';
 import { btn, el, fmt } from './dom';
 import { Wallet } from './kit';
+import { flyReward, tabIndicator } from './motion';
 import { COVE_ICON, PEARL } from './home';
 import { ICON } from './icons';
 
@@ -60,6 +61,7 @@ export class CoveScreen {
   readonly el: HTMLElement;
   private top: HTMLElement;
   private wallet = new Wallet('cove-wallet');
+  private tabLine: (b: HTMLElement | null) => void = () => {};
   private giftBtn: HTMLButtonElement;
   private plotLayer: HTMLElement;
   private plots: HTMLButtonElement[] = [];
@@ -112,6 +114,7 @@ export class CoveScreen {
       this.tabBtns.push(b);
       tabs.appendChild(b);
     }
+    this.tabLine = tabIndicator(tabs);
     this.body = el('div', 'shop-body cove-body');
     this.drawer.append(tabs, this.body);
     this.el.append(this.top, this.giftBtn, this.plotLayer, this.drawer);
@@ -139,6 +142,9 @@ export class CoveScreen {
       b.classList.toggle('on', on);
       b.setAttribute('aria-selected', String(on));
     }
+    const onTab = this.tabBtns.find((b) => b.classList.contains('on')) ?? null;
+    this.tabLine(onTab);
+    requestAnimationFrame(() => this.tabLine(onTab));
     const ready = d.friends.filter((f) => f.done).length;
     const fd = this.tabBtns[1]!;
     let dot = fd.querySelector('.wdot');
@@ -154,6 +160,12 @@ export class CoveScreen {
     else if (this.tab === 'friends') this.renderFriends(d);
     else this.renderTrophies(d);
     this.renderPlots(d);
+  }
+
+  /** Tide Gifts collected: shells arc from the gift button into the wallet */
+  flyGifts(n: number): void {
+    const r = this.giftBtn.getBoundingClientRect();
+    flyReward({ x: r.left + 30, y: r.top + r.height / 2 }, this.wallet.target('shells'), 'shells', Math.min(10, 3 + Math.floor(n / 60)));
   }
 
   updateGifts(d: CoveData): void {

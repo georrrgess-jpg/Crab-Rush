@@ -1,5 +1,6 @@
 import { ICON } from './icons';
 import { toastCorner, toastTop } from './kit';
+import { installPress, staggerIn } from './motion';
 import { btn, el, fmt } from './dom';
 import type { PowerKind } from '../sim/events';
 import { HomeScreen, type HomeData, type HomeHandlers } from './home';
@@ -164,6 +165,7 @@ export class UI {
     this.wipe = el('div', 'wave-wipe', `<svg viewBox="0 0 200 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0h150c-14 10-22 22-18 34 6 18 30 14 28 34-2 16-22 22-20 32H0z" fill="#2fa6d6"/><path d="M0 0h138c-12 10-18 22-14 34 6 18 28 14 26 34-2 16-20 22-18 32H0z" fill="#4fc4f0"/><path d="M150 0c-14 10-22 22-18 34 6 18 30 14 28 34-2 16-22 22-20 32" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/></svg>`);
     this.wipe.setAttribute('aria-hidden', 'true');
 
+    installPress(root);
     root.append(this.foam, this.home.el, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results.el, this.toasts, this.fade, this.wipe);
   }
 
@@ -211,6 +213,9 @@ export class UI {
     node.classList.remove('rt-enter');
     void node.offsetWidth;
     node.classList.add('rt-enter');
+    // content rises in after the card
+    const body = node.querySelector<HTMLElement>('.page-body, .shop-body, .cove-body');
+    if (body) requestAnimationFrame(() => staggerIn(body.querySelector('.crab-grid, .stat-grid, .map-body, .daily-body > .dt-col-a') ?? body));
   }
 
   hideExtras(): void {

@@ -3,6 +3,8 @@ import { ITEM_BY_ID } from '../meta/wardrobe';
 import { PASS_TIERS } from '../meta/xp';
 import { btn, el, fmt } from './dom';
 import { BOOST_SVG, DANCE_SVG, GIFT_SVG, ICON, TRAIL_SVG } from './icons';
+import { Wallet } from './kit';
+import { flyReward } from './motion';
 
 export interface PassData {
   tier: number;
@@ -14,6 +16,8 @@ export interface PassData {
   thumbs: { bodies: Record<string, string>; hats: Record<string, string> };
   /** after tier 40: bonus chests ready and XP into the next */
   bonus?: { ready: number; into: number; need: number };
+  shells?: number;
+  pearls?: number;
 }
 
 export interface PassHandlers {
@@ -53,6 +57,7 @@ export class PassScreen {
   private boosts: HTMLElement;
   private next: HTMLElement;
   private data: PassData | null = null;
+  private wallet = new Wallet();
 
   constructor(private h: PassHandlers) {
     this.el = el('div', 'screen page pass');
@@ -60,7 +65,8 @@ export class PassScreen {
     const card = el('div', 'page-card wide pass-card');
     const top = el('div', 'page-head');
     this.boosts = el('span', 'pass-boosts');
-    top.append(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back'), el('h2', '', 'Sunny Pass'), this.boosts);
+    top.dataset.toastAvoid = '';
+    top.append(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back'), el('h2', '', 'Sunny Pass'), this.boosts, this.wallet.el);
     const body = el('div', 'page-body pass-body');
     this.head = el('div', 'pass-hero');
     this.all = btn(`${ICON.check}<span>Claim all</span>`, 'green small pass-all', () => this.h.claimAll());
@@ -99,6 +105,7 @@ export class PassScreen {
     this.all.classList.toggle('hidden', claimable.length < 2);
     this.boosts.innerHTML = `${BOOST_SVG}<b>${d.boosts}</b>/${MAX_BOOSTS}`;
     this.boosts.title = 'Golden Shells: 2× shells for one run';
+    if (d.shells !== undefined) this.wallet.set(d.shells, d.pearls);
     // the next big reward
     const nextItem = PASS_REWARDS.findIndex((r, i) => i + 1 > d.tier && r.kind === 'item');
     if (nextItem >= 0) {
@@ -147,10 +154,14 @@ export class PassScreen {
     }
   }
 
-  /** burst animation on a just-claimed tier */
-  burst(tier: number): void {
+  /** burst animation on a just-claimed tier; shells fly from the card into the wallet */
+  burst(tier: number, shells = 0): void {
     const c = this.track.querySelector(`[data-tier="${tier}"]`);
     if (!c) return;
+    if (shells > 0) {
+      const r = c.getBoundingClientRect();
+      flyReward({ x: r.left + r.width / 2, y: r.top + r.height * 0.4 }, this.wallet.target('shells'), 'shells', Math.min(8, 3 + Math.floor(shells / 100)));
+    }
     c.classList.remove('burst');
     void (c as HTMLElement).offsetWidth;
     c.classList.add('burst');
