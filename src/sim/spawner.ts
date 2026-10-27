@@ -277,7 +277,17 @@ export class Spawner {
               w.addEntity('gull', l, wz, { skin: zoneAt(wz) });
               firstObstacleWz = Math.min(firstObstacleWz, wz);
               break;
+            case 'C':
+              // a coconut: the palm's shadow warns, then it drops (the sim treats it as a gull)
+              w.addEntity('gull', l, wz, { skin: zoneAt(wz), alt: 1 });
+              firstObstacleWz = Math.min(firstObstacleWz, wz);
+              break;
+            case 'o':
+              w.addEntity('ring', l, wz, {});
+              break;
             case 'P': {
+              // Tide Rush: no power-ups (the shell strand through the cell still counts)
+              if (w.level?.rush) break;
               const kind: PowerKind = block ? (block.powerup ?? 'magnet') : scripted ? 'magnet' : this.pickPower();
               w.addEntity('powerup', l, wz, { power: kind, skin: POWER_KINDS.indexOf(kind) });
               if (!scripted && !block) this.schedulePower(wz);

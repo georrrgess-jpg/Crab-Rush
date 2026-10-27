@@ -128,6 +128,10 @@ export const CFG = {
     /** bounce pad: hop apex (m); high sand dollars float at the apex */
     padApex: 3.0,
     tidepool: { slow: 0.85, time: 1.0, w: 2.0, d: 2.6 },
+    /** Tide Rush (UPDATE3_PLAN.md §5.1): speed multiplier, no power-ups */
+    rushSpeed: 1.18,
+    ringBonus: 5,
+    chests: [6, 12, 18],
     chase: { startGap: 15, creep: 0.42, bump: 4, hourglass: 4.5, maxGap: 22 },
     /** stars needed to open each island */
     gates: [0, 10, 24, 40] as readonly number[],

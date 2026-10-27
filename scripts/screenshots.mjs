@@ -183,6 +183,26 @@ const SCENES = {
     await p.evaluate(() => { window.__crab.setDate('2026-10-26T22:30:00'); window.__crab.setState('title'); window.__crab.frames(30); });
     await p.waitForTimeout(800);
   },
+  // ---- Update 3 Phase D: Island Hop+
+  mapchests: async (p) => {
+    await p.evaluate(() => { window.__crab.unlockAll(2); const d = window.__crab.game.save.data; d.levels['shore-6'].stars = [true, true, true]; d.levels['shore-5'].stars = [true, true, true]; d.levels['shore-4'].stars = [true, true, true]; d.chests[1] = [0]; window.__crab.game.freshClear = 'pier-2'; window.__crab.setState('map'); window.__crab.frames(10); });
+    await p.waitForTimeout(700);
+  },
+  chest: async (p) => {
+    await p.evaluate(() => { window.__crab.unlockAll(2); window.__crab.setState('map'); window.__crab.game.openIslandChest(0, 0); window.__crab.frames(10); });
+    await p.waitForTimeout(2200);
+  },
+  maprush: async (p) => {
+    await p.evaluate(() => { window.__crab.unlockAll(3); const d = window.__crab.game.save.data; d.crowns = ['shore-1', 'shore-2', 'pier-1']; d.chests = [[0, 1, 2], [0, 1, 2], [], []]; window.__crab.game.mapRush = true; window.__crab.setState('map'); window.__crab.frames(10); });
+    await p.waitForTimeout(700);
+  },
+  bonus: async (p) => {
+    await p.evaluate(() => { const d = window.__crab.game.save.data; d.chests = [[0, 1, 2], [], [], []]; window.__crab.level('shore-b', { autopilot: true }); window.__crab.frames(60 * 5.4); });
+  },
+  rushintro: async (p) => {
+    await p.evaluate(() => { window.__crab.unlockAll(3); window.__crab.level('pier-4', { intro: true, rush: true }); window.__crab.frames(10); });
+    await p.waitForTimeout(500);
+  },
   stats: async (p) => {
     await p.evaluate(() => window.__crab.setState('stats'));
     await p.evaluate(() => window.__crab.frames(10));

@@ -247,6 +247,30 @@ export class EntityViews {
         break;
       }
       case 'gull': {
+        if (e.alt === 1) {
+          // coconut drop: a palm canopy high over the lane, the coconut falls when it's close
+          const canopy = mesh(g.get('canopy', () => O.coconutCanopy()), M.clayWind);
+          canopy.position.y = CFG.gull.height + 0.9;
+          const nut = mesh(g.get('coconut', () => O.coconut()));
+          const grp = new THREE.Group();
+          grp.add(canopy, nut);
+          v = { obj: grp, key, stamp: 0, shadow: [1.4, 1.2], parts: [nut, canopy], enter: -1, memo: { landed: -1, squawk: 0 } };
+          this.addOutline(v, nut);
+          v.anim = (vv, ee, t) => {
+            const [n, cn] = vv.parts as THREE.Object3D[];
+            const m = vv.memo;
+            if (ee.state === 2 && m.landed < 0) m.landed = t;
+            if (ee.state !== 2) m.landed = -1;
+            // hanging: a nervous wobble; falling: spin; landed: a squash and a little roll
+            n!.position.y = ee.state === 0 ? CFG.gull.height + 0.55 + Math.sin(t * 9 + ee.id) * 0.04 : ee.y + 0.42;
+            n!.rotation.z = ee.state === 0 ? Math.sin(t * 7) * 0.15 : n!.rotation.z + (ee.state === 1 ? 0.3 : 0);
+            const since = m.landed < 0 ? 9 : t - m.landed;
+            const sq = since < 0.25 ? 1 - Math.sin((since / 0.25) * Math.PI) * 0.25 : 1;
+            n!.scale.set(2 - sq, sq, 2 - sq);
+            cn!.rotation.y = Math.sin(t * 0.7) * 0.2;
+          };
+          break;
+        }
         const rig = O.makeRig(g.get('gull2', () => O.gullGeometry()), M.clay, O.GULL_JOINTS, this.outlineMat);
         if (rig.line) {
           rig.line.visible = this.outlinesOn || this.contrast;
@@ -306,6 +330,22 @@ export class EntityViews {
         break;
       }
       // ---- Island Hop
+      case 'ring': {
+        const ring = mesh(g.get('ring', () => O.shellRing()), M.gold);
+        const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshBasicMaterial({ map: M.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.45 }));
+        const grp = new THREE.Group();
+        grp.add(glow, ring);
+        v = { obj: grp, key, stamp: 0, shadow: [0.9, 0.4], parts: [ring, glow], enter: -1, memo: { landed: -1, squawk: 0 } };
+        this.addOutline(v, ring);
+        v.anim = (vv, ee, t) => {
+          const [r, gl] = vv.parts as THREE.Object3D[];
+          vv.obj.position.y = ee.y + Math.sin(t * 2.5 + ee.id) * 0.08;
+          r!.rotation.y = Math.sin(t * 1.6 + ee.id) * 0.35;
+          r!.rotation.z = t * 0.6;
+          gl!.scale.setScalar(1 + Math.sin(t * 5) * 0.08);
+        };
+        break;
+      }
       case 'dollar':
       case 'hourglass': {
         const grp = new THREE.Group();
@@ -407,6 +447,8 @@ export class EntityViews {
 
   private keyOf(e: Entity): string {
     if (e.kind === 'powerup') return `powerup:${e.power}`;
+    if (e.kind === 'gull' && e.alt === 1) return 'coconut';
+    if (e.kind === 'ring') return 'ring';
     if (e.kind === 'roller' || e.kind === 'gull' || e.kind === 'banner' || e.kind === 'dollar' || e.kind === 'hourglass' || e.kind === 'pad' || e.kind === 'tidepool') return e.kind;
     if (e.kind === 'flag') return `flag:${e.state}`;
     if (e.kind === 'arch') return `arch:${e.skin}`;

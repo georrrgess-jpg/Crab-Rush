@@ -2,7 +2,9 @@ import type { PowerKind } from './events';
 
 export type EntityKind = 'block' | 'low' | 'sweep' | 'roller' | 'gull' | 'powerup' | 'arch' | 'banner'
   // Island Hop (UPDATE2_PLAN.md §5.4)
-  | 'dollar' | 'hourglass' | 'pad' | 'tidepool' | 'flag';
+  | 'dollar' | 'hourglass' | 'pad' | 'tidepool' | 'flag'
+  // Island Hop+ (UPDATE3_PLAN.md §5.1)
+  | 'ring';
 
 /** Obstacles, pickups and landmark props that live on the track. Shells are separate (see Shell). */
 export interface Entity {
@@ -23,6 +25,8 @@ export interface Entity {
   /** variant: zone skin for obstacles, power-up kind index, zone index for arches */
   skin: number;
   power?: PowerKind;
+  /** look variant: 1 = a coconut dropping from a palm (it plays exactly like a gull) */
+  alt?: number;
   /** rollers: the track position where the ball meets the player (its pattern row) */
   meetWz?: number;
   /** gull: 0 hovering, 1 falling, 2 landed */

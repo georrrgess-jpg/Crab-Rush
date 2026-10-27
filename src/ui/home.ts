@@ -397,5 +397,5 @@ function split(word: string): string {
   return [...word].map((ch, i) => `<span class="ch" style="--i:${i}">${ch}</span>`).join('');
 }
 
-export const PEARL = `<svg viewBox="0 0 40 40" aria-hidden="true"><defs><radialGradient id="pearlg" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#f1e6ff"/><stop offset="1" stop-color="#b9a4e0"/></radialGradient></defs><circle cx="20" cy="21" r="14" fill="url(#pearlg)" stroke="#8a72c0" stroke-width="2"/><circle cx="15" cy="15" r="4" fill="#fff" opacity=".9"/></svg>`;
+export const PEARL = `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="21" r="14" fill="#e8dcfa" stroke="#8a72c0" stroke-width="2"/><circle cx="23" cy="24" r="9" fill="#d4c2f4"/><circle cx="15" cy="15" r="4.5" fill="#fff"/></svg>`;
 export const COVE_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 33h28" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/><path d="M10 31V19h20v12" fill="#fff"/><path d="M6 20 20 8l14 12z" fill="#fff"/><rect x="17" y="23" width="6" height="8" fill="#6a3fb0"/></svg>`;

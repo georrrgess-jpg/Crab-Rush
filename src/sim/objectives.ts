@@ -16,10 +16,11 @@ export interface LevelRunStats {
   hourglasses: number;
   maxStreak: number;
   time: number;
+  rings: number;
 }
 
 export function emptyLevelStats(): LevelRunStats {
-  return { finished: false, dollars: 0, dollarsTotal: 3, bumps: 0, hops: 0, powerups: 0, shellsPicked: 0, shellsTotal: 0, hourglasses: 0, maxStreak: 0, time: 0 };
+  return { finished: false, dollars: 0, dollarsTotal: 3, bumps: 0, hops: 0, powerups: 0, shellsPicked: 0, shellsTotal: 0, hourglasses: 0, maxStreak: 0, time: 0, rings: 0 };
 }
 
 export function ruleText(r: StarRule): string {
@@ -38,6 +39,8 @@ export function ruleText(r: StarRule): string {
       return `Grab ${r.n} hourglass shells`;
     case 'streak':
       return `Reach a ${r.n}-shell streak`;
+    case 'rings':
+      return `Go through ${r.n} shell rings`;
   }
 }
 
@@ -58,6 +61,8 @@ export function ruleState(r: StarRule, s: LevelRunStats): { met: boolean; lost: 
       return { met: s.finished && s.hourglasses >= r.n, lost: false };
     case 'streak':
       return { met: s.maxStreak >= r.n && s.finished, lost: false };
+    case 'rings':
+      return { met: s.finished && s.rings >= r.n, lost: false };
   }
 }
 
@@ -91,5 +96,7 @@ export function ruleHud(r: StarRule, s: LevelRunStats): string {
       return `Hourglasses ${Math.min(s.hourglasses, r.n)}/${r.n}`;
     case 'streak':
       return `Streak ${Math.min(s.maxStreak, r.n)}/${r.n}`;
+    case 'rings':
+      return `Rings ${Math.min(s.rings, r.n)}/${r.n}`;
   }
 }

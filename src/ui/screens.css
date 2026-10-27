@@ -830,3 +830,88 @@
 .wn-item .wn-ico svg { width: 70%; height: 70%; }
 .wn-item b { display: block; font-family: var(--font-display); font-weight: 400; color: var(--navy); font-size: 18px; }
 .wn-item span { font-size: 14px; color: var(--teal); }
+
+/* =================================================================== Island Hop+ (UPDATE3_PLAN.md §5.1) */
+.map-mode { display: inline-flex; margin-left: auto; padding: 3px; border-radius: var(--r-pill); background: rgba(255, 255, 255, 0.18); }
+.map-mode .mm { min-height: 40px; padding: 0 12px; border: 0; border-radius: var(--r-pill); background: transparent; color: rgba(255, 255, 255, 0.85); font-family: var(--font-display); font-size: 15px; cursor: pointer; }
+.map-mode .mm.on { background: #fff; color: var(--navy); }
+.map-mode .mm.rush.on { background: linear-gradient(180deg, #ff8a5a, #e8403a); color: #fff; }
+.map-mode + .map-count { margin-left: 8px; }
+.map.rush .page-head { background: linear-gradient(180deg, #e8603a, #b0302a); }
+.map.rush .isl-stage { filter: saturate(1.15) hue-rotate(-12deg); }
+/* the path draws itself in */
+.isl-path polyline { stroke-dashoffset: 0; animation: pathdraw 1.2s var(--ease-out) both; }
+@keyframes pathdraw { from { opacity: 0; } to { opacity: 0.85; } }
+/* the crab marker hops on the next level */
+.lv-node .you { animation: youhop 1.1s var(--ease-out) infinite; }
+@keyframes youhop { 0%, 60%, 100% { transform: translate(-50%, 0) scale(1, 1); } 20% { transform: translate(-50%, -10px) scale(0.9, 1.1); } 40% { transform: translate(-50%, 0) scale(1.15, 0.85); } }
+/* bonus node: a gold star medallion */
+.lv-node.bonus { background: radial-gradient(circle at 50% 35%, #fff2a0, #ffb020 70%); border-color: #fff; box-shadow: 0 0 0 3px rgba(255, 210, 60, 0.5), 0 4px 0 rgba(0, 0, 0, 0.22); }
+.lv-node.bonus .ln svg { width: 26px; height: 26px; }
+.lv-node.bonus.teaser { filter: grayscale(0.8) brightness(0.9); opacity: 0.75; pointer-events: none; }
+.lv-node .crown-mark { position: absolute; bottom: -16px; left: 50%; width: 26px; height: 26px; transform: translateX(-50%); opacity: 0.35; filter: grayscale(1); }
+.lv-node .crown-mark.on { opacity: 1; filter: none; animation: crownin 0.5s var(--ease-back) both; }
+.lv-node .crown-mark svg { width: 100%; height: 100%; }
+@keyframes crownin { from { transform: translateX(-50%) scale(0) rotate(-30deg); } }
+/* confetti on a freshly cleared node */
+.lv-node .confetti { position: absolute; inset: 50% auto auto 50%; pointer-events: none; }
+.lv-node .confetti i { position: absolute; width: 8px; height: 12px; border-radius: 2px; background: var(--c, #ffd23a); animation: confetti 1.1s var(--ease-out) both; }
+.lv-node .confetti i:nth-child(1) { --c: #ff5a4a; --dx: -40px; --dy: -50px; }
+.lv-node .confetti i:nth-child(2) { --c: #4aa8ff; --dx: 36px; --dy: -54px; }
+.lv-node .confetti i:nth-child(3) { --c: #3fbf55; --dx: -54px; --dy: -10px; }
+.lv-node .confetti i:nth-child(4) { --c: #ffd23a; --dx: 52px; --dy: -16px; }
+.lv-node .confetti i:nth-child(5) { --c: #ff8ad0; --dx: -24px; --dy: -64px; }
+.lv-node .confetti i:nth-child(6) { --c: #b07ae0; --dx: 22px; --dy: -70px; }
+.lv-node .confetti i:nth-child(7) { --c: #ff9a3a; --dx: -60px; --dy: -34px; }
+.lv-node .confetti i:nth-child(8) { --c: #5fd0c0; --dx: 60px; --dy: -40px; }
+@keyframes confetti { from { transform: translate(0, 0) rotate(0); opacity: 1; } to { transform: translate(var(--dx), calc(var(--dy) + 40px)) rotate(540deg); opacity: 0; } }
+/* chests in the island footer */
+.isl-foot { flex-wrap: wrap; }
+.isl-chests { display: flex; gap: 6px; margin-left: auto; }
+.isl-chests .chest { position: relative; width: 52px; height: 48px; border: 0; padding: 0; background: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; }
+.isl-chests .chest .cs { width: 40px; height: 34px; }
+.isl-chests .chest .cs svg { width: 100%; height: 100%; }
+.isl-chests .chest .cn { display: inline-flex; align-items: center; font-family: var(--font-display); font-size: 12px; color: var(--navy); }
+.isl-chests .chest .cn svg { width: 13px; height: 13px; border-radius: 0; background: none; }
+.isl-chests .chest:disabled { cursor: default; }
+.isl-chests .chest:disabled:not(.opened) .cs { filter: grayscale(0.85) brightness(0.95); opacity: 0.6; }
+.isl-chests .chest.opened .ch-lid { transform: rotate(-20deg); }
+.isl-chests .chest.opened .cs { opacity: 0.55; }
+.isl-chests .chest.ready .cs { animation: chestwiggle 1.2s ease-in-out infinite; filter: drop-shadow(0 0 6px rgba(255, 210, 60, 0.95)); }
+@keyframes chestwiggle { 0%, 60%, 100% { transform: none; } 70% { transform: rotate(-8deg) scale(1.1); } 80% { transform: rotate(8deg) scale(1.1); } 90% { transform: rotate(-4deg); } }
+/* level intro: preview strip and the rush card */
+.lv-preview { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.lv-preview .pv { width: 40px; height: 40px; border-radius: 12px; background: #fff; box-shadow: var(--e-1); display: grid; place-items: center; padding: 6px; }
+.lv-preview .pv svg { width: 100%; height: 100%; }
+.lv-card.rush .page-head { background: linear-gradient(180deg, #e8603a, #b0302a); }
+.lv-tip.rush svg { width: 34px; height: 34px; flex: none; }
+/* treasure chest opening */
+.chest-screen { align-items: center; justify-content: center; }
+.chest-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--s-3); width: min(92%, 420px); padding: var(--s-4); border-radius: var(--r-lg); background: linear-gradient(180deg, #fff7d6, #ffe7a0); border: 4px solid #fff; box-shadow: var(--e-3); }
+.chest-title { font-family: var(--font-display); color: #8a4a00; font-size: var(--t-lg); display: inline-flex; align-items: center; gap: 4px; }
+.chest-title svg { width: 22px; height: 22px; }
+.chest-stage { position: relative; margin-top: 18px; width: 170px; height: 150px; display: grid; place-items: center; }
+.chest-rays { position: absolute; inset: -30px; border-radius: 50%; background: repeating-conic-gradient(rgba(255, 210, 60, 0.55) 0 12deg, transparent 12deg 30deg); opacity: 0; mask: radial-gradient(circle, #000 30%, transparent 70%); -webkit-mask: radial-gradient(circle, #000 30%, transparent 70%); }
+.chest-box { width: 150px; height: 130px; }
+.chest-box svg { width: 100%; height: 100%; overflow: visible; }
+.chest-card.open .chest-box { animation: chestshake 0.9s ease-in-out both; }
+.chest-box .ch-lid, .isl-chests .ch-lid { transform-box: fill-box; transform-origin: 0% 100%; }
+.chest-card.open .chest-box .ch-lid { animation: lidpop 0.5s 0.9s var(--ease-back) both; }
+.chest-card.open .chest-rays { animation: rays 0.6s 1s ease-out both, spin-slow 8s 1s linear infinite; }
+@keyframes chestshake { 0%, 100% { transform: none; } 15% { transform: rotate(-6deg) scale(1.05); } 30% { transform: rotate(6deg) scale(1.08); } 45% { transform: rotate(-8deg) scale(1.1); } 60% { transform: rotate(8deg) scale(1.12); } 80% { transform: scale(0.92, 1.1); } }
+@keyframes lidpop { to { transform: translate(-3px, -3px) rotate(-32deg); } }
+@keyframes rays { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: none; } }
+.chest-loot { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.chest-loot .loot { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px 4px 6px; border-radius: var(--r-pill); background: #fff; box-shadow: var(--e-1); font-family: var(--font-display); color: #b5660a; animation: lootpop 0.45s calc(1.15s + 0.15s * var(--i)) var(--ease-back) both; }
+.chest-loot .loot svg { width: 26px; height: 26px; }
+.chest-loot .loot.big { background: linear-gradient(180deg, #b07ae0, #6a3fb0); color: #fff; }
+@keyframes lootpop { from { transform: translateY(30px) scale(0.3); opacity: 0; } to { transform: none; opacity: 1; } }
+.chest-card .btn.big { width: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  .chest-card.open .chest-box, .chest-card.open .chest-rays, .chest-loot .loot, .lv-node .you, .isl-chests .chest.ready .cs, .lv-node .confetti i { animation: none !important; }
+  .chest-card.open .chest-box .ch-lid { animation: none; transform: translate(-3px, -3px) rotate(-32deg); }
+  .chest-card.open .chest-rays { opacity: 1; }
+}
+/* HUD badge during Tide Rush */
+.lv-hud .rush-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px 2px 4px; border-radius: var(--r-pill); background: linear-gradient(180deg, #ff8a5a, #e8403a); color: #fff; font-family: var(--font-display); font-size: 14px; }
+.lv-hud .rush-badge svg { width: 20px; height: 20px; }

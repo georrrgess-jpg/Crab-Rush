@@ -77,7 +77,7 @@ describe('save v1 → v2 migration', () => {
     const st = new MemStorage();
     st.setItem(SAVE_KEY, JSON.stringify(V1_BLOB));
     const d = new SaveStore(st).data;
-    expect(d.v).toBe(2);
+    expect(d.v).toBe(3);
     expect(d.shells).toBe(1234);
     expect(d.best).toBe(2875.4);
     expect(d.stats.runs).toBe(42);
@@ -136,5 +136,25 @@ describe('save v1 → v2 migration', () => {
     expect(buyCrab(d, 'pinch')).toBe(true);
     expect(d.wardrobe.owned.hats).toContain('pirate');
     expect(d.wardrobe.equipped).toMatchObject({ body: 'pinch', hat: 'pirate' });
+  });
+});
+
+describe('save v2 → v3 migration (UPDATE3_PLAN.md §6.4)', () => {
+  it('keeps v2 progress and fills the v3 fields', () => {
+    const v2 = { v: 2, shells: 900, xp: 4000, passClaimed: [1, 2], levels: { 'shore-1': { stars: [true, true, false], best: 40 } }, daily: { lastDate: '2026-10-01', streak: 3, savers: 0, bestToday: 0, bestDate: '', history: [] } };
+    const d = sanitize(v2);
+    expect(d.v).toBe(3);
+    expect(d.shells).toBe(900);
+    expect(d.xp).toBe(4000);
+    expect(d.levels['shore-1']!.stars).toEqual([true, true, false]);
+    expect(d.pearls).toBe(0);
+    expect(d.chests).toEqual([[], [], [], []]);
+    expect(d.crowns).toEqual([]);
+  });
+  it('sanitizes pearls, chests and crowns', () => {
+    const d = sanitize({ v: 3, pearls: -5, chests: [[0, 2, 2, 7], 'x', [1]], crowns: ['shore-1', 'shore-1', 3] });
+    expect(d.pearls).toBe(0);
+    expect(d.chests).toEqual([[0, 2], [], [1], []]);
+    expect(d.crowns).toEqual(['shore-1']);
   });
 });

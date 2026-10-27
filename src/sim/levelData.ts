@@ -618,4 +618,134 @@ export const LEVELS: LevelDef[] = [
   }),
 ];
 
-export const LEVEL_BY_ID = new Map(LEVELS.map((l) => [l.id, l]));
+/**
+ * Bonus levels (UPDATE3_PLAN.md §5.1): one per island, opened by its 18-star chest. They star the two
+ * Island Hop+ obstacles: coconut drops (C) and shell rings (o). Not counted in the 72 stars.
+ */
+export const BONUS_LEVELS: LevelDef[] = [
+  L({
+    id: 'shore-b', island: 0, index: 7, name: 'Coconut Grove', bonus: true,
+    star3: { kind: 'rings', n: 7 },
+    sections: [
+      { grid: `
+        .o.
+        .s.
+        .o.` },
+      { pattern: 'castle-left' },
+      { grid: `
+        ..C
+        .s.
+        do.`, spacing: 11 },
+      { pattern: 'log-hop' },
+      { grid: `
+        C..
+        .o.
+        .s.
+        ..o`, spacing: 11 },
+      { pattern: 'wave-1' },
+      { grid: `
+        .C.
+        o.d
+        s..`, spacing: 11 },
+      { grid: `
+        .o.
+        .l.
+        .o.`, spacing: 10 },
+      { grid: `
+        C.C
+        .o.
+        .d.`, spacing: 12 },
+    ],
+  }),
+  L({
+    id: 'pier-b', island: 1, index: 7, name: 'Hoop Dreams', bonus: true,
+    star3: { kind: 'rings', n: 10 },
+    sections: [
+      { grid: `
+        o..
+        .o.
+        ..o` },
+      { pattern: 'gull-solo' },
+      { grid: `
+        .C.
+        d.o
+        ...
+        o..`, spacing: 11 },
+      { pattern: 'wave-1' },
+      { grid: `
+        ..o
+        .o.
+        o.C`, spacing: 11 },
+      { pattern: 'slalom-3' },
+      { grid: `
+        C..
+        .o.
+        ..d`, spacing: 12 },
+      { grid: `
+        .o.
+        www
+        .o.`, spacing: 11 },
+      { grid: `
+        .d.
+        C.C
+        .o.`, spacing: 12 },
+    ],
+  }),
+  L({
+    id: 'cove-b', island: 2, index: 7, name: 'Coconut Rain', bonus: true,
+    star3: { kind: 'noBumps' },
+    sections: [
+      { grid: `
+        C..
+        .o.
+        ..C`, spacing: 12 },
+      { pattern: 'castle-log' },
+      { grid: `
+        .C.
+        o.o
+        .d.`, spacing: 12 },
+      { pattern: 'gull-pair' },
+      { grid: `
+        ..C
+        C..
+        .o.
+        .d.`, spacing: 12 },
+      { pattern: 'hop-then-dodge' },
+      { grid: `
+        .C.
+        o.d
+        C..`, spacing: 12 },
+    ],
+  }),
+  L({
+    id: 'sunset-b', island: 3, index: 7, name: 'Ring of Fire', bonus: true,
+    star3: { kind: 'rings', n: 9 },
+    sections: [
+      { grid: `
+        .o.
+        o.o
+        .o.` },
+      { pattern: 'chicane' },
+      { grid: `
+        C.o
+        .o.
+        o.C`, spacing: 13 },
+      { pattern: 'double-roller' },
+      { grid: `
+        .d.
+        .o.
+        C.C`, spacing: 13 },
+      { pattern: 'wall-hop' },
+      { grid: `
+        o.d
+        .C.
+        d.o`, spacing: 13 },
+      { grid: `
+        .o.
+        www
+        .o.`, spacing: 12 },
+    ],
+  }),
+];
+
+export const LEVEL_BY_ID = new Map([...LEVELS, ...BONUS_LEVELS].map((l) => [l.id, l]));

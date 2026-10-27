@@ -1,6 +1,6 @@
 /** Island Hop progression (UPDATE2_PLAN.md §5.2), pure: star totals, gates, rewards. */
 import { CFG } from '../config';
-import { LEVELS } from '../sim/levelData';
+import { BONUS_LEVELS, LEVELS } from '../sim/levelData';
 import { mergeStars, starCount } from '../sim/objectives';
 
 export interface LevelRecordLike {
@@ -71,7 +71,7 @@ export interface LevelReward {
  * unlock the Golden Crab. Mutates `r`.
  */
 export function applyLevelResult(r: Records, id: string, stars: readonly boolean[], time: number): LevelReward {
-  const l = LEVELS.find((x) => x.id === id);
+  const l = LEVELS.find((x) => x.id === id) ?? BONUS_LEVELS.find((x) => x.id === id);
   if (!l) throw new Error(`unknown level ${id}`);
   const prev = r[id];
   const before = starCount(prev?.stars);

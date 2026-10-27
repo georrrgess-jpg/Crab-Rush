@@ -11,6 +11,10 @@ export interface MapLevel {
   stars: [boolean, boolean, boolean];
   unlocked: boolean;
   next: boolean;
+  /** Tide Rush crown earned */
+  crown?: boolean;
+  /** just cleared for the first time (confetti on return to the map) */
+  fresh?: boolean;
 }
 
 export interface MapIsland {
@@ -21,13 +25,28 @@ export interface MapIsland {
   complete: boolean;
   rewardName: string;
   levels: MapLevel[];
+  /** treasure chests at 6/12/18 island stars */
+  chests?: { need: number; opened: boolean; ready: boolean }[];
+  /** the island's bonus level (null until its last chest is opened) */
+  bonus?: MapLevel | null;
+  /** Tide Rush open on this island */
+  rush?: boolean;
 }
 
 export interface MapData {
   islands: MapIsland[];
   totalStars: number;
   maxStars: number;
+  /** showing Tide Rush (crowns) instead of stars */
+  rush?: boolean;
+  crowns?: number;
+  maxCrowns?: number;
 }
+
+export const CHEST_SVG = `<svg viewBox="0 0 64 56" aria-hidden="true"><path class="ch-lid" d="M6 22c0-12 10-18 26-18s26 6 26 18z" fill="#c9782e" stroke="#7a3e10" stroke-width="3"/><rect x="6" y="22" width="52" height="30" rx="4" fill="#e09440" stroke="#7a3e10" stroke-width="3"/><path d="M6 30h52" stroke="#7a3e10" stroke-width="3"/><rect x="27" y="24" width="10" height="13" rx="2" fill="#ffd23a" stroke="#7a3e10" stroke-width="2.4"/><path d="M14 22v30M50 22v30" stroke="#ffd23a" stroke-width="4"/></svg>`;
+export const CROWN_SVG = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 30 4 12l9 7 7-11 7 11 9-7-2 18z" fill="#ffd23a" stroke="#b5660a" stroke-width="2.4" stroke-linejoin="round"/><circle cx="20" cy="24" r="2.6" fill="#ff5a8a"/></svg>`;
+/** bonus node position (percent of the island art) */
+const BONUS_AT: [number, number][] = [[95, 70], [96, 66], [95, 66], [95, 64]];
 
 /** Node positions (percent of the island art) along each island's path. */
 const NODES: [number, number][][] = [
@@ -57,21 +76,38 @@ export class MapScreen {
   readonly el: HTMLElement;
   private body: HTMLElement;
   private count: HTMLElement;
+  private rushToggle: HTMLElement;
 
-  constructor(private h: { back(): void; open(id: string): void }) {
+  constructor(private h: { back(): void; open(id: string): void; chest?(island: number, k: number): void; rush?(on: boolean): void }) {
     this.el = el('div', 'screen page map');
     this.el.id = 'map';
     const card = el('div', 'page-card map-card');
     const head = el('div', 'page-head');
     this.count = el('span', 'map-count');
-    head.append(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back'), el('h2', '', 'Island Hop'), this.count);
+    this.rushToggle = el('div', 'map-mode hidden');
+    head.append(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back'), el('h2', '', 'Island Hop'), this.rushToggle, this.count);
     this.body = el('div', 'page-body map-body');
     card.append(head, this.body);
     this.el.append(el('div', 'page-dim'), card);
   }
 
   render(d: MapData): void {
-    this.count.innerHTML = `${ICON.star}<b>${d.totalStars}</b>/${d.maxStars}`;
+    this.el.classList.toggle('rush', !!d.rush);
+    this.count.innerHTML = d.rush ? `${CROWN_SVG}<b>${d.crowns ?? 0}</b>/${d.maxCrowns ?? 0}` : `${ICON.star}<b>${d.totalStars}</b>/${d.maxStars}`;
+    // Normal / Tide Rush switch (once any island is complete)
+    const anyRush = d.islands.some((i) => i.rush);
+    this.rushToggle.classList.toggle('hidden', !anyRush);
+    this.rushToggle.innerHTML = '';
+    for (const [on, label] of [[false, 'Stars'], [true, 'Tide Rush']] as const) {
+      const b = el('button', `mm${!!d.rush === on ? ' on' : ''}${on ? ' rush' : ''}`, label) as HTMLButtonElement;
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(!!d.rush === on));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!!d.rush !== on) this.h.rush?.(on);
+      });
+      this.rushToggle.appendChild(b);
+    }
     this.body.innerHTML = '';
     let focus: HTMLElement | null = null;
     d.islands.forEach((isl, i) => {
@@ -83,25 +119,50 @@ export class MapScreen {
       const path = el('div', 'isl-path');
       path.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polyline points="${pts.map(([x, y]) => `${x},${y}`).join(' ')}" fill="none" stroke="#fff" stroke-width="1.2" stroke-dasharray="2 2.4" vector-effect="non-scaling-stroke" opacity=".85"/></svg>`;
       art.appendChild(path);
-      isl.levels.forEach((lv, k) => {
-        const [x, y] = pts[k] as [number, number];
+      const nodes = isl.bonus ? [...isl.levels, isl.bonus] : isl.levels;
+      nodes.forEach((lv, k) => {
+        const isBonus = k >= isl.levels.length;
+        const [x, y] = isBonus ? (BONUS_AT[i] as [number, number]) : (pts[k] as [number, number]);
         const cleared = lv.stars[0];
-        const node = el('button', `lv-node${lv.unlocked ? '' : ' locked'}${cleared ? ' cleared' : ''}${lv.next ? ' next' : ''}${lv.chase ? ' chase' : ''}`) as HTMLButtonElement;
+        const rushLocked = !!d.rush && !isl.rush;
+        const unlocked = lv.unlocked && !rushLocked;
+        const node = el('button', `lv-node${unlocked ? '' : ' locked'}${cleared ? ' cleared' : ''}${lv.next && !d.rush ? ' next' : ''}${lv.chase ? ' chase' : ''}${isBonus ? ' bonus' : ''}${lv.fresh ? ' fresh' : ''}${d.rush && lv.crown ? ' crowned' : ''}`) as HTMLButtonElement;
         node.type = 'button';
         node.style.left = `${x}%`;
         node.style.top = `${y}%`;
-        node.setAttribute('aria-label', `${isl.name} level ${lv.index}: ${lv.name}${lv.unlocked ? '' : ' (locked)'}`);
-        node.innerHTML = `<span class="ln">${lv.unlocked ? (lv.chase ? ICON.rider : String(lv.index)) : ICON.lock}</span>${lv.unlocked ? stars3(lv.stars, 'tiny') : ''}${lv.next ? `<span class="you">${ICON.crab}</span>` : ''}`;
-        node.disabled = !lv.unlocked;
+        node.setAttribute('aria-label', `${isl.name} ${isBonus ? 'bonus level' : `level ${lv.index}`}: ${lv.name}${unlocked ? '' : ' (locked)'}${d.rush ? (lv.crown ? ', crown earned' : ', no crown yet') : ''}`);
+        const label = !unlocked ? ICON.lock : isBonus ? ICON.star : lv.chase ? ICON.rider : String(lv.index);
+        const marks = !unlocked ? '' : d.rush ? `<span class="crown-mark${lv.crown ? ' on' : ''}">${CROWN_SVG}</span>` : stars3(lv.stars, 'tiny');
+        node.innerHTML = `<span class="ln">${label}</span>${marks}${lv.next && !d.rush ? `<span class="you">${ICON.crab}</span>` : ''}${lv.fresh ? '<span class="confetti" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>' : ''}`;
+        node.disabled = !unlocked;
         node.addEventListener('click', (e) => {
           e.stopPropagation();
           this.h.open(lv.id);
         });
         art.appendChild(node);
-        if (lv.next && isl.unlocked) focus = node;
+        if (lv.next && isl.unlocked && !d.rush) focus = node;
       });
+      if (!isl.bonus && isl.unlocked) {
+        // a locked bonus node teases what the 18-star chest opens
+        const [bx, by] = BONUS_AT[i] as [number, number];
+        art.appendChild(el('div', 'lv-node bonus locked teaser', `<span class="ln">${ICON.star}</span>`)).setAttribute('style', `left:${bx}%;top:${by}%`);
+      }
       if (!isl.unlocked) art.appendChild(el('div', 'isl-lock', `<span class="lk">${ICON.lock}</span><span>Collect <b>${ICON.star}${isl.gate}</b> stars to sail here</span>`));
       const foot = el('div', 'isl-foot', isl.complete ? `${ICON.check}<span>Island complete! Reward: <b>${isl.rewardName}</b></span>` : `<span>Clear all six to win the <b>${isl.rewardName}</b></span>`);
+      // treasure chests at 6/12/18 stars
+      const chests = el('div', 'isl-chests');
+      (isl.chests ?? []).forEach((c, k) => {
+        const b = el('button', `chest${c.opened ? ' opened' : ''}${c.ready ? ' ready' : ''}`, `<span class="cs">${CHEST_SVG}</span><span class="cn">${ICON.star}${c.need}</span>`) as HTMLButtonElement;
+        b.type = 'button';
+        b.disabled = !c.ready;
+        b.setAttribute('aria-label', c.opened ? `Chest at ${c.need} stars: opened` : c.ready ? `Open the ${c.need}-star chest` : `Chest at ${c.need} stars`);
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.h.chest?.(i, k);
+        });
+        chests.appendChild(b);
+      });
+      if (isl.chests?.length) foot.appendChild(chests);
       panel.append(top, art, foot);
       this.body.appendChild(panel);
     });
@@ -119,6 +180,12 @@ export interface IntroData {
   rule: string;
   stars: [boolean, boolean, boolean];
   best: number;
+  /** Tide Rush attempt (crown objective) */
+  rush?: boolean;
+  crown?: boolean;
+  bonus?: boolean;
+  /** what's on the course (icons) */
+  preview?: string[];
 }
 
 export class LevelIntro {
@@ -136,15 +203,23 @@ export class LevelIntro {
 
   render(d: IntroData): void {
     const row = (icon: string, text: string, got: boolean): string => `<div class="obj${got ? ' got' : ''}"><span class="oi">${icon}</span><span class="ot">${text}</span><span class="os">${got ? ICON.star : ICON.starEmpty}</span></div>`;
-    this.card.innerHTML = `<div class="page-head"><h2>${d.chase ? 'Great Wave!' : `Level ${d.index}`}</h2></div>
-      <div class="page-body">
-        <div class="lv-title"><span class="lv-isl">${d.island} · ${d.index}/6</span><b>${d.name}</b></div>
-        ${d.chase ? `<div class="lv-tip">${ICON.rider}<span>A giant wave is chasing you! Bumps let it catch up; grab <b>hourglass shells</b> to push it back.</span></div>` : ''}
+    this.card.classList.toggle('rush', !!d.rush);
+    const title = d.rush ? 'Tide Rush' : d.bonus ? 'Bonus Level' : d.chase ? 'Great Wave!' : `Level ${d.index}`;
+    const preview = d.preview?.length ? `<div class="lv-preview" aria-label="On this course">${d.preview.map((p) => `<span class="pv">${p}</span>`).join('')}</div>` : '';
+    const objs = d.rush
+      ? `<div class="lv-tip rush">${CROWN_SVG}<span><b>Faster</b>, and <b>no power-ups</b>. Reach the flag <b>without a single bump</b> to earn the crown.</span></div>
+        <div class="objs">${row(CROWN_SVG, 'Clean finish: no bumps', !!d.crown)}</div>`
+      : `${d.chase ? `<div class="lv-tip">${ICON.rider}<span>A giant wave is chasing you! Bumps let it catch up; grab <b>hourglass shells</b> to push it back.</span></div>` : ''}
         <div class="objs">
           ${row(ICON.flag, 'Reach the finish flag', d.stars[0])}
           ${row(`<span class="dollar-ico"></span>`, 'Grab all 3 golden sand dollars', d.stars[1])}
           ${row(ICON.trophy, d.rule, d.stars[2])}
-        </div>
+        </div>`;
+    this.card.innerHTML = `<div class="page-head"><h2>${title}</h2></div>
+      <div class="page-body">
+        <div class="lv-title"><span class="lv-isl">${d.island} · ${d.bonus ? 'bonus' : `${d.index}/6`}</span><b>${d.name}</b></div>
+        ${preview}
+        ${objs}
         ${d.best > 0 ? `<div class="lv-best">Best time ${d.best.toFixed(1)} s</div>` : ''}
       </div>`;
     const body = this.card.querySelector('.page-body') as HTMLElement;
@@ -220,6 +295,44 @@ export class LevelEnd {
         if (g) setTimeout(() => this.h.star(i), (0.45 + i * 0.35) * 1000 + 250);
       });
     }
+  }
+
+  hide(): void {
+    this.el.classList.add('hidden');
+  }
+}
+
+/**
+ * Treasure chest opening (UPDATE3_PLAN.md §5.1): the chest shakes, the lid flies, rewards pop out.
+ */
+export class ChestScreen {
+  readonly el: HTMLElement;
+  private card: HTMLElement;
+
+  constructor(private h: { done(): void }) {
+    this.el = el('div', 'screen page chest-screen hidden');
+    this.el.id = 'chest';
+    this.card = el('div', 'chest-card');
+    const dim = el('div', 'page-dim');
+    this.el.append(dim, this.card);
+  }
+
+  show(d: { island: string; need: number; shells: number; pearls: number; xp: number; extras: string[] }, pearlIcon: string): void {
+    this.card.innerHTML = `<div class="chest-title">${d.island} · ${ICON.star}${d.need} chest</div>
+      <div class="chest-stage"><span class="chest-rays"></span><span class="chest-box">${CHEST_SVG}</span></div>
+      <div class="chest-loot">
+        <span class="loot" style="--i:0">${ICON.shell}<b>+${fmt(d.shells)}</b></span>
+        <span class="loot" style="--i:1">${pearlIcon}<b>+${d.pearls}</b></span>
+        <span class="loot" style="--i:2">${ICON.sun}<b>+${d.xp} XP</b></span>
+        ${d.extras.map((x, i) => `<span class="loot big" style="--i:${3 + i}">${ICON.sparkle}<b>${x}</b></span>`).join('')}
+      </div>`;
+    const ok = btn(`${ICON.check}<span>Awesome!</span>`, 'big', () => this.h.done());
+    this.card.appendChild(ok);
+    this.el.classList.remove('hidden');
+    this.card.classList.remove('open');
+    void this.card.offsetWidth;
+    this.card.classList.add('open');
+    setTimeout(() => ok.focus({ preventScroll: true }), 50);
   }
 
   hide(): void {

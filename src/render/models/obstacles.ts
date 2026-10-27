@@ -566,3 +566,44 @@ export function greatWave(): THREE.BufferGeometry {
   g.computeBoundingSphere();
   return g;
 }
+
+// ---- Island Hop+ (UPDATE3_PLAN.md §5.1) ----------------------------------------------------------
+
+/** A coconut (hairy brown ball with three "eyes"); it drops from the palm canopy above the lane. */
+export function coconut(lo = false): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.sphere(0x7a4a24, 0.42, [0, 0, 0], [1, 1.08, 1], lo ? 8 : 14).paint((x, y, z, c) => {
+    // fibrous streaks
+    const f = Math.sin(Math.atan2(z, x) * 22 + y * 9) * 0.5 + 0.5;
+    c.multiplyScalar(0.82 + f * 0.3);
+  });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    b.sphere(0x3a200c, 0.06, [Math.cos(a) * 0.09, 0.42, Math.sin(a) * 0.09], [1, 0.4, 1], 6);
+  }
+  return b.build();
+}
+
+/** The palm canopy a coconut hangs from: fronds plus a little cluster, high over the lane. */
+export function coconutCanopy(lo = false): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const n = lo ? 5 : 7;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    b.tube(i % 2 ? 0x2f9e4a : 0x3dae5a, [[0, 0, 0], [Math.cos(a) * 0.8, 0.12, Math.sin(a) * 0.8], [Math.cos(a) * 1.5, -0.35, Math.sin(a) * 1.5]], (t) => 0.18 * (1 - t) + 0.03, 4, lo ? 4 : 6, false);
+  }
+  for (let i = 0; i < 2; i++) b.sphere(0x7a4a24, 0.26, [Math.cos(i * 2.4) * 0.3, -0.2, Math.sin(i * 2.4) * 0.3], [1, 1.1, 1], 8);
+  return addWind(b.build(), (x, y, z) => Math.min(1, Math.hypot(x, z) / 1.5));
+}
+
+/** A shell ring: a golden hoop studded with little shells. */
+export function shellRing(lo = false): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.torus(0xffc93a, 0.78, 0.085, [0, 0, 0], [0, 0, 0], lo ? 18 : 30).paint((x, y, z, c) => c.multiplyScalar(0.9 + 0.2 * Math.max(0, y / 0.8)));
+  const k = lo ? 6 : 10;
+  for (let i = 0; i < k; i++) {
+    const a = (i / k) * Math.PI * 2;
+    b.sphere(i % 2 ? 0xfff2c8 : 0xff9ab0, 0.07, [Math.cos(a) * 0.78, Math.sin(a) * 0.78, 0.07], [1, 1, 0.6], 6);
+  }
+  return b.build();
+}

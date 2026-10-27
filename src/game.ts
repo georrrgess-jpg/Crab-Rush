@@ -18,8 +18,10 @@ import { PassScreen, rewardView } from './ui/pass';
 import { DailyScreen, type DailyData } from './ui/daily';
 import { DANCE_SVG, GIFT_SVG } from './ui/icons';
 import type { HomeData } from './ui/home';
-import { LevelEnd, LevelIntro, MapScreen, type MapData } from './ui/islands';
-import { LEVELS, LEVEL_BY_ID } from './sim/levelData';
+import { ChestScreen, LevelEnd, LevelIntro, MapScreen, type MapData, type MapLevel } from './ui/islands';
+import { ALL_CROWNS, CHEST_STARS, awardCrown, bonusUnlocked, chestsReady, openChest, rushUnlocked } from './meta/chests';
+import { PEARL } from './ui/home';
+import { BONUS_LEVELS, LEVELS, LEVEL_BY_ID } from './sim/levelData';
 import { compileLevel, type CompiledLevel } from './sim/levels';
 import { evalStars, ruleHud, ruleState, ruleText } from './sim/objectives';
 import { ISLAND_NAMES, ISLAND_REWARD_HATS, TOTAL_STARS, applyLevelResult, islandComplete, islandStars, islandUnlocked, levelUnlocked, nextLevel, totalStars } from './meta/islands';
@@ -41,7 +43,7 @@ import { ICON } from './ui/icons';
 import type { PowerKind } from './sim/events';
 
 type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats'
-  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily';
+  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily' | 'chest';
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
@@ -88,6 +90,13 @@ export class Game {
   private finishClock = 0;
   private goalCheckT = 0;
   private thumbsReady = false;
+  /** Island Hop map shows Tide Rush (crowns) */
+  private mapRush = false;
+  /** the level being played is a Tide Rush attempt */
+  private levelRush = false;
+  /** a level cleared for the first time this visit (confetti on the map) */
+  private freshClear: string | null = null;
+  private chestScreen: ChestScreen;
   // Sunny Pass, Daily Tide, boosts (Phase F)
   private passScreen: PassScreen;
   private dailyScreen: DailyScreen;
@@ -222,7 +231,25 @@ export class Game {
       play: () => this.playDaily(),
     });
     this.stats = new StatsScreen(() => this.closeStats());
-    this.map = new MapScreen({ back: () => this.closeOverlay(), open: (id) => this.openLevel(id) });
+    this.map = new MapScreen({
+      back: () => this.closeOverlay(),
+      open: (id) => this.openLevel(id),
+      chest: (i, k) => this.openIslandChest(i, k),
+      rush: (on) => {
+        this.audio.play('tap');
+        this.mapRush = on;
+        this.map.render(this.mapData());
+      },
+    });
+    this.chestScreen = new ChestScreen({
+      done: () => {
+        this.audio.play('tap');
+        this.chestScreen.hide();
+        this.state = 'map';
+        this.map.render(this.mapData());
+        this.ui.showExtra(this.map.el);
+      },
+    });
     this.levelIntro = new LevelIntro({ play: (id) => this.playLevel(id), back: () => this.openMap() });
     this.levelEnd = new LevelEnd({
       retry: () => this.retryLevel(),
@@ -245,6 +272,7 @@ export class Game {
     this.ui.addScreen(this.map.el);
     this.ui.addScreen(this.levelIntro.el);
     this.ui.addScreen(this.levelEnd.el);
+    this.ui.addScreen(this.chestScreen.el);
     this.ui.addScreen(this.passScreen.el);
     this.ui.addScreen(this.dailyScreen.el);
     this.input.attachSurface(this.touchLayer);
@@ -716,37 +744,91 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ Island Hop
-  private compiledLevel(id: string): CompiledLevel {
-    let c = this.compiled.get(id);
+  private compiledLevel(id: string, rush = false): CompiledLevel {
+    const key = `${id}|${rush ? 1 : 0}`;
+    let c = this.compiled.get(key);
     if (!c) {
-      c = compileLevel(LEVEL_BY_ID.get(id)!);
-      this.compiled.set(id, c);
+      c = compileLevel(LEVEL_BY_ID.get(id)!, rush);
+      this.compiled.set(key, c);
     }
     return c;
+  }
+
+  private levelOpen(id: string): boolean {
+    const b = BONUS_LEVELS.find((l) => l.id === id);
+    if (b) return bonusUnlocked(this.save.data.chests, b.island);
+    return levelUnlocked(this.save.data.levels, id);
+  }
+
+  /** what's on a course, as icons for the level intro */
+  private levelPreview(id: string): string[] {
+    const rows = this.compiledLevel(id).blocks.flatMap((b) => b.rows).join('');
+    const kinds: [RegExp, string][] = [
+      [/B/, `<svg viewBox="0 0 40 40"><path d="M8 34V18l4-3v-5h4v5l4-4 4 4v-5h4v5l4 3v16z" fill="#e9c37e" stroke="#9a6a2a" stroke-width="2"/></svg>`],
+      [/[Ll]/, `<svg viewBox="0 0 40 40"><rect x="4" y="18" width="32" height="12" rx="6" fill="#a8743f" stroke="#6a4420" stroke-width="2"/><circle cx="31" cy="24" r="4" fill="#d9a46a"/></svg>`],
+      [/[Ww]/, `<svg viewBox="0 0 40 40"><path d="M3 30c4-14 12-22 22-22 6 0 10 4 12 8-4-4-10-4-12 2 4-1 8 1 8 5-4-4-10-2-12 3-3 5-10 6-18 4z" fill="#2fa6d6"/></svg>`],
+      [/[Rr]/, `<svg viewBox="0 0 40 40"><circle cx="20" cy="22" r="13" fill="#fff" stroke="#173f66" stroke-width="2"/><path d="M20 9a13 13 0 0 1 0 26M7 22h26" stroke="#ff5a4a" stroke-width="4" fill="none"/></svg>`],
+      [/G/, `<svg viewBox="0 0 40 40"><path d="M4 20c6-6 12-6 16 1 4-7 10-7 16-1-6-1-10 0-16 8-6-8-10-9-16-8z" fill="#fff" stroke="#173f66" stroke-width="2"/></svg>`],
+      [/C/, `<svg viewBox="0 0 40 40"><path d="M20 4c-8 2-14 6-16 10 6-2 12-2 16 2 4-4 10-4 16-2-2-4-8-8-16-10z" fill="#2f9e4a"/><circle cx="20" cy="27" r="9" fill="#7a4a24"/></svg>`],
+      [/o/, `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="13" fill="none" stroke="#ffc93a" stroke-width="5"/></svg>`],
+      [/\^|D/, `<svg viewBox="0 0 40 40"><ellipse cx="20" cy="28" rx="15" ry="6" fill="#ff5a8a"/><path d="M14 22l6-12 6 12" stroke="#fff" stroke-width="3" fill="none"/></svg>`],
+      [/T/, `<svg viewBox="0 0 40 40"><ellipse cx="20" cy="24" rx="16" ry="9" fill="#3fc6d8" stroke="#1a7898" stroke-width="2"/></svg>`],
+      [/H/, `<svg viewBox="0 0 40 40"><path d="M12 6h16v4l-6 10 6 10v4H12v-4l6-10-6-10z" fill="#e9b53a" stroke="#8a5a10" stroke-width="2"/></svg>`],
+    ];
+    return kinds.filter(([re]) => re.test(rows)).map(([, svg]) => svg);
+  }
+
+  /** open an island treasure chest: rewards, then the opening animation */
+  private openIslandChest(island: number, k: number): void {
+    const d = this.save.data;
+    const r = openChest(d, island, k);
+    if (!r) return this.audio.play('deny');
+    this.save.save();
+    this.audio.play('claim');
+    this.haptics.play('success');
+    const extras: string[] = [];
+    if (r.body) extras.push('Reef crab!');
+    if (r.bonus) extras.push(`Bonus level: ${LEVEL_BY_ID.get(r.bonus)?.name ?? ''}`);
+    this.state = 'chest';
+    this.chestScreen.show({ island: ISLAND_NAMES[island] as string, need: CHEST_STARS[k] as number, shells: r.shells, pearls: r.pearls, xp: r.xp, extras }, PEARL);
+    this.ui.showExtra(this.chestScreen.el);
   }
 
   private mapData(): MapData {
     const r = this.save.data.levels;
     const next = nextLevel(r);
+    const d = this.save.data;
+    const ready = chestsReady(d);
+    const fresh = this.freshClear;
+    this.freshClear = null;
+    const node = (l: (typeof LEVELS)[number], unlocked: boolean, isNext: boolean): MapLevel => ({
+      id: l.id,
+      index: l.index,
+      name: l.name,
+      chase: !!l.chase,
+      stars: r[l.id]?.stars ?? [false, false, false],
+      unlocked,
+      next: isNext,
+      crown: d.crowns.includes(l.id),
+      fresh: l.id === fresh,
+    });
     return {
       totalStars: totalStars(r),
       maxStars: TOTAL_STARS,
+      rush: this.mapRush,
+      crowns: d.crowns.length,
+      maxCrowns: ALL_CROWNS,
       islands: ISLAND_NAMES.map((name, i) => ({
+        chests: CHEST_STARS.map((need, k) => ({ need, opened: (d.chests[i] ?? []).includes(k), ready: ready.some(([a, b]) => a === i && b === k) })),
+        bonus: bonusUnlocked(d.chests, i) ? node(BONUS_LEVELS.find((l) => l.island === i)!, true, false) : null,
+        rush: rushUnlocked(r, i),
         name,
         stars: islandStars(r, i),
         unlocked: islandUnlocked(r, i),
         gate: CFG.island.gates[i] as number,
         complete: islandComplete(r, i),
         rewardName: (ITEM_NAMES[ISLAND_REWARD_HATS[i] as string] as string) ?? '',
-        levels: LEVELS.filter((l) => l.island === i).map((l) => ({
-          id: l.id,
-          index: l.index,
-          name: l.name,
-          chase: !!l.chase,
-          stars: r[l.id]?.stars ?? [false, false, false],
-          unlocked: levelUnlocked(r, l.id),
-          next: l.id === next,
-        })),
+        levels: LEVELS.filter((l) => l.island === i).map((l) => node(l, levelUnlocked(r, l.id), l.id === next)),
       })),
     };
   }
@@ -776,14 +858,15 @@ export class Game {
   }
 
   private openLevel(id: string): void {
-    if (!levelUnlocked(this.save.data.levels, id)) return;
+    if (!this.levelOpen(id)) return;
     const from = this.state;
     const show = (): void => {
       const l = LEVEL_BY_ID.get(id)!;
       const rec = this.save.data.levels[id];
       this.state = 'levelIntro';
       this.lastIntro = id;
-      this.levelIntro.render({ id, island: ISLAND_NAMES[l.island] as string, index: l.index, name: l.name, chase: !!l.chase, rule: ruleText(l.star3), stars: rec?.stars ?? [false, false, false], best: rec?.best ?? 0 });
+      const rush = this.mapRush && rushUnlocked(this.save.data.levels, l.island);
+      this.levelIntro.render({ id, island: ISLAND_NAMES[l.island] as string, index: l.index, name: l.name, chase: !!l.chase, rule: ruleText(l.star3), stars: rec?.stars ?? [false, false, false], best: rec?.best ?? 0, rush, crown: this.save.data.crowns.includes(id), bonus: !!l.bonus, preview: this.levelPreview(id) });
       this.ui.showExtra(this.levelIntro.el);
     };
     this.audio.play('tap');
@@ -799,11 +882,12 @@ export class Game {
     if (this.state !== 'levelIntro') return;
     if (!this.flags.shots) this.audio.unlock();
     this.audio.play('tap');
+    this.levelRush = this.mapRush && rushUnlocked(this.save.data.levels, LEVEL_BY_ID.get(id)!.island);
     this.startLevel(id, true);
   }
 
   private startLevel(id: string, withIntro: boolean): void {
-    const cl = this.compiledLevel(id);
+    const cl = this.compiledLevel(id, this.levelRush);
     this.currentLevel = id;
     this.dailyRun = false;
     this.runBoost = false;
@@ -839,7 +923,7 @@ export class Game {
     this.audio.setMusicMode('run');
     this.audio.setTrack(cl.def.chase ? 'chase' : 'island');
     this.save.data.stats.runs++;
-    this.ui.toast(cl.def.name, { sub: cl.def.chase ? 'Outrun the Great Wave!' : 'Grab all 3 sand dollars', kind: 'gold', life: 2.2 });
+    this.ui.toast(this.levelRush ? `Tide Rush: ${cl.def.name}` : cl.def.name, { sub: this.levelRush ? 'No bumps for the crown!' : cl.def.chase ? 'Outrun the Great Wave!' : 'Grab all 3 sand dollars', kind: 'gold', life: 2.2 });
   }
 
   startLevelHook(id: string): void {
@@ -861,7 +945,7 @@ export class Game {
 
   private nextLevelId(): string | null {
     const cur = this.currentLevel ? LEVEL_BY_ID.get(this.currentLevel) : null;
-    if (!cur) return null;
+    if (!cur || cur.bonus) return null;
     const i = LEVELS.indexOf(cur);
     const n = LEVELS[i + 1];
     return n && levelUnlocked(this.save.data.levels, n.id) ? n.id : null;
@@ -883,7 +967,13 @@ export class Game {
     d.stats.totalPowerups += w.stats.powerups;
     d.stats.totalDistance += w.distance;
     let reward = { stars: (d.levels[id]?.stars ?? [false, false, false]) as [boolean, boolean, boolean], newStars: 0, firstClear: false, shells: 0, xp: 0, islandCompleted: null as number | null, goldCrab: false };
-    if (success) reward = applyLevelResult(d.levels, id, earned, w.levelStats.time);
+    // Tide Rush pays crowns (a clean finish), not stars
+    let crown: ReturnType<typeof awardCrown> | null = null;
+    if (this.levelRush) {
+      if (success && w.levelStats.bumps === 0) crown = awardCrown(d, id);
+      if (success) reward.xp = 30;
+    } else if (success) reward = applyLevelResult(d.levels, id, earned, w.levelStats.time);
+    if (reward.firstClear) this.freshClear = id;
     const xp = reward.xp + xpFor({ shells: w.stats.shells });
     d.shells += reward.shells;
     d.xp += xp;
@@ -895,6 +985,12 @@ export class Game {
     }
     if (reward.goldCrab) grant(d.wardrobe, 'bodies', 'gold');
     this.save.save();
+    if (crown?.newCrown) {
+      setTimeout(() => {
+        this.audio.play('levelUp');
+        this.ui.toast('Crown earned!', { kind: 'gold', sub: crown!.lava ? '12 crowns: the Lava crab is yours!' : `+${crown!.pearls} pearls · ${d.crowns.length}/${ALL_CROWNS} crowns`, life: 2.8 });
+      }, 1300);
+    } else if (this.levelRush && success) this.ui.toast('So close!', { sub: 'Finish without a bump for the crown', life: 2.4 });
     this.state = 'levelEnd';
     this.resultsAt = this.clock;
     this.input.setPointerEnabled(false);
@@ -903,10 +999,10 @@ export class Game {
     this.levelEnd.show(
       {
         success,
-        name: def.name,
+        name: this.levelRush ? `Tide Rush · ${def.name}` : def.name,
         stars: reward.stars,
-        earned,
-        rule: ruleText(def.star3),
+        earned: this.levelRush ? [success, !!crown || (success && w.levelStats.bumps === 0), false] : earned,
+        rule: this.levelRush ? 'Crown: finished without a bump' : ruleText(def.star3),
         dollars: w.levelStats.dollars,
         time: w.levelStats.time,
         shells: reward.shells,
@@ -1160,6 +1256,12 @@ export class Game {
     }
     if (s === 'stats' && a === 'back') return this.closeStats();
     if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map' || s === 'pass' || s === 'daily') && a === 'back') this.closeOverlay();
+    if (s === 'chest' && (a === 'back' || a === 'confirm' || alsoConfirm)) {
+      this.chestScreen.hide();
+      this.state = 'map';
+      this.map.render(this.mapData());
+      this.ui.showExtra(this.map.el);
+    }
     if (s === 'daily' && (a === 'confirm' || alsoConfirm)) this.playDaily();
     if (s === 'levelIntro') {
       if (a === 'back') this.openMap();
@@ -1357,8 +1459,8 @@ export class Game {
     }
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
-    const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily';
-    const mode: CamMode = this.state === 'map' || this.state === 'levelIntro' ? 'map' : menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
+    const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily' || this.state === 'chest';
+    const mode: CamMode = this.state === 'map' || this.state === 'levelIntro' || this.state === 'chest' ? 'map' : menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
     if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
     this.view.frame(this.world, alpha, dt, mode, this.introT);
@@ -1367,10 +1469,13 @@ export class Game {
       const w = this.world;
       const pk = w.power.kind;
       this.ui.updateHUD(w.runShells, w.distance, pk, pk ? w.power.t / w.power.dur : 0, w.streak);
-      if (w.level) {
+      if (w.level?.rush) {
+        const b = w.levelStats.bumps;
+        this.ui.updateLevelHUD((w.dist - w.levelStart) / w.level.length, w.levelStats.dollars, b === 0 ? 'Crown: no bumps' : 'Crown lost', b === 0, b > 0, w.chaseGap);
+      } else if (w.level) {
         const rs = ruleState(w.level.def.star3, w.levelStats);
         const k = w.level.def.star3.kind;
-        const progressRule = k === 'shells' || k === 'hourglasses' || k === 'streak';
+        const progressRule = k === 'shells' || k === 'hourglasses' || k === 'streak' || k === 'rings';
         // "avoid" rules show green while intact; progress rules turn green once reached
         const ok = progressRule ? ruleState(w.level.def.star3, { ...w.levelStats, finished: true }).met : !rs.lost;
         this.ui.updateLevelHUD((w.dist - w.levelStart) / w.level.length, w.levelStats.dollars, ruleHud(w.level.def.star3, w.levelStats), ok, rs.lost, w.chaseGap);
@@ -1483,6 +1588,11 @@ export class Game {
           break;
         case 'tidepool':
           this.audio.play('splash');
+          break;
+        case 'ring':
+          this.audio.play('bigShell', { pan: ev.x * 0.12, pitch: 3 });
+          this.haptics.play('light');
+          this.ui.floater(`Ring! +${ev.bonus}`, 0.5, 0.4);
           break;
         case 'gullDive':
           this.audio.play('gull', { pan: ev.x * 0.15 });
@@ -1609,8 +1719,10 @@ export class Game {
         g.onAction(a, false);
       },
       /** start an Island Hop level directly (optionally autopiloted) */
-      level(id: string, o: { autopilot?: boolean; intro?: boolean } = {}) {
+      level(id: string, o: { autopilot?: boolean; intro?: boolean; rush?: boolean } = {}) {
         if (o.autopilot !== undefined) g.flags.autopilot = o.autopilot;
+        g.levelRush = !!o.rush;
+        g.mapRush = !!o.rush;
         g.toTitle();
         if (o.intro) {
           g.openMap();

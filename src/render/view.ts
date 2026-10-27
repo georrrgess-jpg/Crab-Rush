@@ -487,6 +487,13 @@ export class GameView {
           this.puff(p.x, w.dist, 16, 0.7);
           for (let i = 0; i < 10; i++) this.sparks.spawn(p.x, 0.8, w.dist, (Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 3, 0.5, 0.3, 0xffe14a, 8);
           break;
+        case 'ring':
+          this.crab.happy();
+          for (let i = 0; i < 16; i++) {
+            const a = (i / 16) * Math.PI * 2;
+            this.sparks.spawn(ev.x + Math.cos(a) * 0.8, ev.y + Math.sin(a) * 0.8, w.dist, Math.cos(a) * 2, Math.sin(a) * 2 + 1, 0, 0.5, 0.25, i % 2 ? 0xfff0a0 : 0xffffff, 2);
+          }
+          break;
         case 'closeShave':
           // the obstacle was in the lane just left behind
           this.crab.flinch(Math.sign(p.prevLane - p.lane));

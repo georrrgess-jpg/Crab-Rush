@@ -7,6 +7,8 @@
  *   d  golden sand dollar (ground)        D  bounce pad with a high sand dollar at its apex
  *   ^  bounce pad                         H  hourglass shell (Great Wave chase levels)
  *   T  tide pool (walkable, slows you)    P  power-up (kind from the section)
+ *   C  coconut drop (a palm's shadow marks the lane, then it falls; plays like a gull G)
+ *   o  shell ring (fly or run through it for bonus shells and +1 streak; never blocks)
  */
 import { CFG } from '../config';
 import type { PowerKind } from './events';
@@ -20,7 +22,8 @@ export type StarRule =
   | { kind: 'time'; s: number }
   | { kind: 'noPower' }
   | { kind: 'hourglasses'; n: number }
-  | { kind: 'streak'; n: number };
+  | { kind: 'streak'; n: number }
+  | { kind: 'rings'; n: number };
 
 export type Section =
   | { pattern: string; mirror?: boolean; powerup?: PowerKind; gap?: number }
@@ -34,6 +37,8 @@ export interface LevelDef {
   name: string;
   /** the Great Wave chases the crab */
   chase?: boolean;
+  /** an island bonus level (unlocked by its 18-star chest; not counted in the 72 stars) */
+  bonus?: boolean;
   star3: StarRule;
   sections: Section[];
 }
@@ -57,9 +62,11 @@ export interface CompiledLevel {
   speed: readonly [number, number];
   dollars: number;
   hourglasses: number;
+  /** Tide Rush (hard mode): compiled faster, so its rows are spread out to stay fair */
+  rush: boolean;
 }
 
-const GRID_OK = /^[.BLWRGsSPlrwdD^HT]{3}$/;
+const GRID_OK = /^[.BLWRGsSPlrwdD^HTCo]{3}$/;
 
 function gridRows(grid: string, id: string): string[] {
   const lines = grid
@@ -79,8 +86,10 @@ export function levelSpeed(speed: readonly [number, number], rel: number, length
   return speed[0] + (speed[1] - speed[0]) * t;
 }
 
-export function compileLevel(def: LevelDef): CompiledLevel {
-  const speed = CFG.island.speeds[def.island] as readonly [number, number];
+export function compileLevel(def: LevelDef, rush = false): CompiledLevel {
+  const base = CFG.island.speeds[def.island] as readonly [number, number];
+  const mul = rush ? CFG.island.rushSpeed : 1;
+  const speed = [base[0] * mul, base[1] * mul] as const;
   // two passes: the second uses the ramp over the first pass's length
   let length = 0;
   let blocks: Block[] = [];
@@ -121,12 +130,12 @@ export function compileLevel(def: LevelDef): CompiledLevel {
     if (c === 'd' || c === 'D') dollars++;
     if (c === 'H') hourglasses++;
   }
-  return { def, blocks, length, speed, dollars, hourglasses };
+  return { def, blocks, length, speed, dollars, hourglasses, rush };
 }
 
 /** Pickups and pads are free cells for the solver. */
 function solverRow(r: string): string {
-  return r.replace(/[dDH^T]/g, '.');
+  return r.replace(/[dDH^To]/g, '.').replace(/C/g, 'G');
 }
 
 /**

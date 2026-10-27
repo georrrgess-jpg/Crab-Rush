@@ -255,11 +255,13 @@ export class World {
     e.spin = 0;
     e.power = undefined;
     e.meetWz = undefined;
+    e.alt = undefined;
     Object.assign(e, extra);
     if (kind === 'roller' && e.meetWz !== undefined) e.wz = e.prevWz = this.rollerWz(e.meetWz);
     if (kind === 'gull') e.y = CFG.gull.height;
     if (kind === 'dollar' && extra.y === undefined) e.y = CFG.island.dollarY;
     if (kind === 'hourglass') e.y = CFG.shell.y;
+    if (kind === 'ring') e.y = CFG.island.dollarY + 0.3;
     if (kind === 'tidepool') {
       e.w = CFG.island.tidepool.w;
       e.d = CFG.island.tidepool.d;
@@ -596,7 +598,7 @@ export class World {
     for (const e of this.entities) {
       if (e.dead) continue;
       if (e.kind === 'arch' || e.kind === 'banner' || e.kind === 'powerup') continue;
-      if (e.kind === 'dollar' || e.kind === 'hourglass' || e.kind === 'pad' || e.kind === 'tidepool' || e.kind === 'flag') continue;
+      if (e.kind === 'dollar' || e.kind === 'hourglass' || e.kind === 'pad' || e.kind === 'tidepool' || e.kind === 'flag' || e.kind === 'ring') continue;
       const rel = e.wz - this.dist;
       const halfZ = (e.d + P.d) / 2;
       if (Math.abs(rel) >= halfZ) continue;
@@ -710,6 +712,18 @@ export class World {
           if (this.chaseGap !== null) this.chaseGap = Math.min(CFG.island.chase.maxGap, this.chaseGap + CFG.island.chase.hourglass);
           this.events.push({ t: 'hourglass', gap: this.chaseGap ?? 0 });
         }
+        continue;
+      }
+      if (e.kind === 'ring') {
+        // through the hoop: same lane as it passes (on the ground or in the air)
+        const rel = e.wz - this.dist;
+        if (Math.abs(rel) > 0.9 || Math.abs(p.x - e.x) > 1.0) continue;
+        e.dead = true;
+        this.levelStats.rings++;
+        this.stats.bonus += CFG.island.ringBonus;
+        this.streak++;
+        this.levelStats.maxStreak = Math.max(this.levelStats.maxStreak, this.streak);
+        this.events.push({ t: 'ring', x: e.x, y: e.y, bonus: CFG.island.ringBonus });
         continue;
       }
       if (e.kind !== 'powerup') continue;

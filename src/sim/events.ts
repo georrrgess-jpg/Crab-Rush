@@ -27,4 +27,5 @@ export type GameEvent =
   | { t: 'hourglass'; gap: number }
   | { t: 'pad' }
   | { t: 'tidepool' }
-  | { t: 'finish' };
+  | { t: 'finish' }
+  | { t: 'ring'; x: number; y: number; bonus: number };

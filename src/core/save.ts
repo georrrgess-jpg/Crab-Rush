@@ -41,10 +41,10 @@ export interface LifetimeStats {
   longestRun: number;
 }
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface SaveData {
-  v: 2;
+  v: 3;
   shells: number;
   best: number;
   stats: LifetimeStats;
@@ -62,13 +62,20 @@ export interface SaveData {
   daily: DailyState;
   /** wardrobe items the player has looked at ("slot:id"); owned but unseen items show NEW */
   seen: string[];
+  // ---- v3 (UPDATE3_PLAN.md §6.4)
+  /** the rare currency (achievements, quests, chests, Cove) */
+  pearls: number;
+  /** opened island chests: per island, the chest indexes (0..2) */
+  chests: number[][];
+  /** level ids with a Tide Rush crown */
+  crowns: string[];
 }
 
 export const SAVE_KEY = 'crabdash.save';
 
 export function defaultSave(): SaveData {
   return {
-    v: 2,
+    v: 3,
     shells: 0,
     best: 0,
     stats: { runs: 0, totalShells: 0, totalDistance: 0, totalHops: 0, totalWaves: 0, totalPowerups: 0, totalCloseShaves: 0, runsByCrab: {}, longestRun: 0 },
@@ -85,6 +92,9 @@ export function defaultSave(): SaveData {
     levels: {},
     daily: defaultDaily(),
     seen: ['bodies:sandy', 'hats:straw', 'hats:none', 'trails:sand', 'dances:clap'],
+    pearls: 0,
+    chests: [[], [], [], []],
+    crowns: [],
   };
 }
 
@@ -169,7 +179,7 @@ export function sanitize(raw: unknown): SaveData {
     ? [...new Set(r.passClaimed.filter((t): t is number => typeof t === 'number' && Number.isInteger(t) && t >= 1 && t <= PASS_TIERS))]
     : [];
   return {
-    v: 2,
+    v: 3,
     shells: Math.floor(num(r.shells, 0)),
     best: num(r.best, 0),
     stats: {
@@ -207,6 +217,12 @@ export function sanitize(raw: unknown): SaveData {
     daily: sanitizeDaily(r.daily),
     // older saves had no NEW tracking: everything already owned counts as seen
     seen: Array.isArray(r.seen) ? [...new Set(strArr(r.seen).filter((k) => ITEM_BY_ID.has(k)))] : ownedKeys(wardrobe),
+    pearls: Math.floor(num(r.pearls, 0)),
+    chests: [0, 1, 2, 3].map((i) => {
+      const c = Array.isArray(r.chests) ? (r.chests as unknown[])[i] : null;
+      return Array.isArray(c) ? [...new Set(c.filter((k): k is number => k === 0 || k === 1 || k === 2))].sort() : [];
+    }),
+    crowns: [...new Set(strArr(r.crowns))],
   };
 }
 

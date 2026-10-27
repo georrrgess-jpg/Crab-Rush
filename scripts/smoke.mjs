@@ -184,6 +184,24 @@ try {
   await page.waitForFunction(() => window.__crab.game.state === 'map', null, { timeout: 2000 }).catch(() => {});
   const afterEsc = (await st()).state;
   check(afterEsc === 'map', `Escape from level end goes back to the map (${afterEsc})`);
+  // ---------------- Island Hop+: chests, bonus level, Tide Rush crown
+  await page.evaluate(() => { window.__crab.unlockAll(3); window.__crab.setState('map'); });
+  await fr(3);
+  const p0 = await page.evaluate(() => window.__crab.game.save.data.pearls);
+  await page.click('.isl-chests .chest.ready');
+  await fr(2);
+  check((await st()).state === 'chest' && (await page.evaluate(() => window.__crab.game.save.data.pearls)) > p0, 'a ready island chest opens and pays pearls');
+  await page.keyboard.press('Escape');
+  await fr(2);
+  check((await st()).state === 'map', 'closing the chest returns to the map');
+  await page.evaluate(() => { for (const k of [1, 2]) window.__crab.game.openIslandChest(0, k); window.__crab.setState('map'); });
+  await fr(2);
+  check(await page.isVisible('.lv-node.bonus:not(.teaser):not(.locked)'), 'the 18-star chest opens the bonus level');
+  await page.evaluate(() => { window.__crab.level('shore-1', { autopilot: true, rush: true }); window.__crab.skip(60 * 45); window.__crab.frames(60 * 2); });
+  const rush = await page.evaluate(() => ({ state: window.__crab.game.state, crowns: window.__crab.game.save.data.crowns, rush: window.__crab.game.world.level?.rush }));
+  check(rush.state === 'levelEnd' && rush.rush === true && rush.crowns.includes('shore-1'), 'a clean Tide Rush finish earns a crown');
+  await page.evaluate(() => { window.__crab.game.flags.autopilot = false; window.__crab.level('shore-2', { rush: false }); window.__crab.setState('title'); });
+
   // ---------------- Sunny Pass: claim
   await page.evaluate(() => { window.__crab.xp(400); window.__crab.setState('pass'); });
   await fr(3);
