@@ -68,11 +68,11 @@ describe('wardrobe', () => {
     expect(equip(w, 'hats', 'crown')).toBe(true);
     expect(w.equipped.hat).toBe('crown');
   });
-  it('has unique ids per slot and 12 new hats', () => {
+  it('has unique ids per slot and 13 new hats (12 from Update 2, the Race Helmet from Update 4)', () => {
     const keys = ITEMS.map((i) => `${i.slot}:${i.id}`);
     expect(new Set(keys).size).toBe(keys.length);
     const v1 = ['straw', 'shades', 'flower', 'captain', 'pirate', 'tophat', 'none'];
-    expect(ITEMS.filter((i) => i.slot === 'hats' && !v1.includes(i.id))).toHaveLength(12);
+    expect(ITEMS.filter((i) => i.slot === 'hats' && !v1.includes(i.id))).toHaveLength(13);
   });
 });
 

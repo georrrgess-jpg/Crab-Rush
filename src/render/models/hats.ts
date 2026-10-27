@@ -6,11 +6,11 @@ import { GeoBuilder } from '../geo';
 export type HatKind =
   | 'none' | 'straw' | 'shades' | 'flower' | 'pirate' | 'captain' | 'tophat'
   | 'parrot' | 'sunflower' | 'beanie' | 'snorkel' | 'crown' | 'chef' | 'propeller'
-  | 'flowercrown' | 'headphones' | 'bucket' | 'viking' | 'halo';
+  | 'flowercrown' | 'headphones' | 'bucket' | 'viking' | 'halo' | 'helmet';
 
 export const HAT_KINDS: readonly HatKind[] = [
   'none', 'straw', 'shades', 'flower', 'pirate', 'captain', 'tophat', 'parrot', 'sunflower', 'beanie',
-  'snorkel', 'crown', 'chef', 'propeller', 'flowercrown', 'headphones', 'bucket', 'viking', 'halo',
+  'snorkel', 'crown', 'chef', 'propeller', 'flowercrown', 'headphones', 'bucket', 'viking', 'halo', 'helmet',
 ];
 
 export interface HatModel {
@@ -242,6 +242,18 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
         b.paint((x, y, z, c) => c.lerp(new THREE.Color(0xb8a888), Math.max(0, y - 0.45) * 2.5));
       }
       return out('gloss', [0, 1.01, -0.06], -0.15);
+    case 'helmet': {
+      // Race Helmet (Crab Cup): a glossy shell with a racing stripe, a visor and a number badge
+      b.lathe(0xffffff, smooth([[0.52, 0.0], [0.54, 0.1], [0.5, 0.26], [0.38, 0.42], [0.2, 0.51], [0.0, 0.53]], 16), seg(24));
+      b.paint((x, y, z, c) => {
+        if (Math.abs(x) < 0.09) c.set(0xe53935);
+        else if (Math.abs(x) < 0.12) c.set(0x173f66);
+      });
+      b.lathe(0x173f66, [[0.55, -0.02], [0.56, 0.05], [0.54, 0.08], [0.52, 0.08], [0.52, -0.02]], seg(24));
+      b.sphere(0x2a3a4a, 0.36, [0, 0.07, 0.36], [1, 0.22, 0.55], 12);
+      b.cyl(0xffd23a, 0.1, 0.1, 0.03, [0.42, 0.28, 0.1], [0, 0, Math.PI / 2 - 0.4], 10);
+      return out('gloss', [0, 1.01, -0.07], -0.2);
+    }
     case 'halo':
       b.torus(0xffe27a, 0.34, 0.05, [0, 0, 0], [Math.PI / 2, 0, 0], seg(28));
       return out('gold', [0, 1.38, -0.04], -0.15);

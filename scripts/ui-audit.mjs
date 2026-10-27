@@ -32,6 +32,8 @@ const SCREENS = {
   map: { open: "window.__crab.setState('map')", root: '#map' },
   levelintro: { open: "window.__crab.unlockAll(2); window.__crab.level('shore-3', { intro: true })", root: '#level-intro', primary: '#level-intro .btn.big' },
   levelend: { open: "window.__crab.level('shore-1', { autopilot: true }); window.__crab.skip(60 * 40); window.__crab.frames(60 * 3)", root: '#level-end', primary: '#level-end .btn.big' },
+  cup: { open: "window.__crab.setState('cup')", root: '#cup', primary: '#cup .cup-go' },
+  raceend: { open: "window.__crab.race('sandy', { autopilot: true }); for (let i = 0; i < 600 && window.__crab.game.state !== 'raceEnd'; i++) window.__crab.skip(30); window.__crab.frames(30)", root: '#race-end', primary: '#race-end .btn.big' },
   chest: { open: "window.__crab.unlockAll(3); window.__crab.setState('map'); window.__crab.game.openIslandChest(0, 0)", root: '#chest', primary: '#chest .btn.big' },
   cove: { open: "window.__crab.setState('cove')", root: '#cove' },
   covefriends: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"friends\"]').click()", root: '#cove' },
@@ -41,6 +43,7 @@ const SCREENS = {
   settings: { open: "window.__crab.setState('settings')", root: '#settings' },
   howto: { open: "window.__crab.setState('howto')", root: '#howto' },
   pause: { open: "window.__crab.setState('pause')", root: '#pause', primary: '#pause .btn.big' },
+  racehud: { open: "window.__crab.race('sandy', { autopilot: true }); window.__crab.frames(60 * 3)", root: '#hud' },
   hud: { open: "window.__crab.startRun({ seed: 3, tutorial: false }); window.__crab.frames(30)", root: '#hud' },
   results: { open: "window.__crab.startRun({ seed: 3, tutorial: false }); window.__crab.frames(60); window.__crab.crash(); window.__crab.frames(120); document.getElementById('results').click()", root: '#results', primary: '#results .btn.big' },
 };

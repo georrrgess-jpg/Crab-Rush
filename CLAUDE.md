@@ -1,11 +1,11 @@
 # Crab Dash: working rules
 
-Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is planned in **`UPDATE4_PLAN.md`**. Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
+Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is in **`UPDATE4_PLAN.md`**. Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
 
 ## Commands
 - `npm run dev`: dev server
 - `npm run build`: production build into `dist/`
-- `npm test`: Vitest (pattern validator, autopilot fairness, save + v1→v2→v3 migration, goals, economy, meta (XP/pass/wardrobe/daily/chests/cove/friends/achievements), crab poses and hats, springs/tweens, router, audio, quality)
+- `npm test`: Vitest (pattern validator, autopilot fairness, save + v1→v2→v3→v4 migration, goals, economy, meta (XP/pass/wardrobe/daily/chests/cove/friends/achievements), crab poses and hats, springs/tweens, router, audio, quality)
 - `npm run shots -- <label> [--no-build] [--only=title,run,...] [--views=phone,desktop,...]`: Playwright screenshots into `docs/screenshots/`. Chromium and Playwright are preinstalled: use `require('playwright')` and never run `playwright install`.
 - `node scripts/smoke.mjs [--no-build]`: end-to-end browser smoke test (shader compile check, controls, tutorial, shop, settings, pause, rotation, results)
 - `node scripts/perf.mjs [--no-build] [--tiers=high,medium,low]`: draw-call/triangle budget check per tier, zone, Home and a full Cove (exit 1 if over)
@@ -15,7 +15,7 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - `node scripts/ui-motion.mjs <label> [--no-build]`: UI motion frame strips (card morph, sheet, reward fly)
 - `node scripts/crab-closeup.mjs <label> [--no-build] [--body=id] [--hat=id]`: large front / three-quarter / side / back renders of the crab for model review
 - `BALANCE=1 npx vitest run tests/balance.test.ts`: simulated-player balance report
-- Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`, `xp`, `level`, `daily`, `setDate`, `wear`, `unlockAll`, `cine`, `whatsNew`, `shaderCheck`, `budgets`.
+- Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `race`, `setState`, `frames`, `skip`, `crash`, `grant`, `xp`, `level`, `daily`, `setDate`, `wear`, `unlockAll`, `cine`, `whatsNew`, `shaderCheck`, `budgets`.
 
 ## Where things live (Update 2)
 - `src/meta/`: pure progression logic (XP & Sunny Pass, Wardrobe catalogue, Daily Tide date/streak). Like `src/sim/`, no `three` and no DOM.
@@ -35,7 +35,8 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - On the run the crab faces down the beach (yaw π, set in `GameView.frame`); lane/flinch/lean inputs are mirrored by `faceSign`. It turns back to the camera for menus and celebrations.
 - Update 4 UI: `src/ui/kit.ts` (size classes on `<html data-size>`, Wallet, pageHead, actionBar, Sheet, toast lane) and `src/ui/motion.ts` (press, stagger, morph, reward fly, tab line); layouts in `src/ui/v4.css`. Primary actions stay on screen: `ui-audit` checks it.
 - Scenery tiles have a far copy (`propsFar`: low palms, no small props) used beyond 30 m; the ocean grid is dense only near the track.
-- Save format is v3 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
+- Crab Cup (Update 4): `src/sim/race.ts` (rival Worlds on the same seed, each driven by an Autopilot, ±3% catch-up), `src/meta/cup.ts` (cups, points, unlocks, rewards), `src/render/rivals.ts` (low-detail rival crabs + DOM name tags), `src/ui/cup.ts` (cup select, podium), `src/ui/raceHud.ts`; styles in `src/ui/cup.css`; knobs in `CFG.race`. In a race, a hit is a stumble (`World.stumble`) and 25 shells fire a Shell Dash. Hooks: `race(cupId, {autopilot})`, `clearCups`, `raceInfo`.
+- Save format is v4 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
 
 ## Rules
 - `src/sim/` never imports `three`. Rendering reads sim state; the sim emits events.

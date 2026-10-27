@@ -46,9 +46,9 @@ export class WhatsNewSheet {
     return this.open;
   }
 
-  show(items: WhatsNewItem[], coveIcon: string): void {
+  show(items: WhatsNewItem[], o: { tag: string; tagline: string; visitIcon: string; visitLabel: string }): void {
     this.card.innerHTML = `<div class="wn-burst" aria-hidden="true"></div>
-      <div class="wn-head"><span class="wn-tag">Update 3</span><h2>What's new</h2><p>Shell Shock is here!</p></div>`;
+      <div class="wn-head"><span class="wn-tag">${o.tag}</span><h2>What's new</h2><p>${o.tagline}</p></div>`;
     const list = el('div', 'wn-list');
     items.forEach((it, i) => {
       const row = el('div', 'wn-row', `<span class="wn-ico">${it.icon}</span><span class="wn-txt"><b>${it.title}</b><small>${it.text}</small></span>`);
@@ -56,7 +56,7 @@ export class WhatsNewSheet {
       list.appendChild(row);
     });
     const acts = el('div', 'wn-acts');
-    const visit = btn(`<span class="wn-bi">${coveIcon}</span><span>Visit the Cove</span>`, 'small blue', () => {
+    const visit = btn(`<span class="wn-bi">${o.visitIcon}</span><span>${o.visitLabel}</span>`, 'small blue', () => {
       this.close(true);
       this.h.visit();
     });

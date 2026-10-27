@@ -4,6 +4,7 @@ import './ui/tokens.css';
 import './ui/styles.css';
 import './ui/screens.css';
 import './ui/v4.css';
+import './ui/cup.css';
 import { installSizeClass } from './ui/kit';
 import { Game } from './game';
 

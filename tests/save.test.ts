@@ -82,7 +82,7 @@ describe('save v1 → v2 migration', () => {
     const st = new MemStorage();
     st.setItem(SAVE_KEY, JSON.stringify(V1_BLOB));
     const d = new SaveStore(st).data;
-    expect(d.v).toBe(3);
+    expect(d.v).toBe(4);
     expect(d.shells).toBe(1234);
     expect(d.best).toBe(2875.4);
     expect(d.stats.runs).toBe(42);
@@ -148,7 +148,7 @@ describe('save v2 → v3 migration (UPDATE3_PLAN.md §6.4)', () => {
   it('keeps v2 progress and fills the v3 fields', () => {
     const v2 = { v: 2, shells: 900, xp: 4000, passClaimed: [1, 2], levels: { 'shore-1': { stars: [true, true, false], best: 40 } }, daily: { lastDate: '2026-10-01', streak: 3, savers: 0, bestToday: 0, bestDate: '', history: [] } };
     const d = sanitize(v2);
-    expect(d.v).toBe(3);
+    expect(d.v).toBe(4);
     expect(d.shells).toBe(900);
     expect(d.xp).toBe(4000);
     expect(d.levels['shore-1']!.stars).toEqual([true, true, false]);
@@ -179,5 +179,21 @@ describe('save v3: Crab Cove fields', () => {
     expect(e.friends.moved).toEqual(['shelly']);
     expect(e.friends.quests.shelly).toEqual({ idx: 3, base: 0 });
     expect(e.achievements).toEqual(['dist:0']);
+  });
+});
+
+describe('save v3 → v4 migration (UPDATE4_PLAN.md §5.5)', () => {
+  it('keeps v3 progress and fills the Crab Cup fields', () => {
+    const v3 = { v: 3, shells: 1200, pearls: 40, title: 'Cove Keeper', cove: { owned: ['tiki'], plots: ['tiki'] } };
+    const d = sanitize(v3);
+    expect(d.v).toBe(4);
+    expect(d.shells).toBe(1200);
+    expect(d.pearls).toBe(40);
+    expect(d.cup).toEqual({ current: null, best: {}, cleared: [], golds: [], races: 0, wins: 0 });
+  });
+  it('round-trips cup progress', () => {
+    const d = sanitize({ v: 4, cup: { cleared: ['sandy'], golds: ['sandy'], best: { sandy: 30 }, races: 4, wins: 3, current: { cup: 'tidal', results: { 'tidal-1': 2 }, rivals: { pip: 6 } } } });
+    expect(sanitize(JSON.parse(JSON.stringify(d))).cup).toEqual(d.cup);
+    expect(d.cup.wins).toBe(3);
   });
 });

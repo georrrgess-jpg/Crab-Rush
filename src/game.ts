@@ -20,7 +20,7 @@ import { DANCE_SVG, GIFT_SVG } from './ui/icons';
 import type { HomeData } from './ui/home';
 import { ChestScreen, LevelEnd, LevelIntro, MapScreen, type MapData, type MapLevel } from './ui/islands';
 import { ALL_CROWNS, CHEST_STARS, awardCrown, bonusUnlocked, chestsReady, openChest, rushUnlocked } from './meta/chests';
-import { COVE_ICON, PEARL } from './ui/home';
+import { PEARL } from './ui/home';
 import { WhatsNewSheet } from './ui/whatsnew';
 import { CoveScreen, type CoveData } from './ui/cove';
 import { DECOR, DECOR_BY_ID, MAX_COMFORT, buyDecor, collectGifts, comfort, giftCap, giftRate, pendingGifts, place, store } from './meta/cove';
@@ -33,6 +33,10 @@ import { ISLAND_NAMES, ISLAND_REWARD_HATS, TOTAL_STARS, applyLevelResult, island
 import { ITEMS, equip, grant, unseen, type Slot } from './meta/wardrobe';
 import { HAT_KINDS, type HatKind } from './render/models/hats';
 import type { TrailKind } from './render/materials';
+import { CUPS, CUP_BY_ID, cupTitles, cupUnlocked, nextRace, pointsFor, recordRace, type RaceDef } from './meta/cup';
+import { RIVALS, Race } from './sim/race';
+import { CUP_ICON, CupScreen, RaceEndScreen, type CupData } from './ui/cup';
+import { RaceHud } from './ui/raceHud';
 
 const ITEM_NAMES: Record<string, string> = Object.fromEntries(ITEMS.filter((i) => i.slot === 'hats').map((i) => [i.id, i.name]));
 import { DYE_COST, ShopScreen } from './ui/shop';
@@ -48,11 +52,11 @@ import { ICON } from './ui/icons';
 import type { PowerKind } from './sim/events';
 
 type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats'
-  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily' | 'chest' | 'cove';
+  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily' | 'chest' | 'cove' | 'cup' | 'raceEnd';
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
-const WHATS_NEW_KEY = 'crabdash.new.u3';
+const WHATS_NEW_KEY = 'crabdash.new.u4';
 
 export class Game {
   state: State = 'boot';
@@ -124,6 +128,14 @@ export class Game {
   private fakeNow: number | null = null;
   private tierToast = 0;
   private rumbleT = 0;
+  // Crab Cup (UPDATE4_PLAN.md §5)
+  private cupScreen: CupScreen;
+  private raceEnd: RaceEndScreen;
+  private raceHud = new RaceHud();
+  private race: Race | null = null;
+  private raceCup: string | null = null;
+  private raceDef: RaceDef | null = null;
+  private raceHudT = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.save = new SaveStore();
@@ -150,6 +162,7 @@ export class Game {
         islands: () => this.openMap(),
         daily: () => this.openDaily(),
         cove: () => this.openCove(),
+        cup: () => this.openCup(),
         wardrobe: () => this.openShop(),
         pass: () => this.openPass(),
         settings: () => this.openSettings(),
@@ -413,10 +426,15 @@ export class Game {
       tab: () => this.audio.play('tap'),
     });
     this.ui.addScreen(this.coveScreen.el);
-    this.whatsNew = new WhatsNewSheet({ visit: () => this.openCove() });
+    this.whatsNew = new WhatsNewSheet({ visit: () => this.openCup() });
     this.ui.mountOverlay(this.whatsNew.el);
     this.ui.addScreen(this.passScreen.el);
     this.ui.addScreen(this.dailyScreen.el);
+    this.cupScreen = new CupScreen({ back: () => this.closeOverlay(), race: (id) => this.playCup(id), select: () => this.audio.play('tap') });
+    this.raceEnd = new RaceEndScreen({ next: () => this.nextCupRace(), cup: () => this.openCup(), home: () => this.goHome() });
+    this.ui.addScreen(this.cupScreen.el);
+    this.ui.addScreen(this.raceEnd.el);
+    this.ui.addHud(this.raceHud.el);
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
@@ -538,7 +556,7 @@ export class Game {
     this.playCinematic();
   }
 
-  /** Update 3's "What's new" sheet: once, for players who already played before the update. */
+  /** The "What's new" sheet: once, for players who already played before the update. */
   private maybeWhatsNew(): void {
     if (this.flags.shots || this.flags.autopilot) return;
     try {
@@ -557,14 +575,13 @@ export class Game {
     if (this.state !== 'title') return;
     this.whatsNew.show(
       [
-        { icon: COVE_ICON, title: 'Crab Cove', text: 'Build your own island, collect Tide Gifts and welcome six crab friends.' },
-        { icon: ICON.trophy, title: 'Trophies & titles', text: '36 achievements that pay pearls and unlock titles for your profile.' },
-        { icon: ICON.island, title: 'Island Hop+', text: 'Tide Rush crowns, star chests, bonus levels, coconuts and rings.' },
-        { icon: ICON.hanger, title: 'Wardrobe', text: 'Three new crabs, saved outfits and pearl hat dyes.' },
-        { icon: ICON.calendar, title: 'Daily Tide & Sunny Pass', text: 'A 30-day calendar, the tide almanac and endless bonus chests.' },
-        { icon: ICON.sparkle, title: 'A fresh coat of paint', text: 'A new Home, a more detailed crab and smoother animations.' },
+        { icon: CUP_ICON, title: 'Crab Cup', text: 'A brand-new mode: race three rival crabs through three cups. Bumps slow you down, 25 shells fire a Shell Dash.' },
+        { icon: ICON.flame, title: 'A tougher Beach Run', text: 'Faster top speed, tighter gaps, Riptide patterns and Scuttlers that dash across lanes.' },
+        { icon: ICON.sparkle, title: 'A cleaner phone layout', text: 'Bigger buttons, less clutter, actions that stay in reach, and sheets instead of crowded pages.' },
+        { icon: ICON.island, title: 'More detailed world', text: 'Rebuilt huts, kiosks, boulders, shells and beach balls, with smoother menu animations.' },
+        { icon: ICON.hanger, title: 'Race Helmet', text: 'Clear the Tidal Cup to wear it. Cup titles show on your profile.' },
       ],
-      COVE_ICON,
+      { tag: 'Update 4', tagline: 'Race Day is here!', visitIcon: CUP_ICON, visitLabel: 'Try Crab Cup' },
     );
   }
 
@@ -616,6 +633,7 @@ export class Game {
     this.audio.setRumble(0);
     this.ui.setLevelHUD(null);
     this.levelEnd.hide();
+    this.clearRace();
     this.applyPendingQuality();
     this.resetWorldToBeach();
     this.input.setPointerEnabled(false);
@@ -657,6 +675,7 @@ export class Game {
   }
 
   startRun(withIntro: boolean): void {
+    this.clearRace();
     const opts = this.buildRunOptions();
     this.world.start(opts);
     this.runModifier = opts.modifier ?? null;
@@ -732,6 +751,7 @@ export class Game {
         const quest = d.friends.moved.some((id) => questProgress(d.friends, id, m).done);
         return { gifts, comfort: comfort(d.cove), ready: quest || gifts >= giftCap(comfort(d.cove)) * 0.5 };
       })(),
+      cup: { cleared: d.cup.cleared.length, total: CUPS.length, current: d.cup.current ? (CUP_BY_ID.get(d.cup.current.cup)?.name ?? null) : null, wins: d.cup.wins },
     };
   }
 
@@ -819,7 +839,7 @@ export class Game {
       }),
       earned: d.achievements,
       progress,
-      titles: titlesFor(d.achievements),
+      titles: [...titlesFor(d.achievements), ...cupTitles(d.cup)],
       title: d.title || playerTitle(tierFromXp(d.xp).tier, d.best),
       thumbs: this.coveThumbs,
     };
@@ -1098,6 +1118,8 @@ export class Game {
     if (this.state === 'results' && this.clock - this.resultsAt < 0.25) return;
     if (this.currentLevel) return this.retryLevel();
     this.audio.play('tap');
+    const cup = this.race ? this.raceCup : null;
+    if (cup) return this.ui.flashFade(() => this.startRace(cup, false));
     this.ui.flashFade(() => this.startRun(false));
   }
 
@@ -1246,6 +1268,7 @@ export class Game {
 
   private startLevel(id: string, withIntro: boolean): void {
     const cl = this.compiledLevel(id, this.levelRush);
+    this.clearRace();
     this.currentLevel = id;
     this.dailyRun = false;
     this.runBoost = false;
@@ -1378,6 +1401,213 @@ export class Game {
       this.audio.play('win');
       this.haptics.play('success');
     }
+  }
+
+  // ------------------------------------------------------------------ Crab Cup
+  private cupData(): CupData {
+    const d = this.save.data;
+    return { state: d.cup, shells: d.shells, pearls: d.pearls, names: this.rivalNames(), avatars: this.racerAvatars() };
+  }
+
+  private rivalNames(): Record<string, string> {
+    return Object.fromEntries(Object.values(RIVALS).map((r) => [r.id, r.name]));
+  }
+
+  /** portraits for the podium: the Wardrobe's body thumbnails (rivals wear their own crab) */
+  private racerAvatars(): Record<string, string> {
+    const b = this.shop.thumbs.bodies;
+    const out: Record<string, string> = {};
+    for (const r of Object.values(RIVALS)) if (b[r.body]) out[r.id] = b[r.body] as string;
+    const mine = b[this.save.data.wardrobe.equipped.body];
+    if (mine) out.you = mine;
+    return out;
+  }
+
+  openCup(): void {
+    const from = this.state;
+    if (from !== 'title' && from !== 'results' && from !== 'raceEnd') return;
+    this.audio.play('tap');
+    this.prepareThumbs();
+    if (from !== 'title') {
+      this.ui.flashFade(() => {
+        this.toTitle();
+        this.showCup();
+      });
+      return;
+    }
+    this.showCup();
+  }
+
+  private showCup(): void {
+    this.audio.play('whoosh');
+    this.returnTo = 'title';
+    this.state = 'cup';
+    this.ui.home.hide();
+    this.cupScreen.open(this.cupData());
+    this.ui.showExtra(this.cupScreen.el);
+  }
+
+  private playCup(cupId: string): void {
+    if (this.state !== 'cup' || !cupUnlocked(this.save.data.cup, cupId)) return;
+    if (!this.flags.shots) this.audio.unlock();
+    this.audio.play('tap');
+    this.startRace(cupId, true);
+  }
+
+  private nextCupRace(): void {
+    const id = this.raceCup;
+    if (this.state !== 'raceEnd' || !id) return;
+    this.audio.play('tap');
+    this.ui.flashFade(() => {
+      this.raceEnd.hide();
+      this.startRace(id, true);
+    });
+  }
+
+  /** Start the next race of a cup: the player's World plus three rival Worlds on the same course. */
+  startRace(cupId: string, withIntro: boolean): void {
+    const cup = CUP_BY_ID.get(cupId);
+    if (!cup) return;
+    const def = nextRace(this.save.data.cup, cupId) ?? (cup.races[0] as RaceDef);
+    const d = this.save.data;
+    this.currentLevel = null;
+    this.dailyRun = false;
+    this.runBoost = false;
+    this.runModifier = null;
+    this.setModifierView(null);
+    const opts = defaultRunOptions();
+    opts.seed = def.seed;
+    opts.startDist = def.start;
+    opts.god = this.flags.god;
+    opts.best = 0;
+    opts.upgrades = { ...d.upgrades };
+    opts.zonesSeen = [0, 1, 2, 3];
+    opts.tutorial = null;
+    opts.race = { finishAt: def.start + def.length };
+    this.world.start(opts);
+    this.race = new Race(this.world, opts, cup.rivals.map((id) => RIVALS[id]!), cup.skill);
+    this.raceCup = cupId;
+    this.raceDef = def;
+    const looks = Object.fromEntries(cup.rivals.map((id) => [id, { body: RIVALS[id]!.body, hat: RIVALS[id]!.hat }]));
+    this.view.ensureRivals(document.getElementById('hud') as HTMLElement).setRace(this.race, looks, false);
+    this.raceHud.start(this.race.racers.map((r) => ({ id: r.id, you: r.you, name: r.name })));
+    this.raceHudT = 0;
+    this.runStartedWithTutorial = false;
+    this.view.resetRun(0);
+    this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
+    this.ui.resetHUD();
+    this.ui.setLevelHUD(null);
+    this.ui.hideTutorial();
+    this.ui.clearToasts();
+    this.ui.show('hud');
+    this.ui.hideExtras();
+    this.ui.setTouchButtons(this.touchButtonsWanted());
+    this.input.setPointerEnabled(true);
+    this.touchLayer.classList.add('active');
+    this.crashClock = 0;
+    this.hitStop = 0;
+    this.finishClock = 0;
+    this.introT = withIntro ? 0 : 1;
+    this.state = withIntro ? 'intro' : 'running';
+    this.audio.setMusicMode('run');
+    this.audio.setTrack('chase');
+    this.audio.setZone(this.world.zone);
+    this.audio.setRumble(0);
+    d.stats.runs++;
+    this.updateRaceHud();
+    this.ui.toast(`${cup.name}: ${def.name}`, { kind: 'gold', sub: `Race ${cup.races.indexOf(def) + 1} of 3 · beat 3 rivals to the flag`, life: 2.4 });
+  }
+
+  private updateRaceHud(): void {
+    const r = this.race;
+    if (!r) return;
+    const st = r.standings();
+    const w = this.world;
+    this.raceHud.update(
+      st.map((s) => ({ id: s.id, you: s.you, place: s.place, progress: r.progress(r.racers.find((x) => x.id === s.id)!) })),
+      w.dashMeter,
+      w.dashT > 0,
+      w.dashT / CFG.race.dashTime,
+    );
+  }
+
+  private clearRace(): void {
+    this.race = null;
+    this.raceHud.stop();
+    this.view.rivals?.clear();
+    this.raceEnd.hide();
+  }
+
+  /** The player crossed the line (or crashed out): score the race, pay out, show the podium. */
+  private endRace(): void {
+    const r = this.race;
+    const cupId = this.raceCup;
+    const def = this.raceDef;
+    if (!r || !cupId || !def) return;
+    const cup = CUP_BY_ID.get(cupId)!;
+    const d = this.save.data;
+    const w = this.world;
+    const fin = r.final();
+    const me = fin.find((s) => s.you)!;
+    const outcome = recordRace(d.cup, cupId, def.id, fin.map((s) => ({ id: s.id, place: s.place })));
+    // shells picked up plus a payout for the place; XP like a run
+    const pickups = w.stats.shells + w.stats.bonus;
+    const placePay = [120, 70, 40, 20][me.place - 1] ?? 20;
+    const shells = pickups + placePay;
+    d.shells += shells;
+    d.stats.totalShells += shells;
+    d.stats.totalDistance += w.distance;
+    d.stats.totalHops += w.stats.hops;
+    d.stats.totalWaves += w.stats.wavesHopped;
+    d.stats.totalPowerups += w.stats.powerups;
+    d.stats.totalCloseShaves += w.stats.closeShaves;
+    const xp = xpFor({ distance: w.distance, shells: w.stats.shells }) + pointsFor(me.place) * 3;
+    d.xp += xp;
+    let reward: string | null = null;
+    if (outcome?.firstClear) {
+      const rw = cup.reward;
+      d.shells += rw.shells;
+      d.pearls += rw.pearls;
+      const parts = [`+${fmt(rw.shells)} shells`, `+${rw.pearls} pearls`];
+      if (rw.item) {
+        const [slot, id] = rw.item.split(':') as [Slot, string];
+        if (grant(d.wardrobe, slot, id)) parts.push(ITEM_NAMES[id] ?? id);
+      }
+      if (rw.title) parts.push(`title “${rw.title}”`);
+      reward = parts.join(' · ');
+    }
+    this.save.save();
+    this.state = 'raceEnd';
+    this.resultsAt = this.clock;
+    this.input.setPointerEnabled(false);
+    this.touchLayer.classList.remove('active');
+    this.raceHud.stop();
+    this.ui.clearToasts();
+    this.audio.setMusicMode('menu');
+    this.ui.show('none');
+    this.ui.showExtra(this.raceEnd.el);
+    const names = this.rivalNames();
+    this.raceEnd.show({
+      cup,
+      raceName: def.name,
+      raceIndex: cup.races.indexOf(def),
+      standings: fin.map((s) => ({ id: s.id, name: s.name, place: s.place, time: s.time, you: s.you })),
+      shells,
+      xp,
+      state: d.cup,
+      names,
+      avatars: this.racerAvatars(),
+      outcome: outcome ? { points: outcome.points, place: outcome.place, cleared: outcome.cleared, firstClear: outcome.firstClear, gold: outcome.gold, reward } : null,
+    });
+    if (me.place === 1) this.view.celebrateResults();
+    if (outcome?.firstClear) {
+      setTimeout(() => {
+        this.audio.play('levelUp');
+        this.ui.toast(`${cup.name} cleared!`, { kind: 'gold', sub: reward ?? undefined, life: 3 });
+      }, 900);
+    }
+    if (outcome?.firstGold) setTimeout(() => this.ui.toast('Gold trophy!', { kind: 'gold', sub: 'First place in every race', life: 2.6 }), 2200);
+    this.checkTrophies();
   }
 
   goHome(): void {
@@ -1629,7 +1859,12 @@ export class Game {
       return;
     }
     if (s === 'stats' && a === 'back') return this.closeStats();
-    if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map' || s === 'pass' || s === 'daily' || s === 'cove') && a === 'back') this.closeOverlay();
+    if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map' || s === 'pass' || s === 'daily' || s === 'cove' || s === 'cup') && a === 'back') this.closeOverlay();
+    if (s === 'cup' && (a === 'confirm' || alsoConfirm)) this.cupScreen.go();
+    if (s === 'raceEnd' && this.clock - this.resultsAt > 0.6) {
+      if (a === 'back') this.goHome();
+      else if (a === 'confirm' || alsoConfirm) this.raceEnd.primary();
+    }
     if (s === 'chest' && (a === 'back' || a === 'confirm' || alsoConfirm)) {
       this.chestScreen.hide();
       this.state = 'map';
@@ -1660,6 +1895,7 @@ export class Game {
         this.introT = Math.min(1, this.introT + dt / INTRO_TIME);
         this.autopilot?.update();
         this.world.step(dt * this.world.timeScale);
+        this.race?.step(dt);
         if (this.introT >= 1) this.state = 'running';
         this.checkCrash();
         this.checkFinish();
@@ -1667,6 +1903,7 @@ export class Game {
       case 'running':
         this.autopilot?.update();
         this.world.step(dt * this.world.timeScale);
+        this.race?.step(dt);
         this.checkCrash();
         this.checkFinish();
         break;
@@ -1696,7 +1933,8 @@ export class Game {
         this.world.step(dt * slow);
         this.crashClock += dt;
         if (this.crashClock >= CFG.crash.resultsDelay) {
-          if (this.world.kind === 'level') this.endLevel(false);
+          if (this.race) this.endRace();
+          else if (this.world.kind === 'level') this.endLevel(false);
           else this.endRun();
         }
         break;
@@ -1704,8 +1942,12 @@ export class Game {
       case 'finishing':
         // coast through the finish arch, then show the stars
         this.world.step(dt);
+        this.race?.step(dt);
         this.finishClock += dt;
-        if (this.finishClock >= 1.5) this.endLevel(true);
+        if (this.finishClock >= 1.5) {
+          if (this.race) this.endRace();
+          else this.endLevel(true);
+        }
         break;
       default:
         break;
@@ -1834,7 +2076,7 @@ export class Game {
     }
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
-    const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily' || this.state === 'chest';
+    const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily' || this.state === 'chest' || this.state === 'cup';
     const mode: CamMode = this.state === 'cove' ? 'cove' : this.state === 'map' || this.state === 'levelIntro' || this.state === 'chest' ? 'map' : menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
     if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
@@ -1845,7 +2087,13 @@ export class Game {
       const w = this.world;
       const pk = w.power.kind;
       this.ui.updateHUD(w.runShells, w.distance, pk, pk ? w.power.t / w.power.dur : 0, w.streak);
-      if (w.level?.rush) {
+      if (this.race) {
+        this.raceHudT -= frameDt;
+        if (this.raceHudT <= 0) {
+          this.raceHudT = 0.1;
+          this.updateRaceHud();
+        }
+      } else if (w.level?.rush) {
         const b = w.levelStats.bumps;
         this.ui.updateLevelHUD((w.dist - w.levelStart) / w.level.length, w.levelStats.dollars, b === 0 ? 'Crown: no bumps' : 'Crown lost', b === 0, b > 0, w.chaseGap);
       } else if (w.level) {
@@ -1965,6 +2213,22 @@ export class Game {
         case 'tidepool':
           this.audio.play('splash');
           break;
+        case 'stumble':
+          this.audio.play('bump');
+          this.haptics.play('medium');
+          this.ui.floater('Stumble!', 0.5, 0.4);
+          break;
+        case 'dash':
+          this.audio.play('rider');
+          this.haptics.play('success');
+          this.ui.toast('Shell Dash!', { kind: 'gold', sub: 'Smash straight through!', life: 1.6 });
+          break;
+        case 'finish':
+          if (this.race) {
+            this.audio.play('win');
+            this.haptics.play('success');
+          }
+          break;
         case 'ring':
           this.audio.play('ring', { pan: ev.x * 0.12 });
           this.haptics.play('light');
@@ -2033,6 +2297,9 @@ export class Game {
         } else if (name === 'daily') {
           g.toTitle();
           g.openDaily();
+        } else if (name === 'cup') {
+          g.toTitle();
+          g.openCup();
         } else if (name === 'stats') {
           g.toTitle();
           g.openStats();
@@ -2113,6 +2380,23 @@ export class Game {
           g.openMap();
           g.openLevelHook(id);
         } else g.startLevelHook(id);
+      },
+      /** Crab Cup: start the next race of a cup (optionally autopiloted) */
+      race(cupId = 'sandy', o: { autopilot?: boolean; intro?: boolean } = {}) {
+        if (o.autopilot !== undefined) g.flags.autopilot = o.autopilot;
+        g.toTitle();
+        g.startRace(cupId, !!o.intro);
+      },
+      /** Crab Cup: mark cups cleared (screenshots / tests) */
+      clearCups(ids: string[]) {
+        const c = g.save.data.cup;
+        for (const id of ids) if (!c.cleared.includes(id)) c.cleared.push(id);
+        g.save.save();
+      },
+      /** Crab Cup: current race state */
+      raceInfo() {
+        const r = g.race;
+        return r ? { state: g.state, standings: r.standings(), dash: g.world.dashMeter, dashT: g.world.dashT, stumble: g.world.raceStumble } : { state: g.state };
       },
       /** unlock every level (screenshots / tests) */
       unlockAll(stars = 2) {

@@ -77,6 +77,37 @@ const SCENES = {
     await p.evaluate(() => window.__crab.startRun({ seed: 14, autopilot: true, tutorial: false, start: 5300 }));
     await p.evaluate(() => window.__crab.frames(60 * 3));
   },
+  cup: async (p) => {
+    await p.evaluate(() => window.__crab.clearCups(['sandy']));
+    await p.evaluate(() => window.__crab.setState('cup'));
+    await p.evaluate(() => window.__crab.frames(30));
+    await p.waitForTimeout(900);
+  },
+  race: async (p) => {
+    await p.evaluate(() => window.__crab.race('sandy', { autopilot: true }));
+    await p.evaluate(() => window.__crab.frames(60 * 6));
+    await p.evaluate(() => window.__crab.frames(6));
+  },
+  dash: async (p) => {
+    await p.evaluate(() => window.__crab.race('sandy', { autopilot: true }));
+    // run until a Shell Dash fires
+    await p.evaluate(() => {
+      for (let i = 0; i < 400; i++) {
+        window.__crab.skip(30);
+        const r = window.__crab.raceInfo();
+        if (r.dashT > 1.6) break;
+      }
+      window.__crab.frames(12);
+    });
+  },
+  podium: async (p) => {
+    await p.evaluate(() => window.__crab.race('sandy', { autopilot: true }));
+    await p.evaluate(() => {
+      for (let i = 0; i < 600 && window.__crab.raceInfo().state !== 'raceEnd'; i++) window.__crab.skip(30);
+      window.__crab.frames(30);
+    });
+    await p.waitForTimeout(1500);
+  },
   map: async (p) => {
     await p.evaluate(() => { window.__crab.unlockAll(2); window.__crab.game.save.data.levels['pier-3'] = undefined; delete window.__crab.game.save.data.levels['pier-3']; window.__crab.setState('map'); window.__crab.frames(10); });
     await p.waitForTimeout(700);

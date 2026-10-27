@@ -168,7 +168,7 @@ try {
   check(await page.evaluate(() => !window.__crab.game.view.cinematicPlaying && !document.getElementById('home').classList.contains('cine')), 'any key skips the cinematic');
   await page.evaluate(() => window.__crab.setState('title'));
   await page.keyboard.press('ArrowRight');
-  check((await page.evaluate(() => window.__crab.game.ui.home.focused)) === 'islands', 'arrow keys move the mode carousel');
+  check((await page.evaluate(() => window.__crab.game.ui.home.focused)) === 'cup', 'arrow keys move the mode carousel');
   await page.keyboard.press('ArrowLeft');
   check((await page.evaluate(() => window.__crab.game.ui.home.focused)) === 'beach', 'and back');
 
@@ -222,7 +222,7 @@ try {
   await fr(2);
   await page.click('#whatsnew .btn.blue', { force: true });
   await fr(3);
-  check((await st()).state === 'cove', "its Visit the Cove button opens Crab Cove");
+  check((await st()).state === 'cup', "its Try Crab Cup button opens Crab Cup");
 
   // ---------------- Crab Cove: gifts, decorations, friends
   await page.evaluate(() => { window.__crab.setState('title'); window.__crab.setDate('2026-05-01T10:00:00'); });
@@ -285,6 +285,31 @@ try {
   check((await st()).lane === 2, 'Mirror Beach swaps left and right');
   await page.evaluate(() => { window.__crab.setDate(null); window.__crab.setState('title'); });
   check(!(await page.evaluate(() => document.getElementById('gl').classList.contains('mirrored'))), 'leaving a mirror run restores the view');
+
+  // ---------------- Crab Cup: open, race, stumble, finish, podium, next race
+  await page.evaluate(() => { window.__crab.setState('title'); });
+  await fr(3);
+  await page.click('#home .mode-card.cup');
+  await fr(5);
+  check((await st()).state === 'cup' && (await page.locator('#cup .cup-c').count()) === 3, 'the Crab Cup card opens the cup select');
+  await page.click('#cup .cup-go');
+  await fr(30);
+  const rc = await page.evaluate(() => ({ kind: window.__crab.game.world.kind, tags: document.querySelectorAll('.rival-tag').length, hud: !document.querySelector('.race-hud').classList.contains('hidden') }));
+  check(rc.kind === 'race' && rc.tags === 3 && rc.hud, 'a race starts with three rivals and the race HUD');
+  await page.evaluate(() => { const w = window.__crab.game.world; w.player.invuln = 0; w.addEntity('block', w.player.lane, w.dist + 1.2, {}); window.__crab.frames(40); });
+  const sb = await page.evaluate(() => ({ state: window.__crab.game.state, bumps: window.__crab.game.world.stats.bumps }));
+  check(sb.state === 'running' && sb.bumps >= 1, 'hitting an obstacle in a race is a stumble, not a crash');
+  await page.evaluate(() => { window.__crab.race('sandy', { autopilot: true }); for (let i = 0; i < 600 && window.__crab.game.state !== 'raceEnd'; i++) window.__crab.skip(30); window.__crab.frames(30); });
+  const re = await page.evaluate(() => ({ state: window.__crab.game.state, pods: document.querySelectorAll('#race-end .pod').length, rows: document.querySelectorAll('#race-end .rs-row').length, res: window.__crab.game.save.data.cup.current?.results ?? {} }));
+  check(re.state === 'raceEnd' && re.pods === 3 && re.rows === 4 && re.res['sandy-1'] >= 1, 'finishing shows the podium and records the race');
+  await page.waitForTimeout(700);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(600);
+  await fr(10);
+  check((await page.evaluate(() => window.__crab.game.raceDef?.id)) === 'sandy-2', 'Next race starts the cup\'s second race');
+  await page.evaluate(() => { window.__crab.game.flags.autopilot = false; window.__crab.setState('title'); });
+  await fr(3);
+  check((await page.evaluate(() => document.querySelectorAll('.rival-tag').length)) === 0, 'leaving a race clears the rivals');
 
   // ---------------- Golden Shell boost
   await page.evaluate(() => { window.__crab.xp(0, 1); window.__crab.setState('title'); });

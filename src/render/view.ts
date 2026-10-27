@@ -25,6 +25,7 @@ import { decorGeometry } from './models/decor';
 import { Sky } from './sky';
 import { ToyLighting, toyVariants } from './shaders/toy';
 import { sandTexture } from './textures';
+import { Rivals } from './rivals';
 
 export type CamMode = 'title' | 'intro' | 'run' | 'shop' | 'map' | 'cove';
 
@@ -76,6 +77,8 @@ export class GameView {
   /** screenshots and tests want the camera exactly where it ends up */
   smoothMenuCam = true;
   readonly entities: EntityViews;
+  /** Crab Cup rivals (null outside races) */
+  rivals: Rivals | null = null;
   private palette = clonePalette(ZONE_PALETTES[0]!);
   private world = new THREE.Group();
 
@@ -463,6 +466,15 @@ export class GameView {
     fog.color.copy(this.palette.fog);
   }
 
+  /** Crab Cup: rival crabs and their name tags (created once, reused for every race). */
+  ensureRivals(uiRoot: HTMLElement): Rivals {
+    if (!this.rivals) {
+      this.rivals = new Rivals(this.mats, uiRoot);
+      this.world.add(this.rivals.group);
+    }
+    return this.rivals;
+  }
+
   /** Feed sim events into effects. */
   onEvents(events: readonly GameEvent[], w: World): void {
     const p = w.player;
@@ -504,6 +516,21 @@ export class GameView {
           this.shake(0.38, 0.35);
           this.puff(p.x, w.dist, 16, 0.7);
           for (let i = 0; i < 10; i++) this.sparks.spawn(p.x, 0.8, w.dist, (Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 3, 0.5, 0.3, 0xffe14a, 8);
+          break;
+        case 'stumble':
+          // Crab Cup: a hit trips the crab instead of ending the run
+          this.crab.bump();
+          this.shake(0.26, 0.28);
+          this.puff(p.x, w.dist, 10, 0.55);
+          for (let i = 0; i < 8; i++) this.sparks.spawn(p.x, 0.8, w.dist, (Math.random() - 0.5) * 5, 2 + Math.random() * 3, (Math.random() - 0.5) * 2, 0.4, 0.26, 0xffe14a, 7);
+          break;
+        case 'dash':
+          this.crab.happy();
+          this.shake(0.1, 0.2);
+          for (let i = 0; i < 22; i++) {
+            const a = (i / 22) * Math.PI * 2;
+            this.sparks.spawn(p.x + Math.cos(a) * 0.5, 0.6, w.dist + Math.sin(a) * 0.5, Math.cos(a) * 5, 1.2, Math.sin(a) * 5, 0.5, 0.32, 0xffd23a, 2);
+          }
           break;
         case 'ring':
           this.crab.happy();
@@ -686,6 +713,9 @@ export class GameView {
     const blink = running && p.invuln > 0 && w.mode === 'running' ? Math.floor(this.time * 16) % 2 === 0 : false;
     this.crab.root.visible = !blink;
     this.crab.update(dt, dv);
+    this.rivals?.update(dt, dist, px, this.renderer.camera, running && this.rivals.active);
+    // Shell Dash: a golden trail
+    if (running && w.dashT > 0 && dt > 0 && Math.random() < 0.8) this.sparks.spawn(px + (Math.random() - 0.5) * 0.9, 0.25 + Math.random() * 0.6, dist - 0.4, 0, 0.6, 0, 0.35, 0.2, 0xffd23a, 1);
     // shadow under the crab shrinks as it rises
     const sh = 1 / (1 + py * 0.5);
     if (!this.shadowMap) this.shadows.add(px, 0, 0, 1.7 * sh, 1.3 * sh, py);

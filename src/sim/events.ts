@@ -28,4 +28,8 @@ export type GameEvent =
   | { t: 'pad' }
   | { t: 'tidepool' }
   | { t: 'finish' }
-  | { t: 'ring'; x: number; y: number; bonus: number };
+  | { t: 'ring'; x: number; y: number; bonus: number }
+  // Crab Cup (UPDATE4_PLAN.md §5)
+  | { t: 'stumble'; kind: string }
+  | { t: 'dash' }
+  | { t: 'dashEnd' };

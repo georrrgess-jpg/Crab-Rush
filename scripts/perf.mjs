@@ -48,6 +48,21 @@ try {
       peakT = Math.max(peakT, t);
       rows.push(`${name}: ${c} calls / ${(t / 1000).toFixed(0)}k tris`);
     }
+    // Crab Cup: the player plus three rival crabs
+    for (const cup of ['sandy', 'sunset']) {
+      await page.evaluate((id) => window.__crab.race(id, { autopilot: true }), cup);
+      let c = 0;
+      let t = 0;
+      for (let i = 0; i < samples; i++) {
+        await page.evaluate(() => { window.__crab.skip(40); window.__crab.frames(2); });
+        const s = await page.evaluate(() => window.__crab.game.view.renderer.stats);
+        c = Math.max(c, s.calls);
+        t = Math.max(t, s.triangles);
+      }
+      peakC = Math.max(peakC, c);
+      peakT = Math.max(peakT, t);
+      rows.push(`Race ${cup}: ${c} calls / ${(t / 1000).toFixed(0)}k tris`);
+    }
     // menu scenes: Home (beach + carousel crab) and a fully decorated Crab Cove
     const MENUS = [
       ['Home', "window.__crab.setState('title')"],

@@ -8,7 +8,7 @@ import { levelSpeed, type CompiledLevel } from './levels';
 import { emptyLevelStats, type LevelRunStats } from './objectives';
 
 export type WorldMode = 'idle' | 'running' | 'crashing' | 'finished';
-export type RunKind = 'endless' | 'level' | 'daily';
+export type RunKind = 'endless' | 'level' | 'daily' | 'race';
 export type SimAction = 'left' | 'right' | 'hop' | 'slam';
 
 export interface RunOptions {
@@ -25,6 +25,8 @@ export interface RunOptions {
   level?: CompiledLevel | null;
   /** Daily Tide: the day's modifier (an endless run with a twist) */
   modifier?: Modifier | null;
+  /** Crab Cup: a race to `finishAt` (absolute track position); crashes become stumbles */
+  race?: { finishAt: number } | null;
 }
 
 export interface RunStats {
@@ -204,13 +206,18 @@ export class World {
     this.tutorialActive = !!opts.tutorial && !(opts.tutorial.move && opts.tutorial.hop);
     this.level = opts.level ?? null;
     this.modifier = this.level ? null : (opts.modifier ?? null);
-    this.kind = this.level ? 'level' : this.modifier ? 'daily' : 'endless';
+    this.kind = this.level ? 'level' : opts.race ? 'race' : this.modifier ? 'daily' : 'endless';
     this.levelStart = opts.startDist;
     this.levelStats = emptyLevelStats();
     if (this.level) this.levelStats.dollarsTotal = this.level.dollars;
     this.chaseGap = this.level?.def.chase ? CFG.island.chase.startGap : null;
     this.slowT = 0;
     this.finishT = 0;
+    this.raceStumble = 0;
+    this.dashMeter = 0;
+    this.dashT = 0;
+    this.raceTime = 0;
+    this.speedMul = 1;
     this.speed = this.speedForDist(this.dist);
     this.spawner = new Spawner(this, this.rng, opts.startDist, this.tutorialActive ? opts.tutorial : null);
     this.spawner.update();
@@ -368,6 +375,19 @@ export class World {
 
     // speed
     let target = this.speedForDist(this.dist);
+    if (this.opts.race) {
+      const R = CFG.race;
+      target *= this.speedMul;
+      if (this.raceStumble > 0) {
+        this.raceStumble = Math.max(0, this.raceStumble - dt);
+        target *= R.stumbleSpeed;
+      }
+      if (this.dashT > 0) {
+        this.dashT = Math.max(0, this.dashT - dt);
+        target *= R.dashSpeed;
+        if (this.dashT === 0) this.events.push({ t: 'dashEnd' });
+      }
+    }
     if (this.power.kind === 'rider') target *= CFG.riderSpeedMul;
     if (this.slowT > 0) {
       this.slowT = Math.max(0, this.slowT - dt);
@@ -397,6 +417,12 @@ export class World {
     this.detectPasses();
     if (this.level) this.updateLevel(dt);
     else this.zoneAndMilestones();
+    if (this.opts.race && this.dist >= this.opts.race.finishAt && this.mode === 'running') {
+      this.mode = 'finished';
+      this.finishT = 0;
+      this.raceTime = this.time;
+      this.events.push({ t: 'finish' });
+    }
     this.cleanup();
   }
 
@@ -622,6 +648,13 @@ export class World {
       const dx = p.x - e.x;
       if (Math.abs(dx) >= halfX) continue;
       if (rider || p.invuln > 0 || this.opts.god) continue;
+      // Shell Dash smashes straight through
+      if (this.dashT > 0) {
+        e.dead = true;
+        e.knocked = 0.001;
+        this.events.push({ t: 'knock', id: e.id });
+        continue;
+      }
 
       const prevRel = e.prevWz - this.prevDist;
       const prevOx = Math.abs(p.prevX - e.x) < halfX;
@@ -645,6 +678,10 @@ export class World {
         p.invuln = 1.0;
         continue;
       }
+      if (this.opts.race) {
+        this.stumble(e);
+        continue;
+      }
       this.crash(e.kind);
       return;
     }
@@ -666,6 +703,30 @@ export class World {
     this.stats.bumps++;
     this.events.push({ t: 'bump', x: p.x });
     if (this.chaseGap !== null) this.chaseGap -= CFG.island.chase.bump;
+  }
+
+  // ---------------------------------------------------------------- Crab Cup
+  /** race state: stumble timer, Shell Dash meter (0..1) and timer, finish time, rival catch-up multiplier */
+  raceStumble = 0;
+  dashMeter = 0;
+  dashT = 0;
+  raceTime = 0;
+  speedMul = 1;
+
+  get racing(): boolean {
+    return !!this.opts.race;
+  }
+
+  private stumble(e: Entity): void {
+    const R = CFG.race;
+    this.raceStumble = R.stumble;
+    this.player.invuln = R.stumble + R.recover;
+    this.stats.bumps++;
+    e.dead = true;
+    e.knocked = 0.001;
+    this.events.push({ t: 'knock', id: e.id });
+    this.events.push({ t: 'stumble', kind: e.kind });
+    this.streak = 0;
   }
 
   private crash(kind: string): void {
@@ -753,6 +814,14 @@ export class World {
   private pickShell(s: Shell): void {
     const stats = this.stats;
     stats.shells += s.big ? CFG.shell.big : 1;
+    if (this.opts.race && this.dashT <= 0) {
+      this.dashMeter = Math.min(1, this.dashMeter + (s.big ? CFG.shell.big : 1) / CFG.race.dashShells);
+      if (this.dashMeter >= 1) {
+        this.dashMeter = 0;
+        this.dashT = CFG.race.dashTime;
+        this.events.push({ t: 'dash' });
+      }
+    }
     if (this.level) this.levelStats.shellsPicked++;
     this.distSinceShell = 0;
     if (this.time - this.lastShellTime <= CFG.shell.streakWindow) this.streak++;

@@ -4,6 +4,10 @@ A three-lane beach runner for iPhone, Chromebook and PC browsers. Scuttle down t
 
 **Update 2, "Sunny Season"**, adds toy-like shading with outlines and shadows, a fully rigged and animated crab, the Island Hop level mode, the Sunny Pass, the Daily Tide and the Wardrobe.
 
+**Update 3, "Shell Shock"**, adds Crab Cove, trophies and titles, Island Hop+ and a new Home.
+
+**Update 4, "Race Day"**, adds the Crab Cup race mode, a tougher Beach Run, a cleaner phone layout and more detailed models.
+
 Everything you see and hear is generated in code: the models, textures, sound effects and music. The whole game downloads in about 300 KB.
 
 ![Gameplay](docs/screenshots/m3-pier-desktop.png)
@@ -29,7 +33,8 @@ You can change lanes in mid-air. Hitting something head-on ends the run; clippin
 
 ### What's in the game
 
-- **Beach Run:** an endless run through four areas. Sunny Shore leads to Boardwalk Pier at 700 m, Tide Pool Cove at 1,600 m, and the endless Sunset Lagoon from 2,800 m. Night falls past 4,000 m.
+- **Beach Run:** an endless run through four areas. Sunny Shore leads to Boardwalk Pier at 700 m, Tide Pool Cove at 1,600 m, and the endless Sunset Lagoon from 2,800 m. Night falls past 4,000 m. The run speeds up all the way, gaps tighten in the later areas, Riptide patterns appear past 4,000 m, and Scuttlers dash sideways into your lane after a warning.
+- **Crab Cup:** race three rival crabs (Shelly, Capt. Barnacle, Pip and Coco) through three cups of three races each. Bumps make you stumble instead of ending the race, and every 25 shells fire a Shell Dash that smashes through anything. Places score 10/6/3/1 points; a top-three cup finish unlocks the next cup and pays shells, pearls, a title or the Race Helmet. Win every race of a cup for its gold trophy.
 - **Island Hop:** 24 handcrafted levels on four islands, each with three stars:
   - reach the flag;
   - grab all three golden sand dollars;
@@ -46,6 +51,7 @@ You can change lanes in mid-air. Hitting something head-on ends the run; clippin
   - Tall ones (sandcastles, crates, boulders, gulls): dodge them.
   - Low ones (logs, deck chairs, urchins, beach balls): hop or dodge.
   - Waves: hop.
+  - Scuttlers: raise their claws, then dash across one lane. Hop them or get out of the way.
   - Island Hop adds bounce pads, tide pools and hourglass shells.
 - **Power-ups:**
   - Shell Magnet pulls shells toward you.
@@ -107,13 +113,13 @@ BALANCE=1 npx vitest run tests/balance.test.ts   # run length, shell income and 
   - Scenery tiles merged into a few draw calls, plus instanced shells, shadows and particles; models switch to low detail past 50 m.
   - Sky and ocean shaders, and a day-to-night cycle.
   - Auto quality that scales resolution, and between runs the graphics tier.
-- **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v3, with v1 and v2 migration), synthesised audio and quality code.
-- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2) and **[`UPDATE3_PLAN.md`](UPDATE3_PLAN.md)** (Update 3, "Shell Shock").
+- **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v4, with v1–v3 migration), synthesised audio and quality code.
+- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2) and **[`UPDATE3_PLAN.md`](UPDATE3_PLAN.md)** (Update 3, "Shell Shock") and **[`UPDATE4_PLAN.md`](UPDATE4_PLAN.md)** (Update 4, "Race Day").
 
 ### Performance budgets (measured at the busiest moments)
 
 | Tier | Draw calls | Triangles | Budget |
 |---|---|---|---|
-| High | ≤ 71 | ≤ 118k | 100 / 150k |
-| Medium | ≤ 63 | ≤ 96k | 80 / 100k |
-| Low | ≤ 50 | ≤ 50k | 60 / 60k |
+| High | ≤ 81 | ≤ 128k | 100 / 150k |
+| Medium | ≤ 69 | ≤ 91k | 80 / 100k |
+| Low | ≤ 49 | ≤ 58k | 60 / 60k |

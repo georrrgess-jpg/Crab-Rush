@@ -88,6 +88,21 @@ export const CFG = {
     /** Update 4: a rock crab that scuttles one lane sideways as it approaches (hop it or dodge) */
     scuttle: { w: 1.4, d: 0.9, h: 0.65 },
   },
+  /** Crab Cup races (UPDATE4_PLAN.md §5.2) */
+  race: {
+    /** a crash is a stumble: this long at `stumbleSpeed`, then invulnerable for `recover` */
+    stumble: 0.9,
+    stumbleSpeed: 0.4,
+    recover: 1.0,
+    /** shells (value) to fill the Shell Dash meter; the dash lasts `dashTime` at `dashSpeed`, smashing through */
+    dashShells: 25,
+    dashTime: 2.5,
+    dashSpeed: 1.35,
+    /** rivals' gentle catch-up: up to this speed change, reached at `bandGap` metres behind or ahead */
+    band: 0.03,
+    bandGap: 60,
+    points: [10, 6, 3, 1] as readonly number[],
+  },
   /** scuttler timing, in seconds before it reaches the player: claws up at `warn`, crossing between `from` and `to` */
   scuttle: { warn: 1.9, from: 1.35, to: 0.75 },
   rollerSpeed: 5, // extra closing speed of beach balls

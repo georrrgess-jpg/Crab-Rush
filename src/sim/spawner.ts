@@ -94,6 +94,12 @@ export class Spawner {
         this.w.addEntity('arch', 1, at, { skin: z });
       }
     }
+    // Crab Cup: the finish arch
+    const race = this.w.opts.race;
+    if (race && !this.flagDone && race.finishAt <= horizon) {
+      this.flagDone = true;
+      this.w.addEntity('flag', 1, race.finishAt, { skin: 0, state: 0 });
+    }
     if (!this.bannerDone && this.w.bestAtStart > 60 && horizon >= this.w.bestAtStart && this.w.bestAtStart > this.w.startDist + 20) {
       this.bannerDone = true;
       this.w.addEntity('banner', 1, this.w.bestAtStart, {});

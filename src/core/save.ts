@@ -7,6 +7,7 @@ import { FRIEND_BY_ID, defaultFriends, type FriendsState } from '../meta/friends
 import { ACHIEVEMENTS } from '../meta/achievements';
 import { PASS_TIERS } from '../meta/xp';
 import { ITEM_BY_ID, V1_CRAB_HATS, defaultWardrobe, exists, syncFromCrabs, type Slot, type WardrobeState } from '../meta/wardrobe';
+import { type CupState, defaultCupState, sanitizeCup } from '../meta/cup';
 
 export type QualitySetting = 'auto' | 'low' | 'medium' | 'high';
 export type TouchButtons = 'auto' | 'show' | 'hide';
@@ -44,10 +45,10 @@ export interface LifetimeStats {
   longestRun: number;
 }
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface SaveData {
-  v: 3;
+  v: 4;
   shells: number;
   best: number;
   stats: LifetimeStats;
@@ -79,6 +80,8 @@ export interface SaveData {
   achievements: string[];
   /** the title shown on the profile card ('' = automatic) */
   title: string;
+  /** Crab Cup (Update 4, save v4) */
+  cup: CupState;
   /** Wardrobe outfits: three saved looks */
   outfits: (Outfit | null)[];
   /** hat dyes owned (indexes 1..3; 0 is the original) and the dye worn per hat */
@@ -99,7 +102,7 @@ export const SAVE_KEY = 'crabdash.save';
 
 export function defaultSave(): SaveData {
   return {
-    v: 3,
+    v: 4,
     shells: 0,
     best: 0,
     stats: { runs: 0, totalShells: 0, totalDistance: 0, totalHops: 0, totalWaves: 0, totalPowerups: 0, totalCloseShaves: 0, runsByCrab: {}, longestRun: 0 },
@@ -123,6 +126,7 @@ export function defaultSave(): SaveData {
     friends: defaultFriends(),
     achievements: [],
     title: '',
+    cup: defaultCupState(),
     outfits: [null, null, null],
     dyes: {},
     hatDye: {},
@@ -213,7 +217,7 @@ export function sanitize(raw: unknown): SaveData {
     ? [...new Set(r.passClaimed.filter((t): t is number => typeof t === 'number' && Number.isInteger(t) && t >= 1 && t <= PASS_TIERS))]
     : [];
   return {
-    v: 3,
+    v: 4,
     shells: Math.floor(num(r.shells, 0)),
     best: num(r.best, 0),
     stats: {
@@ -261,6 +265,7 @@ export function sanitize(raw: unknown): SaveData {
     friends: sanitizeFriends(r.friends),
     achievements: [...new Set(strArr(r.achievements).filter((k) => ACHIEVEMENTS.some((a) => a.key === k)))],
     title: typeof r.title === 'string' ? r.title.slice(0, 40) : '',
+    cup: sanitizeCup(r.cup),
     outfits: [0, 1, 2].map((i) => sanitizeOutfit(Array.isArray(r.outfits) ? (r.outfits as unknown[])[i] : null, wardrobe)),
     dyes: sanitizeDyes(r.dyes, wardrobe),
     hatDye: Object.fromEntries(Object.entries(countMap(r.hatDye)).filter(([k, v]) => v >= 1 && v <= 3 && sanitizeDyes(r.dyes, wardrobe)[k]?.includes(v))),

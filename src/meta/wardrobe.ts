@@ -45,6 +45,7 @@ export const ITEMS: Item[] = [
   it('hats', 'bucket', 'Bucket Hat', 'Complete Boardwalk Pier'),
   it('hats', 'viking', 'Viking Helmet', 'Sunny Pass tier 35'),
   it('hats', 'halo', 'Halo', 'Complete Sunset Lagoon'),
+  it('hats', 'helmet', 'Race Helmet', 'Clear the Tidal Cup'),
   // trails
   it('trails', 'sand', 'Sand Puffs', 'Starter'),
   it('trails', 'bubbles', 'Bubbles', 'Sunny Pass tier 3'),

@@ -194,6 +194,11 @@ export class UI {
     }
   }
 
+  /** extra HUD parts (the Crab Cup race HUD): shown with the HUD */
+  addHud(node: HTMLElement): void {
+    this.hud.appendChild(node);
+  }
+
   /** a floating layer above every screen (not part of the screen stack) */
   mountOverlay(node: HTMLElement): void {
     this.root.insertBefore(node, this.toasts);

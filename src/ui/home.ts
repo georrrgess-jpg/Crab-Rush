@@ -3,6 +3,7 @@ import { BOOST_SVG, HAT_SVG, ICON } from './icons';
 import type { GoalView } from './ui';
 import { Sheet, Wallet, onSizeClass } from './kit';
 import { morphFrom } from './motion';
+import { CUP_ICON } from './cup';
 
 /** Everything the Home screen shows (UPDATE3_PLAN.md §2). */
 export interface HomeData {
@@ -33,6 +34,8 @@ export interface HomeData {
   /** Crab Cove: gifts waiting, finished quests (null until the Cove opens) */
   cove?: { gifts: number; ready: boolean; comfort: number } | null;
   pearls?: number;
+  /** Crab Cup: cups cleared, the cup in progress */
+  cup?: { cleared: number; total: number; current: string | null; wins: number } | null;
 }
 
 export interface HomeHandlers {
@@ -40,6 +43,7 @@ export interface HomeHandlers {
   islands(): void;
   daily(): void;
   cove?(): void;
+  cup?(): void;
   wardrobe(): void;
   pass(): void;
   settings(): void;
@@ -64,10 +68,11 @@ const ART = {
   islands: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ai-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fc4f0"/><stop offset="1" stop-color="#1f74b8"/></linearGradient></defs><rect width="320" height="160" fill="url(#ai-sea)"/><g class="a-waves" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="3" stroke-linecap="round"><path d="M10 40q10-6 20 0t20 0M200 24q10-6 20 0t20 0M120 140q10-6 20 0t20 0"/></g><g class="a-isle"><ellipse cx="230" cy="112" rx="70" ry="22" fill="#f6dda6"/><path d="M232 104c2-20 6-34 12-46" stroke="#8a4a1e" stroke-width="5" fill="none"/><path d="M244 58c-14-8-26-4-32 2 10-2 20 0 32 4zm0 0c10-10 24-10 30-4-10-2-20 0-30 8z" fill="#2f9e4a"/><path class="a-flag" d="M200 100V74l18 6-18 6" fill="#ff5a4a" stroke="#fff" stroke-width="2"/></g><path d="M40 120q40-30 80-20t80-4" stroke="#fff" stroke-width="3" stroke-dasharray="6 7" fill="none" opacity=".8"/><circle cx="40" cy="120" r="7" fill="#ffd23a" stroke="#fff" stroke-width="2"/><circle cx="120" cy="100" r="7" fill="#ffd23a" stroke="#fff" stroke-width="2"/></svg>`,
   daily: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ad-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5fd0c0"/><stop offset="1" stop-color="#1d8c84"/></linearGradient></defs><rect width="320" height="160" fill="url(#ad-sky)"/><g class="a-waves" fill="rgba(255,255,255,.22)"><path d="M0 120q20-10 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0v60H0z"/></g><g class="a-cal"><rect x="208" y="34" width="76" height="76" rx="12" fill="#fff"/><rect x="208" y="34" width="76" height="22" rx="10" fill="#ff5a4a"/><rect class="a-page" x="216" y="62" width="60" height="40" rx="6" fill="#eef7fb"/><path d="M232 82l9 9 17-19" stroke="#3fbf55" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g><path class="a-flame" d="M60 118c2-10 12-14 12-28 6 8 4 14 8 18 2-4 2-8 2-10 6 6 8 12 8 20a15 15 0 0 1-30 0z" fill="#ffb020"/></svg>`,
   cove: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ac-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b07ae0"/><stop offset="1" stop-color="#6a3fb0"/></linearGradient></defs><rect width="320" height="160" fill="url(#ac-sky)"/><circle cx="60" cy="40" r="16" fill="#fff3c8" opacity=".8"/><path d="M0 124c80-20 200-24 320-6v42H0z" fill="#f2cf9a"/><g class="a-hut"><path d="M206 120V86h52v34z" fill="#c98a4a"/><path d="M196 90l36-28 36 28z" fill="#e8b45a" stroke="#8a5a2a" stroke-width="2"/><rect x="224" y="98" width="16" height="22" fill="#6a3a1a"/></g><g class="a-smoke" fill="rgba(255,255,255,.6)"><circle cx="150" cy="96" r="6"/><circle cx="154" cy="84" r="8"/><circle cx="148" cy="70" r="9"/></g><path d="M138 120l12-14 12 14z" fill="#ff8a2a"/></svg>`,
+  cup: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="au-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a8a"/><stop offset="1" stop-color="#d23a5a"/></linearGradient></defs><rect width="320" height="160" fill="url(#au-sky)"/><g class="a-rays" fill="rgba(255,255,255,.12)"><path d="M250 70L330 20v30zM250 70L330 100v30zM250 70L200 -10h40z"/></g><path d="M0 128h320v32H0z" fill="#f6dda6"/><g opacity=".9"><rect x="150" y="104" width="10" height="34" fill="#fff"/><rect x="150" y="104" width="5" height="5" fill="#222"/><rect x="155" y="109" width="5" height="5" fill="#222"/><rect x="150" y="114" width="5" height="5" fill="#222"/><rect x="155" y="119" width="5" height="5" fill="#222"/></g><g class="a-cup"><path d="M226 40h48v20a24 24 0 0 1-48 0z" fill="#ffd23a" stroke="#b07a10" stroke-width="3"/><path d="M226 46h-12c0 14 8 20 16 20M274 46h12c0 14-8 20-16 20" stroke="#ffd23a" stroke-width="6" fill="none"/><rect x="244" y="82" width="12" height="12" fill="#e9a820"/><rect x="232" y="94" width="36" height="10" rx="3" fill="#ffd23a" stroke="#b07a10" stroke-width="3"/><path d="M250 48l3 6 6 1-4 4 1 6-6-3-6 3 1-6-4-4 6-1z" fill="#fff" opacity=".8"/></g><g class="a-racers"><g class="a-r1"><ellipse cx="0" cy="0" rx="13" ry="9" fill="#ff5a4a"/><circle cx="-5" cy="-9" r="3" fill="#fff"/><circle cx="5" cy="-9" r="3" fill="#fff"/></g><g class="a-r2"><ellipse cx="0" cy="0" rx="13" ry="9" fill="#5ab0ff"/><circle cx="-5" cy="-9" r="3" fill="#fff"/><circle cx="5" cy="-9" r="3" fill="#fff"/></g></g><g stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".7"><path class="a-speed" d="M20 112h30M10 122h40M30 132h26"/></g></svg>`,
 };
 
 interface Card {
-  id: 'beach' | 'islands' | 'daily' | 'cove';
+  id: 'beach' | 'cup' | 'islands' | 'daily' | 'cove';
   el: HTMLButtonElement;
   sub: HTMLElement;
   badge: HTMLElement;
@@ -165,6 +170,7 @@ export class HomeScreen {
       return { id, el: c, sub: c.querySelector('.mc-sub') as HTMLElement, badge: c.querySelector('.mc-badge') as HTMLElement, cta: c.querySelector('.mc-cta') as HTMLElement };
     };
     this.cards.push(mk('beach', 'Play', ICON.play, () => this.h.play(), ' play-card'));
+    if (this.h.cup) this.cards.push(mk('cup', 'Crab Cup', CUP_ICON, () => this.h.cup?.()));
     this.cards.push(mk('islands', 'Island Hop', ICON.island, () => this.h.islands()));
     this.cards.push(mk('daily', 'Daily Tide', ICON.calendar, () => this.h.daily()));
     if (this.h.cove) this.cards.push(mk('cove', 'Crab Cove', COVE_ICON, () => this.h.cove?.()));
@@ -374,6 +380,12 @@ export class HomeScreen {
           c.badge.innerHTML = `${ICON.flame}${d.daily.streak}`;
           c.el.classList.toggle('ready', !d.daily.playedToday);
         } else c.sub.textContent = 'Coming soon';
+      } else if (c.id === 'cup') {
+        const cu = d.cup;
+        c.sub.innerHTML = cu ? (cu.current ? `${cu.current} in progress` : cu.cleared >= cu.total ? `All cups cleared · ${cu.wins} wins` : `${cu.cleared}/${cu.total} cups · race 3 rivals`) : 'Race 3 rivals';
+        c.badge.classList.toggle('hidden', !cu?.current);
+        c.badge.innerHTML = '!';
+        c.el.classList.toggle('ready', !!cu?.current);
       } else if (c.id === 'cove') {
         const cv = d.cove;
         c.sub.innerHTML = cv ? (cv.gifts > 0 ? `${ICON.shell}${fmt(cv.gifts)} gifts waiting` : `Comfort ${cv.comfort}`) : 'Build your island';
