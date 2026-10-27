@@ -11,6 +11,7 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - `node scripts/perf.mjs [--no-build] [--tiers=high,medium,low]`: draw-call/triangle budget check per tier and zone (exit 1 if over)
 - `node scripts/ui-audit.mjs [--no-build] [--only=...] [--views=...]`: every screen at the five reference viewports; fails on overlapping controls, text overflow, tap targets under 40 px, horizontal scroll
 - `node scripts/anim-strip.mjs <label> [--no-build]`: crab animation strips (run, turntable, hop, crash, emotes, dances, bodies, hats, lane, slam)
+- `node scripts/crab-closeup.mjs <label> [--no-build] [--body=id] [--hat=id]`: large front / three-quarter / side / back renders of the crab for model review
 - `BALANCE=1 npx vitest run tests/balance.test.ts`: simulated-player balance report
 - Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`, `xp`, `level`, `daily`, `setDate`, `wear`, `unlockAll`, `shaderCheck`, `budgets`.
 

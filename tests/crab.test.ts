@@ -8,7 +8,7 @@ const tris = (g: GeoBuilder): number => {
   return geo.attributes.position!.count / 3;
 };
 
-describe('crab v2 model', () => {
+describe('crab v3 model', () => {
   for (const hi of [true, false]) {
     it(`stays within the ${hi ? 'High' : 'Low'} triangle budget and binds every vertex to a bone`, () => {
       const clay = new GeoBuilder();
@@ -19,7 +19,8 @@ describe('crab v2 model', () => {
       const gl = gloss.build();
       const total = (c.attributes.position!.count + gl.attributes.position!.count) / 3;
       if (process.env.CRAB) console.log(hi ? 'high' : 'low', 'crab tris', total, 'outline', tris(line));
-      expect(total).toBeLessThanOrEqual(hi ? 6500 : 2800);
+      // Crab v3 budgets (UPDATE3_PLAN.md §4)
+      expect(total).toBeLessThanOrEqual(hi ? 9000 : 3500);
       for (const g of [c, gl]) {
         const si = g.attributes.skinIndex!;
         const sw = g.attributes.skinWeight!;

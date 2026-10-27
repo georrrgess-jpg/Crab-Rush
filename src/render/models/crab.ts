@@ -18,7 +18,7 @@ export interface CrabSkin {
   /** iris colour */
   iris: number;
   /** painted pattern on the shell */
-  pattern?: 'rainbow' | 'gold' | 'stars' | 'spots';
+  pattern?: 'rainbow' | 'gold' | 'stars' | 'spots' | 'lava' | 'pearl';
   /** sand-puff tint while running */
   dust: number;
   blurb: string;
@@ -39,6 +39,9 @@ export const BODY_SKINS: CrabSkin[] = [
   ...CRAB_SKINS,
   { id: 'coral', name: 'Coral', body: 0xff8a6a, dark: 0xe0584a, belly: 0xffe0c8, hat: 'flowercrown', iris: 0x8a3a2a, pattern: 'spots', dust: 0xffe0d0, blurb: 'Fresh from the reef.' },
   { id: 'midnight', name: 'Midnight', body: 0x2a2f6a, dark: 0x161a40, belly: 0x8a9ae0, hat: 'headphones', iris: 0x3fd6ff, pattern: 'stars', dust: 0xc0c8ff, blurb: 'Glows after dark.' },
+  { id: 'reef', name: 'Reef', body: 0x2fc4b2, dark: 0x168a86, belly: 0xc8fff0, hat: 'snorkel', iris: 0x0a5a6a, pattern: 'spots', dust: 0xd0fff4, blurb: 'Speckled like a coral garden.' },
+  { id: 'lava', name: 'Lava', body: 0x3a2a2e, dark: 0x1e1418, belly: 0xff9a4a, hat: 'viking', iris: 0xff5a1a, pattern: 'lava', dust: 0xffb07a, blurb: 'Hot off the volcano. Glowing cracks!' },
+  { id: 'pearl', name: 'Pearl', body: 0xf4eefa, dark: 0xc8bce0, belly: 0xffffff, hat: 'crown', iris: 0x7a5ab0, pattern: 'pearl', dust: 0xf8f0ff, blurb: 'A shimmering treasure of the Cove.' },
   { id: 'gold', name: 'Golden Crab', body: 0xffc93a, dark: 0xd8902a, belly: 0xfff0b0, hat: 'crown', iris: 0x8a5a10, pattern: 'gold', dust: 0xfff4c0, blurb: 'Legend of the islands.' },
 ];
 
@@ -136,6 +139,9 @@ export interface CrabDrive {
   /** seconds since the crash, <0 when alive */
   crashT: number;
   rider: boolean;
+  /** power-up stances (UPDATE3_PLAN.md §3): claws up for the magnet, a bob inside the shield */
+  magnet?: boolean;
+  shield?: boolean;
 }
 
 const _drive: CrabDrive = { running: false, grounded: true, vy: 0, vx: 0, speed: 0, crashT: -1, rider: false };
@@ -194,6 +200,13 @@ export class CrabModel {
   private laneT = 9;
   private laneDir = 0;
   private laneSettled = true;
+  private airborne = false;
+  private twist = 0;
+  /** near miss: flinch away from the side that was close (-1/1), and a sweat drop */
+  private flinchT = 9;
+  private flinchDir = 0;
+  private happyT = 9;
+  private readonly sweat: THREE.Mesh;
   private landT = 9;
   private landHard = false;
   private bumpT = 9;
@@ -278,6 +291,13 @@ export class CrabModel {
     this.dizzy.position.y = 1.5;
     this.dizzy.visible = false;
     this.root.add(this.dizzy);
+    // near-miss sweat drop: a little teardrop beside the head
+    const sw = new GeoBuilder();
+    sw.sphere(0x8fd8ff, 0.07, [0, 0, 0], [1, 1.25, 1], 8);
+    sw.cone(0x8fd8ff, 0.05, 0.09, [0, 0.1, 0], [0, 0, 0], 8);
+    this.sweat = new THREE.Mesh(sw.build(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
+    this.sweat.visible = false;
+    this.root.add(this.sweat);
 
     this.setSkin(CRAB_SKINS[0] as CrabSkin);
   }
@@ -370,7 +390,7 @@ export class CrabModel {
   land(hard: boolean): void {
     this.landT = 0;
     this.landHard = hard;
-    this.squash.velocity = hard ? -16 : -10;
+    this.squash.velocity = hard ? -11 : -6;
     this.hatX.impulse(hard ? 5 : 3);
     for (const s of this.antX) s.impulse(hard ? 9 : 5);
     if (this.state === 'slam') this.setState('run');
@@ -386,6 +406,17 @@ export class CrabModel {
   }
   slam(): void {
     this.setState('slam', 0.06);
+  }
+  /** a close shave: flinch away from the obstacle side (dir -1 = it was on the left) */
+  flinch(dir: number): void {
+    this.flinchT = 0;
+    this.flinchDir = dir || (Math.random() < 0.5 ? -1 : 1);
+    this.hatZ.impulse(-this.flinchDir * 4);
+  }
+  /** a happy bounce (big shells, goals) */
+  happy(): void {
+    this.happyT = 0;
+    this.squash.velocity += 3;
   }
   bump(): void {
     this.bumpT = 0;
@@ -496,7 +527,7 @@ export class CrabModel {
 
     // gait phase: faster with speed, doubled briefly during a lane change
     const laneBoost = this.laneT < 0.25 ? 1 - this.laneT / 0.25 : 0;
-    const rate = d.running ? (5 + d.speed * 0.9) * (1 + laneBoost) : 3.2;
+    const rate = d.running ? (6 + d.speed * 1.05) * (1 + laneBoost) : 3.2;
     this.phase += dt * rate;
 
     // pose for the current state, cross-faded from the previous one
@@ -546,8 +577,9 @@ export class CrabModel {
           const g = ((l % 3) % 2) ^ side;
           const lp = ph + g * Math.PI;
           const lift = Math.max(0, Math.cos(lp));
-          p[P_LEG + l * 4] = Math.sin(lp) * 0.42;
-          p[P_LEG + l * 4 + 1] = 0.1 + lift * 0.42;
+          // a faster, wider stride with speed keeps the feet closer to the ground speed
+          p[P_LEG + l * 4] = Math.sin(lp) * 0.5;
+          p[P_LEG + l * 4 + 1] = 0.1 + lift * 0.46;
           p[P_LEG + l * 4 + 2] = -lift * 0.5;
           p[P_LEG + l * 4 + 3] = lift * 0.3;
         }
@@ -941,8 +973,44 @@ export class CrabModel {
       this.blinkPhase = Math.max(0, this.blinkPhase - dt);
       o[P_LID] = Math.max(o[P_LID] as number, arc(1 - this.blinkPhase / 0.15));
     }
-    // squash spring returns to 1
-    this.squash.target = 1;
+    // in the air: stretch while rising, tuck at the apex, a barrel twist on mid-air lane changes
+    this.airborne = !d.grounded && this.state !== 'crash';
+    const twistTo = this.airborne && this.laneT < 0.4 ? -this.laneDir * arc(this.laneT / 0.4) * 0.6 : 0;
+    this.twist += (twistTo - this.twist) * Math.min(1, dt * 7);
+    o[P_BODY_RZ] = (o[P_BODY_RZ] as number) + this.twist;
+    // near miss: head whips away, eyes squeeze, sweat flies
+    if (this.flinchT < 0.5) {
+      const k = Math.min(1, this.flinchT / 0.04) * (1 - smooth01((this.flinchT - 0.1) / 0.4));
+      o[P_BODY_RY] = (o[P_BODY_RY] as number) - this.flinchDir * 0.3 * k;
+      o[P_BODY_RZ] = (o[P_BODY_RZ] as number) + this.flinchDir * 0.12 * k;
+      o[P_LOOK_X] = (o[P_LOOK_X] as number) + this.flinchDir * 0.7 * k;
+      o[P_LID] = Math.max(o[P_LID] as number, 0.55 * k);
+      this.mouth = 2;
+    }
+    this.flinchT += dt;
+    this.sweat.visible = this.flinchT < 0.55;
+    if (this.sweat.visible) {
+      const t = this.flinchT;
+      this.sweat.position.set(-this.flinchDir * (0.45 + t * 0.9), 1.05 + t * 1.2 - t * t * 3, 0.15);
+      this.sweat.scale.setScalar(Math.max(0.01, 1 - t * 1.4));
+    }
+    // happy bounce
+    if (this.happyT < 0.35) {
+      o[P_LIFT] = (o[P_LIFT] as number) + arc(this.happyT / 0.35) * 0.12;
+      if (this.state === 'run') this.mouth = 1;
+    }
+    this.happyT += dt;
+    // power-up stances
+    if (d.magnet && this.state === 'run') {
+      for (let s2 = 0; s2 < 2; s2++) {
+        o[P_CLAW + s2 * 4] = (o[P_CLAW + s2 * 4] as number) + 0.7;
+        o[P_CLAW + s2 * 4 + 1] = (o[P_CLAW + s2 * 4 + 1] as number) + (s2 === 0 ? -1 : 1) * 0.35;
+        o[P_CLAW + s2 * 4 + 3] = 0.65;
+      }
+    }
+    if (d.shield && this.state === 'run') o[P_BODY_Y] = (o[P_BODY_Y] as number) + Math.sin(this.time * 5) * 0.03;
+    // squash spring: stretch while rising, a slight squash as it falls
+    this.squash.target = this.airborne && this.state !== 'slam' ? 1 + clamp(d.vy * 0.016, -0.06, 0.1) : 1;
     this.squash.update(dt);
     // secondary motion: hat and antennae react to body acceleration
     const by = o[P_BODY_Y] as number;
@@ -1008,6 +1076,7 @@ export class CrabModel {
     if (this.dizzyT > 0) this.dizzyT -= dt;
     if (this.dizzy.visible) {
       this.dizzy.rotation.y = this.time * 5;
+      this.dizzy.scale.setScalar(1 + Math.sin(this.time * 14) * 0.12);
       if (this.state === 'crash') this.dizzy.position.set(0, 1.35, -0.7);
       else this.dizzy.position.set(0, 1.5, 0);
     }
@@ -1147,23 +1216,60 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     if (Math.abs(y - 0.5) < 0.03) _ca.multiplyScalar(1.06);
     // painted patterns
     if (skin.pattern === 'rainbow') {
-      _cb.setHSL((((x * 0.45 + y * 0.35 + 0.1) % 1) + 1) % 1, 0.85, 0.58);
-      _ca.lerp(_cb, 0.85 * (1 - bellyW));
-    } else if (skin.pattern === 'spots' || skin.pattern === 'stars') {
-      const h = hash3(Math.round(x * 9), Math.round(y * 9), Math.round(z * 9));
-      if (y > 0.55 && h > 0.82) {
-        _cb.set(skin.pattern === 'stars' ? 0xfff4c0 : dark);
-        _ca.lerp(_cb, skin.pattern === 'stars' ? 0.9 : 0.55);
-      }
+      // clean concentric bands from the crown of the shell down to the rim
+      const band = Math.floor(Math.hypot(x, z * 1.2) * 7 + (y > 0.8 ? 0 : 0.5));
+      _cb.setHSL(((band * 0.14 + 0.92) % 1 + 1) % 1, 0.8, 0.6);
+      _ca.lerp(_cb, 0.82 * (1 - bellyW) * smooth01((y - 0.36) / 0.1));
+    } else if (skin.pattern === 'lava') {
+      // glowing cracks: thin bright veins in a dark shell
+      const v = Math.abs(Math.sin(x * 11 + Math.sin(z * 9) * 1.8) * Math.cos(z * 7 - x * 3));
+      if (y > 0.35) _ca.lerp(_cb.set(0xff7a1a), smooth01((0.16 - v) / 0.1) * 0.95);
+    } else if (skin.pattern === 'pearl') {
+      // pearly sheen: pastel hues shift around the shell
+      _cb.setHSL(((Math.atan2(z, x) / (Math.PI * 2) + y * 0.6) % 1 + 1) % 1, 0.75, 0.82);
+      _ca.lerp(_cb, 0.7 * (1 - bellyW));
     } else if (skin.pattern === 'gold') {
       _ca.multiplyScalar(0.92 + hash3(Math.round(x * 14), Math.round(y * 14), Math.round(z * 14)) * 0.16);
     }
+    // fine speckles on the top of the shell (every body; subtle)
+    if (y > 0.6 && skin.pattern !== 'rainbow' && hash3(Math.round(x * 30), Math.round(y * 30), Math.round(z * 30)) > 0.9) _ca.multiplyScalar(1.12);
+    // warm sides: a slightly lighter band just above the rim
+    _ca.multiplyScalar(1 + 0.07 * Math.max(0, 1 - Math.abs(y - 0.58) / 0.08));
     // baked occlusion under the rim
     _ca.multiplyScalar(0.82 + 0.18 * smooth01((y - 0.12) / 0.2));
     c.copy(_ca);
   };
+  /** shell radius at height y (before scaling): details are placed on the real surface */
+  const shellR = (y: number): number => {
+    for (let i = 1; i < profile.length; i++) {
+      const a = profile[i - 1] as [number, number];
+      const b = profile[i] as [number, number];
+      if (y >= a[1] && y <= b[1]) return a[0] + ((b[0] - a[0]) * (y - a[1])) / Math.max(1e-6, b[1] - a[1]);
+    }
+    return 0;
+  };
+  /** a point on the shell surface at height y, angle a (0 = front, π = back), pushed out by `out` */
+  const onShell = (y: number, a: number, out = 0): V3 => [Math.sin(a) * (shellR(y) * 1.05 + out), y * 0.96, Math.cos(a) * (shellR(y) * 0.82 + out)];
+  /** Crab v3 carapace sculpt: a scalloped rim lip, a notch between the eyes and a raised crown. */
+  const sculpt = (p: THREE.Vector3): void => {
+    const a = Math.atan2(p.x, p.z / 0.82);
+    const rimK = Math.max(0, 1 - Math.abs(p.y - 0.5) / 0.09);
+    // scallops all round the rim, stronger at the sides (crab "teeth")
+    const side = Math.abs(Math.sin(a));
+    const sc = Math.max(0, Math.cos(a * 9)) ** 3 * 0.035 * (0.4 + side) * rimK;
+    const r = Math.hypot(p.x, p.z);
+    if (r > 1e-4) {
+      p.x += (p.x / r) * sc;
+      p.z += (p.z / r) * sc;
+    }
+    // front notch between the eye stalks
+    const front = smooth01((p.z - 0.25) / 0.2) * Math.max(0, 1 - Math.abs(p.x) / 0.14) * smooth01((p.y - 0.62) / 0.1);
+    p.y -= front * 0.04;
+    p.z -= front * 0.02;
+  };
   both(gloss, (g) => {
-    g.bone(B_BODY).lathe(body, profile, seg(26), [0, 0, 0], [0, 0, 0], [1, 1, 0.8]);
+    g.bone(B_BODY).lathe(body, profile, seg(hi ? 40 : 26), [0, 0, 0], [0, 0, 0], [1.05, 0.96, 0.82]);
+    if (hi && g === gloss) g.warp(sculpt);
     if (g === gloss) g.paint(shellPaint);
   });
   if (deco) {
@@ -1172,16 +1278,58 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
   for (const [x, z, r] of [[-0.3, -0.12, 0.1], [0.3, -0.12, 0.1], [0, -0.28, 0.085], [-0.16, 0.12, 0.06], [0.16, 0.12, 0.06]] as V3[]) {
     ball(gloss.bone(B_BODY), dark, r, [x, 0.86 - Math.abs(x) * 0.15 + (z < 0 ? 0 : -0.02), z], [1, 0.45, 1], 8);
   }
-  // mouth expressions, each on its own bone (scale 0 hides it)
-  const mz = 0.508;
-  clay.bone(B_MOUTH[0] as number).geo(new THREE.TorusGeometry(0.085, 0.017, 5, 10, 2.2), 0x3a1010, [0, 0.475, mz], [0.25, 0, Math.PI + (Math.PI - 2.2) / 2], [1, 0.75, 1]);
-  clay.bone(B_MOUTH[1] as number).geo(new THREE.TorusGeometry(0.045, 0.02, 4, 10), 0x3a1010, [0, 0.44, mz], [0.15, 0, 0]);
-  ball(clay.bone(B_MOUTH[1] as number), 0x7a1a2a, 0.045, [0, 0.44, mz - 0.01], [1, 1, 0.3], 6);
-  clay.bone(B_MOUTH[2] as number).box(0xffffff, 0.15, 0.045, 0.03, [0, 0.44, mz]);
-  clay.bone(B_MOUTH[2] as number).box(0x3a1010, 0.17, 0.012, 0.035, [0, 0.44, mz]);
-  clay.bone(B_MOUTH[3] as number).tube(0x3a1010, [[-0.09, 0.44, mz], [-0.045, 0.465, mz + 0.01], [0, 0.44, mz + 0.01], [0.045, 0.415, mz + 0.01], [0.09, 0.44, mz]], 0.014, 4, 8, true);
+  // shell ridges: two arcs over the crown, darker
+  for (const sx of SIDES) {
+    gloss.bone(B_BODY).tube(dark, [[sx * 0.12, 0.88, 0.22], [sx * 0.2, 0.92, 0.0], [sx * 0.16, 0.88, -0.22], [sx * 0.05, 0.82, -0.38]], 0.022, seg(5), tub(8), true);
+    // side spines along the rim
+    for (let k = 0; k < (hi ? 3 : 2); k++) {
+      const a = 0.55 + k * 0.38;
+      gloss.bone(B_BODY).cone(dark, 0.03, 0.09, [sx * Math.sin(a) * 0.69, 0.51, Math.cos(a) * 0.57], [Math.PI / 2, 0, -sx * (Math.PI / 2 - 0.15) + 0], seg(6));
+    }
+  }
+  // spots and stars are real little shapes on the shell (vertex paint is too coarse for them)
+  if (skin.pattern === 'spots' || skin.pattern === 'stars') {
+    const n = hi ? 14 : 7;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + hash3(i, 3, 7) * 0.6;
+      const y = 0.6 + hash3(i, 5, 1) * 0.28;
+      const star = skin.pattern === 'stars';
+      const r = star ? 0.022 + hash3(i, 9, 2) * 0.014 : 0.04 + hash3(i, 9, 2) * 0.03;
+      const p = onShell(y, a, star ? 0.006 : 0.002);
+      ball(gloss.bone(B_BODY), star ? 0xfff6c8 : dark, r, p, star ? [1, 1, 1] : [1, 0.35, 1], 6, [-(y - 0.6) * 2 * Math.cos(a), a, 0]);
+    }
+  }
+  // back plates: grooves following the shell over the back, and a little tail flap underneath
+  for (let k = 0; k < (hi ? 3 : 1); k++) {
+    const y = 0.8 - k * 0.11;
+    const pts: V3[] = [];
+    for (let i = 0; i <= 6; i++) pts.push(onShell(y - Math.abs(i - 3) * 0.012, Math.PI + (i - 3) * 0.28, 0.006));
+    gloss.bone(B_BODY).tube(dark, pts, 0.016, 4, tub(10), true);
+  }
+  ball(gloss.bone(B_BODY), belly, 0.14, onShell(0.2, Math.PI, 0.02), [1.3, 0.32, 0.7], 10);
+  // mouthparts: two small plates under the mouth
+  if (hi) for (const sx of SIDES) ball(clay.bone(B_BODY), belly, 0.05, [sx * 0.055, 0.37, onShell(0.38, 0)[2] + 0.004], [1, 0.75, 0.35], 6, [0.3, sx * 0.3, 0]);
+  // mouth expressions, each on its own bone (scale 0 hides it). v3: bigger, filled shapes that read at game distance
+  const mz = onShell(0.46, 0)[2] + 0.008;
+  const grin = new THREE.Shape();
+  grin.moveTo(-0.11, 0.0);
+  grin.quadraticCurveTo(0, -0.012, 0.11, 0.0);
+  grin.quadraticCurveTo(0.09, -0.1, 0, -0.105);
+  grin.quadraticCurveTo(-0.09, -0.1, -0.11, 0.0);
+  clay.bone(B_MOUTH[0] as number).geo(new THREE.ShapeGeometry(grin, hi ? 6 : 3), 0x4a0f18, [0, 0.49, mz], [-0.12, 0, 0]);
+  ball(clay.bone(B_MOUTH[0] as number), 0xff6f8a, 0.05, [0, 0.415, mz + 0.004], [1, 0.45, 0.25], 6);
+  clay.bone(B_MOUTH[0] as number).tube(0x3a1010, [[-0.115, 0.495, mz + 0.004], [0, 0.483, mz + 0.012], [0.115, 0.495, mz + 0.004]], 0.01, 4, 6, true);
+  clay.bone(B_MOUTH[1] as number).geo(new THREE.TorusGeometry(0.06, 0.022, 4, 12), 0x3a1010, [0, 0.44, mz], [0.15, 0, 0]);
+  ball(clay.bone(B_MOUTH[1] as number), 0x5a0f1c, 0.06, [0, 0.44, mz - 0.01], [1, 1.1, 0.3], 8);
+  clay.bone(B_MOUTH[2] as number).box(0xffffff, 0.2, 0.06, 0.03, [0, 0.44, mz]);
+  clay.bone(B_MOUTH[2] as number).box(0x3a1010, 0.22, 0.014, 0.035, [0, 0.44, mz]);
+  for (const tx of [-0.05, 0, 0.05]) clay.bone(B_MOUTH[2] as number).box(0x9a8a8a, 0.006, 0.06, 0.036, [tx, 0.44, mz]);
+  clay.bone(B_MOUTH[3] as number).tube(0x3a1010, [[-0.11, 0.44, mz], [-0.055, 0.47, mz + 0.01], [0, 0.44, mz + 0.01], [0.055, 0.41, mz + 0.01], [0.11, 0.44, mz]], 0.018, 4, 10, true);
   // little blush cheeks
-  for (const s of SIDES) ball(clay.bone(B_BODY), 0xff8a8a, 0.06, [s * 0.24, 0.47, 0.48], [1, 0.6, 0.25], 7, [0, s * 0.45, 0]);
+  for (const s of SIDES) {
+    const c = onShell(0.49, s * 0.42, 0.004);
+    ball(clay.bone(B_BODY), 0xff8a8a, 0.06, [c[0], 0.47, c[2]], [1, 0.6, 0.25], 7, [0, s * 0.45, 0]);
+  }
   }
 
   for (let si = 0; si < 2; si++) {
@@ -1189,6 +1337,11 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     // eyes: stalk, glossy eyeball with iris ring, pupil and two highlights, eyelid
     both(clay, (g) => g.bone(B_EYE[si] as number).tube(dark, [[s * 0.18, 0.6, 0.27], [s * 0.22, 0.74, 0.3], [s * 0.26, 0.84, 0.33]], (t) => 0.06 - t * 0.015, seg(7), tub(5), 'end'));
     const ex = s * 0.26;
+    if (deco) {
+      // segmented stalk: two collars
+      clay.bone(B_EYE[si] as number).geo(new THREE.TorusGeometry(0.058, 0.014, 4, seg(10)), dark, [s * 0.2, 0.66, 0.28], [Math.PI / 2 - 0.25, 0, 0]);
+      clay.bone(B_EYE[si] as number).geo(new THREE.TorusGeometry(0.05, 0.013, 4, seg(10)), dark, [s * 0.24, 0.79, 0.315], [Math.PI / 2 - 0.25, 0, 0]);
+    }
     both(gloss, (g) => ball(g.bone(B_EYE[si] as number), 0xfafafa, 0.17, [ex, 0.9, 0.35], [1, 1.05, 1], 14));
     if (deco) {
     ball(gloss.bone(B_EYE[si] as number), skin.iris, 0.105, [ex, 0.9, 0.475], [1, 1.1, 0.45], 10);
@@ -1215,15 +1368,24 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     const px = s * 0.9;
     both(gloss, (g) => {
       ball(g.bone(B_EL[si] as number), body, 0.17, [px, 0.71, 0.8], [0.92, 0.82, 1.15], 12);
-      if (g === gloss) g.paint((x, y, z, c) => c.lerp(_cb.set(dark), smooth01((z - 0.82) / 0.15) * 0.4 + smooth01((0.66 - y) / 0.1) * 0.2));
+      if (g === gloss) {
+        g.paint((x, y, z, c) => c.lerp(_cb.set(dark), smooth01((z - 0.82) / 0.15) * 0.4 + smooth01((0.66 - y) / 0.1) * 0.2));
+        // the inner face of the palm is lighter (two-tone claws)
+        g.paint((x, y, z, c) => c.lerp(_cb.set(belly), smooth01((s * (px - x) - 0.03) / 0.1) * 0.55));
+      }
       g.bone(B_EL[si] as number).tube(body, [[px, 0.77, 0.9], [px + s * 0.01, 0.8, 1.02], [px - s * 0.04, 0.75, 1.12]], (t) => 0.075 * (1 - t) + 0.016, seg(8), tub(6), 'end');
       if (g === gloss) g.paint((x, y, z, c) => c.lerp(_cb.set(dark), smooth01((z - 0.98) / 0.12)));
       g.bone(B_JAW[si] as number).tube(body, [[px, 0.64, 0.9], [px, 0.62, 1.0], [px - s * 0.03, 0.65, 1.08]], (t) => 0.06 * (1 - t) + 0.014, seg(8), tub(6), 'end');
       if (g === gloss) g.paint((x, y, z, c) => c.lerp(_cb.set(dark), smooth01((z - 0.95) / 0.12)));
     });
+    if (deco && hi) {
+      // knuckle bumps on the palm and a ring at the wrist
+      for (const [dy, dz] of [[0.13, 0.78], [0.1, 0.88]] as [number, number][]) ball(gloss.bone(B_EL[si] as number), dark, 0.034, [px + s * 0.04, 0.71 + dy, dz], [1, 0.7, 1], 6);
+      gloss.bone(B_EL[si] as number).geo(new THREE.TorusGeometry(0.085, 0.016, 4, seg(12)), dark, [px - s * 0.005, 0.68, 0.66], [0.25, 0, 0]);
+    }
     // serrations on the inner edges
-    for (let k = 0; k < (deco ? 3 : 0); k++) {
-      const z = 0.95 + k * 0.05;
+    for (let k = 0; k < (deco ? (hi ? 4 : 3) : 0); k++) {
+      const z = 0.94 + k * 0.045;
       gloss.bone(B_EL[si] as number).cone(belly, 0.014, 0.035, [px - s * 0.005 * k, 0.74 - k * 0.004, z], [Math.PI, 0, 0], 5);
       gloss.bone(B_JAW[si] as number).cone(belly, 0.012, 0.03, [px - s * 0.005 * k, 0.665, z - 0.01], [0, 0, 0], 5);
     }
@@ -1238,13 +1400,19 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     const ankle: V3 = [s * 1.08, 0.24, z * 1.45];
     const tip: V3 = [s * 1.13, 0.01, z * 1.55];
     both(clay, (g) => {
-      g.bone(B_HIP(l)).tube(dark, [hip, [s * 0.68, 0.56, z * 1.12], knee], (t) => 0.06 - t * 0.012, seg(7), hi ? 4 : 3, false);
-      g.bone(B_KNEE(l)).tube(dark, [knee, [s * 1.0, 0.45, z * 1.36], ankle], (t) => 0.048 - t * 0.012, seg(7), hi ? 4 : 3, false);
-      g.bone(B_FOOT(l)).tube(dark, [ankle, tip], (t) => 0.036 - t * 0.026, seg(6), 2, 'start');
+      g.bone(B_HIP(l)).tube(dark, [hip, [s * 0.68, 0.57, z * 1.12], knee], (t) => 0.075 - t * 0.014, seg(7), hi ? 4 : 3, false);
+      g.bone(B_KNEE(l)).tube(dark, [knee, [s * 1.0, 0.46, z * 1.36], ankle], (t) => 0.06 - t * 0.016, seg(7), hi ? 4 : 3, false);
+      g.bone(B_FOOT(l)).tube(dark, [ankle, tip], (t) => 0.045 - t * 0.033, seg(6), hi ? 3 : 2, 'start');
     });
-    if (!outlineOnly) clay.paint((x, y, zz, c) => c.lerp(_cb.set(belly), smooth01((0.2 - y) / 0.18) * 0.6));
+    // dark glossy tips
+    if (!outlineOnly) clay.paint((x, y, zz, c) => c.lerp(_cb.set(0x2a0e08), smooth01((0.14 - y) / 0.12) * 0.75));
+    if (deco) {
+      if (hi) ball(clay.bone(B_HIP(l)), body, 0.062, [s * 0.52, 0.41, z], [1, 1, 1], 6);
+      // a few bristles on the middle segment (High only)
+      if (hi) for (let k = 0; k < 2; k++) clay.bone(B_KNEE(l)).cone(dark, 0.008, 0.05, [s * (0.9 + k * 0.07), 0.58 - k * 0.12, z * (1.28 + k * 0.06)], [0, 0, s * 0.9], 3);
+    }
     // joints
-    ball(clay.bone(B_KNEE(l)), body, 0.056, knee, [1, 1, 1], 7);
+    ball(clay.bone(B_KNEE(l)), body, 0.068, knee, [1, 1, 1], 7);
     if (deco) ball(clay.bone(B_FOOT(l)), dark, 0.037, ankle, [1, 1, 1], 5);
   }
 }

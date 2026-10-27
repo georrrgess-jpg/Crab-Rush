@@ -76,6 +76,21 @@ export class GeoBuilder {
     return this;
   }
 
+  /** Sculpt the most recently added part: `fn` moves each model-space vertex; normals are rebuilt. */
+  warp(fn: (p: THREE.Vector3) => void): this {
+    const g = this.parts[this.parts.length - 1];
+    if (!g) return this;
+    const pa = g.attributes.position as THREE.BufferAttribute;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pa.count; i++) {
+      v.fromBufferAttribute(pa, i);
+      fn(v);
+      pa.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals();
+    return this;
+  }
+
   /** Surface of revolution around +y from a [radius, y] profile (bottom to top). */
   lathe(color: number, profile: [number, number][], segs = 24, pos: Vec3 = [0, 0, 0], rot: Vec3 = [0, 0, 0], scale: Vec3 = [1, 1, 1]): this {
     const g = new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(Math.max(r, 1e-4), y)), segs);

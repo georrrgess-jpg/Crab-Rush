@@ -21,6 +21,9 @@ export const ITEMS: Item[] = [
   it('bodies', 'dazzle', 'Dazzle', 'Reach Sunset Lagoon'),
   it('bodies', 'coral', 'Coral', 'Sunny Pass tier 8'),
   it('bodies', 'midnight', 'Midnight', 'Sunny Pass tier 24'),
+  it('bodies', 'reef', 'Reef', 'Open an Island Hop treasure chest'),
+  it('bodies', 'lava', 'Lava', 'Earn 12 Tide Rush crowns'),
+  it('bodies', 'pearl', 'Pearl', 'Crab Cove: 300 pearls'),
   it('bodies', 'gold', 'Golden Crab', 'Earn all 72 Island Hop stars'),
   // hats: v1 six + 12 new
   it('hats', 'straw', 'Straw Hat', 'Starter'),

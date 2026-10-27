@@ -202,6 +202,11 @@ export class EntityViews {
               ? [g.get(`urchins${vr}`, () => P.urchins(vr)), g.get(`urchins${vr}lo`, () => P.urchins(vr, true))]
               : [g.get(`log${vr}`, () => O.driftwoodLog(vr)), g.get(`log${vr}lo`, () => O.driftwoodLog(vr, true))];
         v = this.lodView(key, hi, lo, e.skin === 2 ? M.clayWind : M.clay, [2.4, 1.0]);
+        // it rocks for a moment after the crab scuttles over (a function of distance: no state to reset)
+        v.anim = (vv, ee) => {
+          const rel = ee.wz - this.dist;
+          vv.obj.rotation.x = rel < 0 && rel > -6 ? Math.sin(-rel * 5) * 0.09 * Math.exp(rel * 0.8) : 0;
+        };
         break;
       }
       case 'sweep': {

@@ -395,6 +395,7 @@ export class GameView {
     for (const ev of events) {
       switch (ev.t) {
         case 'shell':
+          if (ev.big) this.crab.happy();
           for (let i = 0; i < (ev.big ? 12 : 4); i++) {
             const a = Math.random() * Math.PI * 2;
             const sp = 1.2 + Math.random() * 1.8;
@@ -431,6 +432,8 @@ export class GameView {
           for (let i = 0; i < 10; i++) this.sparks.spawn(p.x, 0.8, w.dist, (Math.random() - 0.5) * 6, 2 + Math.random() * 4, (Math.random() - 0.5) * 3, 0.5, 0.3, 0xffe14a, 8);
           break;
         case 'closeShave':
+          // the obstacle was in the lane just left behind
+          this.crab.flinch(Math.sign(p.prevLane - p.lane));
           for (let i = 0; i < 8; i++) this.sparks.spawn(p.x + (Math.random() - 0.5), 0.4 + Math.random() * 0.8, w.dist, 0, 0, 6 + Math.random() * 4, 0.25, 0.18, 0xffffff, 0, 2);
           break;
         case 'powerup':
@@ -546,6 +549,8 @@ export class GameView {
     dv.crashT = this.celebrating ? -1 : crashT;
     if (this.celebrating) dv.running = false;
     dv.rider = running && w.power.kind === 'rider';
+    dv.magnet = running && w.power.kind === 'magnet';
+    dv.shield = running && w.power.kind === 'shield';
     // on Home the crab stands on the diorama mound; it scuttles off as the run starts
     this.homeSet.visible = dist < 30 && (mode === 'title' || mode === 'intro' || mode === 'shop' || (running && dist < 30));
     this.homeSet.position.set(0, 0, dist);
