@@ -232,7 +232,7 @@ export class World {
   addEntity(kind: EntityKind, lane: number, wz: number, extra: Partial<Entity>): Entity {
     const O = CFG.obstacle;
     const dims =
-      kind === 'block' ? O.block : kind === 'low' ? O.low : kind === 'sweep' ? O.sweep : kind === 'roller' ? O.roller : kind === 'gull' ? O.gull : { w: 1, d: 1, h: 1 };
+      kind === 'block' ? O.block : kind === 'low' ? O.low : kind === 'sweep' ? O.sweep : kind === 'roller' ? O.roller : kind === 'gull' ? O.gull : kind === 'scuttle' ? O.scuttle : { w: 1, d: 1, h: 1 };
     const e: Entity =
       this.pool.pop() ??
       ({ id: 0, kind, lane, x: 0, wz: 0, prevWz: 0, vz: 0, y: 0, w: 1, d: 1, h: 1, skin: 0, state: 0, passed: false, dead: false, knocked: 0, spin: 0 } as Entity);
@@ -256,6 +256,7 @@ export class World {
     e.power = undefined;
     e.meetWz = undefined;
     e.alt = undefined;
+    e.toLane = undefined;
     Object.assign(e, extra);
     if (kind === 'roller' && e.meetWz !== undefined) e.wz = e.prevWz = this.rollerWz(e.meetWz);
     if (kind === 'gull') e.y = CFG.gull.height;
@@ -495,6 +496,19 @@ export class World {
             e.state = 2;
             e.y = 0;
           }
+        }
+      }
+      if (e.kind === 'scuttle' && e.toLane !== undefined && e.state < 2) {
+        // claws up (state 1), then a sideways scuttle into the next lane, finished well before the player
+        const S = CFG.scuttle;
+        const ttp = (e.wz - this.dist) / Math.max(this.speed, 1);
+        if (e.state === 0 && ttp <= S.warn) e.state = 1;
+        const k = Math.min(1, Math.max(0, (S.from - ttp) / (S.from - S.to)));
+        const sm = k * k * (3 - 2 * k);
+        e.x = (CFG.laneX[e.lane] as number) + ((CFG.laneX[e.toLane] as number) - (CFG.laneX[e.lane] as number)) * sm;
+        if (k >= 1) {
+          e.lane = e.toLane;
+          e.state = 2;
         }
       }
       if (e.knocked > 0) e.knocked += dt;
@@ -770,6 +784,7 @@ export class World {
           }
           break;
         case 'low':
+        case 'scuttle':
           if (p.y > 0.05 && Math.abs(p.x - e.x) < 1.4) this.stats.obstaclesHopped++;
           break;
         case 'pad':

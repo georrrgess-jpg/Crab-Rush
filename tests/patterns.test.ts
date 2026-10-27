@@ -5,7 +5,9 @@ import { initialStates, solveRows } from '../src/sim/solver';
 
 function speedRange(minTier: number, maxTier: number): number[] {
   const a = CFG.tierStarts[minTier] as number;
-  const b = maxTier >= 4 ? 4500 : (CFG.tierStarts[maxTier + 1] as number);
+  const last = CFG.tierStarts.length - 1;
+  // the top tier is open-ended: test it up to 2 km past its start (speed is near its cap by then)
+  const b = maxTier >= last ? (CFG.tierStarts[last] as number) + 2000 : (CFG.tierStarts[maxTier + 1] as number);
   return [speedAt(a), speedAt((a + b) / 2), speedAt(b)];
 }
 
@@ -16,7 +18,7 @@ describe('pattern library', () => {
 
   for (const pt of PATTERNS) {
     it(`${pt.def.id} is solvable from every lane (both mirror states) at its tier speeds`, () => {
-      const tierMax = pt.def.maxTier ?? 4;
+      const tierMax = pt.def.maxTier ?? CFG.tierStarts.length - 1;
       for (const v of speedRange(pt.def.minTier, Math.min(tierMax, pt.def.minTier + 1))) {
         for (const mirror of [false, true]) {
           const rows = patternRows(pt, mirror);

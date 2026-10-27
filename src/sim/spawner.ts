@@ -74,7 +74,7 @@ export class Spawner {
   }
 
   private pickBreather(): number {
-    const [a, b] = CFG.breatherEvery as readonly [number, number];
+    const [a, b] = (CFG.breatherByTier[tierAt(this.lastRowWz)] ?? CFG.breatherEvery) as readonly [number, number];
     return a + this.rng.int(b - a + 1);
   }
 
@@ -134,7 +134,8 @@ export class Spawner {
   private spawnNext(): void {
     const w = this.w;
     const rng = this.rng;
-    const gap0 = rng.range(CFG.gapMin, CFG.gapMax);
+    const [gMin, gMax] = (CFG.gapByTier[tierAt(this.lastRowWz)] ?? [CFG.gapMin, CFG.gapMax]) as readonly [number, number];
+    const gap0 = rng.range(gMin, gMax);
     const probeWz = this.lastRowWz + gap0;
 
     // Scripted tutorial patterns
@@ -284,6 +285,11 @@ export class Spawner {
               break;
             case 'o':
               w.addEntity('ring', l, wz, {});
+              break;
+            case '<':
+            case '>':
+              w.addEntity('scuttle', l, wz, { skin: zoneAt(wz), toLane: l + (ch === '>' ? 1 : -1) });
+              firstObstacleWz = Math.min(firstObstacleWz, wz);
               break;
             case 'P': {
               // Tide Rush: no power-ups (the shell strand through the cell still counts)

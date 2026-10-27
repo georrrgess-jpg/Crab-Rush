@@ -4,7 +4,9 @@ export type EntityKind = 'block' | 'low' | 'sweep' | 'roller' | 'gull' | 'poweru
   // Island Hop (UPDATE2_PLAN.md §5.4)
   | 'dollar' | 'hourglass' | 'pad' | 'tidepool' | 'flag'
   // Island Hop+ (UPDATE3_PLAN.md §5.1)
-  | 'ring';
+  | 'ring'
+  // Update 4 (UPDATE4_PLAN.md §6.2)
+  | 'scuttle';
 
 /** Obstacles, pickups and landmark props that live on the track. Shells are separate (see Shell). */
 export interface Entity {
@@ -27,6 +29,8 @@ export interface Entity {
   power?: PowerKind;
   /** look variant: 1 = a coconut dropping from a palm (it plays exactly like a gull) */
   alt?: number;
+  /** scuttlers: the lane they scuttle into */
+  toLane?: number;
   /** rollers: the track position where the ball meets the player (its pattern row) */
   meetWz?: number;
   /** gull: 0 hovering, 1 falling, 2 landed */

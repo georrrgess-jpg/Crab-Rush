@@ -140,7 +140,7 @@ export const PATTERN_DEFS: PatternDef[] = [
     www
     .r.
     .s.`),
-  p('tight-slalom', 3, 3, 7.5, `
+  p('tight-slalom', 3, 3, 8.5, `
     B.B
     .BB
     B.B
@@ -164,7 +164,7 @@ export const PATTERN_DEFS: PatternDef[] = [
     .s.`),
 
   // ---------------- tier 4 ----------------
-  p('chicane', 4, 3, 8, `
+  p('chicane', 4, 3, 9, `
     BB.
     B.B
     .BB
@@ -187,6 +187,73 @@ export const PATTERN_DEFS: PatternDef[] = [
     .l.
     B.B
     .s.`),
+
+  // ---------------- Update 4: scuttlers (< > cross one lane) and double waves ----------------
+  p('scuttle-intro', 2, 3, 12, `
+    .s.
+    .>.
+    ...
+    s..`),
+  p('scuttle-cross', 2, 2, 11, `
+    ..s
+    >..
+    ..s`),
+  p('scuttle-castle', 3, 3, 11, `
+    .s.
+    B>.
+    ..s`),
+  p('double-wave', 3, 3, 9, `
+    .s.
+    www
+    ...
+    www
+    .s.`),
+  p('wave-scuttle', 3, 2, 12, `
+    .s.
+    www
+    .<.
+    s..`),
+  p('scuttle-pair', 4, 3, 11, `
+    s..
+    .<.
+    ...
+    .>.
+    ..s`),
+  p('triple-threat', 4, 2, 11, `
+    .s.
+    B.B
+    .>.
+    www
+    .s.`),
+  // ---------------- tier 5: Riptide (4 km+) ----------------
+  p('riptide-a', 5, 3, 10, `
+    .s.
+    G.B
+    .<.
+    www
+    l.l
+    .s.`),
+  p('riptide-b', 5, 3, 10, `
+    s..
+    .BB
+    >..
+    ...
+    BB.
+    ..s`),
+  p('riptide-c', 5, 3, 9, `
+    .s.
+    www
+    ...
+    www
+    B.B
+    .s.`),
+  p('riptide-d', 5, 2, 10, `
+    ..s
+    .r.
+    B>.
+    ...
+    .lB
+    s..`),
 ];
 
 export function parseTemplate(def: PatternDef): Pattern {
@@ -197,7 +264,8 @@ export function parseTemplate(def: PatternDef): Pattern {
   const rows = lines.reverse(); // arrival order: nearest first
   for (const r of rows) {
     if (r.length !== CFG.laneCount) throw new Error(`pattern ${def.id}: row "${r}" must have ${CFG.laneCount} cells`);
-    if (/[^.BLWRGsSPlrw]/.test(r)) throw new Error(`pattern ${def.id}: bad char in "${r}"`);
+    if (/[^.BLWRGsSPlrw<>]/.test(r)) throw new Error(`pattern ${def.id}: bad char in "${r}"`);
+    if ((r[0] === '<') || (r[r.length - 1] === '>')) throw new Error(`pattern ${def.id}: a scuttler can't leave the track (${r})`);
     if (/[Ww]/.test(r) && r !== 'WWW' && r !== 'www') throw new Error(`pattern ${def.id}: sweep rows must be whole (${r})`);
   }
   return { def, rows, hasPower: rows.some((r) => r.includes('P')) };
@@ -207,7 +275,8 @@ export const PATTERNS: Pattern[] = PATTERN_DEFS.map(parseTemplate);
 export const PATTERN_BY_ID = new Map(PATTERNS.map((pt) => [pt.def.id, pt]));
 
 export function mirrorRow(r: string): string {
-  return r.split('').reverse().join('');
+  // scuttlers flip direction with the row
+  return r.split('').reverse().map((c) => (c === '<' ? '>' : c === '>' ? '<' : c)).join('');
 }
 
 export function patternRows(pt: Pattern, mirror: boolean): string[] {
@@ -225,6 +294,7 @@ export function toSolverRows(rows: readonly string[], v: number): SolverRow[] {
   const lowW = hopWindow(O.low.h, O.low.d, v);
   const sweepW = hopWindow(O.sweep.h, O.sweep.d, v);
   const rollW = hopWindow(O.roller.h, O.roller.d, v + CFG.rollerSpeed);
+  const scutW = hopWindow(O.scuttle.h, O.scuttle.d, v);
   return rows.map((r) => {
     const row = emptyRow();
     if (r === 'WWW' || r === 'www') {
@@ -247,6 +317,22 @@ export function toSolverRows(rows: readonly string[], v: number): SolverRow[] {
         row.cells[l] = Cell.Hop;
         row.lo[l] = rollW.lo;
         row.hi[l] = rollW.hi;
+      }
+    }
+    // scuttlers: both the lane they leave and the lane they enter count as occupied (hop to clear)
+    for (let l = 0; l < 3; l++) {
+      const ch = r[l] as string;
+      if (ch !== '<' && ch !== '>') continue;
+      for (const ll of [l, l + (ch === '>' ? 1 : -1)]) {
+        if (row.cells[ll] === Cell.Solid) continue;
+        if (row.cells[ll] === Cell.Hop) {
+          row.lo[ll] = Math.max(row.lo[ll] as number, scutW.lo);
+          row.hi[ll] = Math.min(row.hi[ll] as number, scutW.hi);
+        } else {
+          row.cells[ll] = Cell.Hop;
+          row.lo[ll] = scutW.lo;
+          row.hi[ll] = scutW.hi;
+        }
       }
     }
     return row;

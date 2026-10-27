@@ -128,6 +128,13 @@ export class Autopilot {
         case 'roller':
           set(e.lane, Cell.Hop, hopWindow(O.roller.h, O.roller.d, closing));
           break;
+        case 'scuttle': {
+          // until it has settled, it may be in either lane: treat both as needing a hop
+          const win = hopWindow(O.scuttle.h, O.scuttle.d, closing);
+          set(e.lane, Cell.Hop, win);
+          if (e.state < 2 && e.toLane !== undefined) set(e.toLane, Cell.Hop, win);
+          break;
+        }
         case 'sweep': {
           r.row.sweep = true;
           const win = hopWindow(O.sweep.h, O.sweep.d, closing);

@@ -177,6 +177,21 @@ const SCENES = {
     await p.evaluate(() => { window.__crab.whatsNew(); window.__crab.frames(10); });
     await p.waitForTimeout(1500);
   },
+  // ---- Update 4: a scuttler mid-warning / mid-crossing
+  scuttle: async (p) => {
+    await p.evaluate(() => {
+      const c = window.__crab;
+      for (let seed = 1; seed < 40; seed++) {
+        c.startRun({ seed, autopilot: true, tutorial: false, start: 1500 });
+        for (let i = 0; i < 1200; i++) {
+          c.skip(2);
+          const g = c.game;
+          const e = g.world.entities.find((x) => x.kind === 'scuttle' && !x.dead && x.state === 1 && x.wz - g.world.dist < 26 && x.wz - g.world.dist > 16);
+          if (e) { c.frames(14); return; }
+        }
+      }
+    });
+  },
   daily: async (p) => {
     await p.evaluate(() => {
       window.__crab.setDate('2026-10-26T15:00:00');

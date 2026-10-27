@@ -52,7 +52,8 @@ export const CFG = {
   trackHalfWidth: 3.4,
 
   // ---- speed ----
-  speed: { start: 10, gain: 14, tau: 1800, tutorialCap: 9, wiggle: 0 },
+  // Update 4: a steeper climb to a higher top speed (28 m/s)
+  speed: { start: 11, gain: 17, tau: 1000, tutorialCap: 9, wiggle: 0 },
 
   // ---- Daily Tide modifiers (UPDATE2_PLAN.md §6.2) ----
   daily: {
@@ -68,7 +69,8 @@ export const CFG = {
   },
 
   // ---- tiers & zones ----
-  tierStarts: [0, 150, 700, 1600, 2800] as readonly number[],
+  // tier 5 (4 km+) is the Riptide: mixed hazards, short breathers
+  tierStarts: [0, 150, 600, 1400, 2400, 4000] as readonly number[],
   zoneStarts: [0, 700, 1600, 2800] as readonly number[],
   zoneNames: ['Sunny Shore', 'Boardwalk Pier', 'Tide Pool Cove', 'Sunset Lagoon'] as readonly string[],
   zoneBonus: 100,
@@ -83,7 +85,11 @@ export const CFG = {
     sweep: { w: 6.8, d: 1.4, h: 0.5 },
     roller: { w: 1.0, d: 1.0, h: 0.9 },
     gull: { w: 1.6, d: 1.0, h: 1.6 },
+    /** Update 4: a rock crab that scuttles one lane sideways as it approaches (hop it or dodge) */
+    scuttle: { w: 1.4, d: 0.9, h: 0.65 },
   },
+  /** scuttler timing, in seconds before it reaches the player: claws up at `warn`, crossing between `from` and `to` */
+  scuttle: { warn: 1.9, from: 1.35, to: 0.75 },
   rollerSpeed: 5, // extra closing speed of beach balls
   gull: { warnTime: 1.2, landTime: 0.8, height: 7 },
 
@@ -92,6 +98,10 @@ export const CFG = {
   despawnBehind: 8,
   gapMin: 8,
   gapMax: 14,
+  /** gap range between patterns per tier (Update 4: tighter as the run goes on) */
+  gapByTier: [[8, 14], [7.5, 13], [6.5, 11], [6, 10], [5.5, 9], [5.5, 8.5]] as readonly (readonly [number, number])[],
+  /** patterns between breathers per tier */
+  breatherByTier: [[3, 4], [4, 5], [5, 6], [5, 6], [6, 7], [6, 8]] as readonly (readonly [number, number])[],
   breatherLength: 25,
   breatherEvery: [3, 4] as readonly number[],
   patternNoRepeat: 4,

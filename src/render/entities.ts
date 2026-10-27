@@ -209,6 +209,41 @@ export class EntityViews {
         };
         break;
       }
+      case 'scuttle': {
+        const body = mesh(g.get('scut', () => O.scuttlerBody()), M.clay);
+        const clawG = g.get('scutclaw', () => O.scuttlerClaw());
+        const cl = mesh(clawG, M.clay);
+        const cr = mesh(clawG, M.clay);
+        cl.position.set(-0.45, 0.5, 0.25);
+        cl.scale.x = -1;
+        cr.position.set(0.45, 0.5, 0.25);
+        const arrow = new THREE.Mesh(g.get('scutarrow', () => O.scuttleArrow()), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false }));
+        arrow.position.set(0, 0.02, 0.9);
+        const inner = new THREE.Group();
+        inner.add(body, cl, cr);
+        inner.scale.setScalar(1.15);
+        arrow.scale.setScalar(1.5);
+        const grp = new THREE.Group();
+        grp.add(inner, arrow);
+        v = { obj: grp, key, stamp: 0, shadow: [1.6, 1.2], parts: [inner, cl, cr, arrow], enter: -1, memo: { landed: -1, squawk: 0 } };
+        this.addOutline(v, body);
+        v.anim = (vv, ee, t) => {
+          const [inn, l, r, ar] = vv.parts as THREE.Object3D[];
+          const dir = ee.toLane !== undefined ? Math.sign(ee.toLane - ee.lane) || 1 : 1;
+          const moving = ee.state === 1 && Math.abs(ee.x - (CFG.laneX[ee.lane] as number)) > 0.02;
+          // warning: claws up and snapping; while crossing: a quick sideways scuttle bob and tilt
+          const up = ee.state >= 1 ? 1 : 0;
+          const snap = Math.sin(t * 16) * 0.25 * up;
+          l!.rotation.set(0, 0, -0.2 - up * 0.9 - snap);
+          r!.rotation.set(0, 0, 0.2 + up * 0.9 + snap);
+          inn!.position.y = moving ? Math.abs(Math.sin(t * 28)) * 0.08 : 0;
+          inn!.rotation.z = moving ? -dir * 0.12 : 0;
+          ar!.visible = ee.state === 1;
+          ar!.rotation.y = dir > 0 ? 0 : Math.PI;
+          ar!.position.x = dir * (0.6 + (Math.sin(t * 8) * 0.5 + 0.5) * 0.25);
+        };
+        break;
+      }
       case 'sweep': {
         if (e.skin === 1) {
           // a gap in the boardwalk: dark water hole, broken plank ends and chevrons
@@ -449,6 +484,7 @@ export class EntityViews {
     if (e.kind === 'powerup') return `powerup:${e.power}`;
     if (e.kind === 'gull' && e.alt === 1) return 'coconut';
     if (e.kind === 'ring') return 'ring';
+    if (e.kind === 'scuttle') return 'scuttle';
     if (e.kind === 'roller' || e.kind === 'gull' || e.kind === 'banner' || e.kind === 'dollar' || e.kind === 'hourglass' || e.kind === 'pad' || e.kind === 'tidepool') return e.kind;
     if (e.kind === 'flag') return `flag:${e.state}`;
     if (e.kind === 'arch') return `arch:${e.skin}`;

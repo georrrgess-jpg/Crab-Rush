@@ -623,3 +623,50 @@ export function shellRing(lo = false): THREE.BufferGeometry {
   }
   return b.build();
 }
+
+/** Scuttler (Update 4): a grumpy blue-grey rock crab. Body only; the claws are separate (they rise as a warning). */
+export function scuttlerBody(lo = false): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const seg = lo ? 8 : 14;
+  b.sphere(0x4f6a86, 0.5, [0, 0.42, 0], [1.25, 0.62, 1], seg).paint((x, y, z, c) => {
+    c.multiplyScalar(0.85 + 0.2 * Math.max(0, Math.sin(x * 9) * Math.sin(z * 7)));
+    if (y > 0.62) c.lerp(new THREE.Color(0x6f8aa6), 0.5);
+  });
+  // spiky rim and knobbly back
+  for (let i = 0; i < (lo ? 4 : 8); i++) {
+    const a = (i / (lo ? 4 : 8)) * Math.PI * 2;
+    b.cone(0x3a4f66, 0.06, 0.16, [Math.cos(a) * 0.6, 0.48, Math.sin(a) * 0.48], [Math.PI / 2, 0, -a + Math.PI / 2], 4);
+  }
+  // cross brows and eyes on short stalks
+  for (const s of [-1, 1]) {
+    b.cyl(0x3a4f66, 0.03, 0.03, 0.18, [s * 0.16, 0.74, 0.32], [0, 0, 0], 4);
+    b.sphere(0xffffff, 0.08, [s * 0.16, 0.86, 0.34], [1, 1, 1], 6);
+    b.sphere(0x14141c, 0.04, [s * 0.15, 0.86, 0.41], [1, 1, 0.7], 5);
+    b.box(0x22303f, 0.14, 0.035, 0.04, [s * 0.15, 0.96, 0.38], [0, 0, s * 0.45]);
+  }
+  // legs: three a side, bent
+  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
+    const z = 0.2 - i * 0.2;
+    b.seg(0x3a4f66, [s * 0.5, 0.36, z], [s * 0.82, 0.4, z * 1.2], 0.05, 0.04, 4);
+    b.seg(0x3a4f66, [s * 0.82, 0.4, z * 1.2], [s * 0.95, 0.02, z * 1.3], 0.04, 0.02, 4);
+  }
+  return b.build();
+}
+
+/** One scuttler claw, pivot at the shoulder (x mirrored by scale). */
+export function scuttlerClaw(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.seg(0x4f6a86, [0, 0, 0], [0.32, 0.18, 0.12], 0.07, 0.06, 5);
+  b.sphere(0x5f7c9a, 0.17, [0.42, 0.26, 0.16], [1, 0.75, 0.8], 8);
+  b.cone(0xe0e6ee, 0.05, 0.16, [0.52, 0.38, 0.2], [0, 0, -0.5], 4);
+  b.cone(0xe0e6ee, 0.05, 0.14, [0.56, 0.2, 0.2], [0, 0, -2.2], 4);
+  return b.build();
+}
+
+/** A sand arrow showing which way the scuttler will go (points +x). */
+export function scuttleArrow(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.box(0xffd23a, 0.9, 0.02, 0.22, [-0.15, 0.03, 0]);
+  b.cone(0xffd23a, 0.3, 0.42, [0.48, 0.03, 0], [0, 0, -Math.PI / 2], 3, [1, 1, 0.12]);
+  return b.build();
+}
