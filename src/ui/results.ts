@@ -16,7 +16,8 @@ export interface ResultsView {
   xpBefore: number;
   xpGained: number;
   goals: GoalView[];
-  unlock: { name: string; have: number; need: number } | null;
+  /** the nearest reward from any source (a crab to buy, the next big pass item) */
+  unlock: { label: string; name: string; have: number; need: number; unit: 'shells' | 'XP' } | null;
   wardrobeBadge: boolean;
   /** extra reward rows (Golden Shell boost, Daily Tide rewards) */
   extra?: { label: string; value: number }[];
@@ -88,7 +89,7 @@ export class ResultsScreen {
     const xpGain = xp.querySelector('.xp-gain') as HTMLElement;
     let unlock: HTMLElement | null = null;
     if (d.unlock) {
-      unlock = el('div', 'res-unlock', `<span class="ul-lbl">Next crab: <b>${d.unlock.name}</b></span><span class="bar"><i></i></span><span class="ul-num">${fmt(Math.min(d.unlock.have, d.unlock.need))} / ${fmt(d.unlock.need)}</span>`);
+      unlock = el('div', 'res-unlock', `<span class="ul-lbl">${d.unlock.label}: <b>${d.unlock.name}</b></span><span class="bar"><i></i></span><span class="ul-num">${fmt(Math.min(d.unlock.have, d.unlock.need))} / ${fmt(d.unlock.need)}${d.unlock.unit === 'XP' ? ' XP' : ''}</span>`);
     }
     const buttons = el('div', 'res-buttons');
     this.again = btn(`${ICON.restart}<span>Play Again</span>`, 'big', () => this.h.again());

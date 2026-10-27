@@ -204,7 +204,7 @@ export class Scenery {
   readonly groundMats: THREE.ShaderMaterial[];
   private glowMat: THREE.ShaderMaterial;
 
-  constructor(private mats: Materials, density: number) {
+  constructor(mats: Materials, density: number) {
     this.kit = new PropKit();
     const sand = sandTexture(false);
     const wet = sandTexture(true);

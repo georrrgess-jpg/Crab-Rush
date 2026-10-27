@@ -96,6 +96,13 @@ describe('save v1 → v2 migration', () => {
     expect(d.stats.longestRun).toBe(0);
   });
 
+  it('marks everything owned before NEW tracking as seen, and sanitizes seen lists', () => {
+    const d = sanitize(V1_BLOB);
+    expect(d.seen).toEqual(expect.arrayContaining(['bodies:chill', 'bodies:dazzle', 'hats:shades', 'hats:tophat', 'trails:sand']));
+    const e = sanitize({ ...V1_BLOB, v: 2, seen: ['hats:straw', 'hats:nope', 7, 'hats:straw'] });
+    expect(e.seen).toEqual(['hats:straw']);
+  });
+
   it('sanitizes the Phase D stats and settings fields', () => {
     const d = sanitize({ ...V1_BLOB, v: 2, settings: { ...V1_BLOB.settings, contrastOutlines: true }, stats: { ...V1_BLOB.stats, runsByCrab: { sandy: 12.7, chill: -3, dazzle: 'x' }, longestRun: 95.5 } });
     expect(d.settings.contrastOutlines).toBe(true);

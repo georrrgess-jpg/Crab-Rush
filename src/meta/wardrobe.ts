@@ -113,3 +113,9 @@ export function syncFromCrabs(w: WardrobeState, ownedCrabs: readonly string[]): 
     if (hat) grant(w, 'hats', hat);
   }
 }
+
+/** Owned items the player hasn't looked at yet ("slot:id"), optionally for one slot. */
+export function unseen(w: WardrobeState, seen: readonly string[], slot?: Slot): string[] {
+  const slots: Slot[] = slot ? [slot] : ['bodies', 'hats', 'trails', 'dances'];
+  return slots.flatMap((sl) => w.owned[sl].map((id) => `${sl}:${id}`)).filter((k) => !seen.includes(k));
+}

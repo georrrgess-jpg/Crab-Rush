@@ -179,6 +179,8 @@ export class CrabModel {
   private readonly from: Pose = new Float32Array(P_N);
   private readonly target: Pose = new Float32Array(P_N);
   private readonly out: Pose = new Float32Array(P_N);
+  /** the blended pose before overlays: cross-fades start from here so overlays never apply twice */
+  private readonly base: Pose = new Float32Array(P_N);
   private mouth: Mouth = 0;
   private phase = 0;
   private time = 0;
@@ -191,6 +193,7 @@ export class CrabModel {
   private readonly antZ = [new Spring(0, { freq: 14, damping: 0.18 }), new Spring(0, { freq: 14, damping: 0.18 })];
   private laneT = 9;
   private laneDir = 0;
+  private laneSettled = true;
   private landT = 9;
   private landHard = false;
   private bumpT = 9;
@@ -359,22 +362,22 @@ export class CrabModel {
 
   // ---- triggers (from sim events) ----
   hop(): void {
-    this.squash.value = 0.74;
-    this.squash.velocity = 9;
+    // a quick crouch-and-spring (impulses, not snaps, so feet never teleport)
+    this.squash.velocity = Math.min(this.squash.velocity, 0) - 9;
     this.hatX.impulse(-2.5);
     for (const s of this.antX) s.impulse(-6);
   }
   land(hard: boolean): void {
     this.landT = 0;
     this.landHard = hard;
-    this.squash.value = hard ? 0.62 : 0.78;
-    this.squash.velocity = 0;
+    this.squash.velocity = hard ? -16 : -10;
     this.hatX.impulse(hard ? 5 : 3);
     for (const s of this.antX) s.impulse(hard ? 9 : 5);
     if (this.state === 'slam') this.setState('run');
   }
   lane(dir: number): void {
     this.laneT = 0;
+    this.laneSettled = false;
     this.laneDir = dir;
     // anticipation: lean away first, the spring then swings into the move
     this.lean.velocity -= dir * 4.5;
@@ -402,7 +405,8 @@ export class CrabModel {
       this.root.updateMatrixWorld(true);
       this.root.attach(this.hatMesh);
       this.hatFlying = true;
-      this.hatVel.set(1.3 + Math.random() * 0.6, 4.2, -1.2);
+      // forward (away from the chase camera) and up, never at the lens
+      this.hatVel.set((Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.4), 4.6, -2.4);
       this.hatSpin = 7;
     }
   }
@@ -441,7 +445,10 @@ export class CrabModel {
 
   private setState(s: CrabState, fade = 0.12): void {
     if (s === this.state && s !== 'emote' && s !== 'celebrate') return;
-    this.from.set(this.out);
+    this.from.set(this.base);
+    // spins end at whole turns: take the short way home instead of unwinding
+    const ry = this.from[P_ROOT_RY] as number;
+    this.from[P_ROOT_RY] = ry - Math.round(ry / (Math.PI * 2)) * Math.PI * 2;
     this.state = s;
     this.stateT = 0;
     this.blendT = 0;
@@ -467,7 +474,8 @@ export class CrabModel {
         let want: CrabState = 'run';
         if (d.rider) want = 'ride';
         else if (!d.grounded) want = this.state === 'slam' ? 'slam' : d.vy > 0 ? 'hopRise' : 'hopFall';
-        if ((this.state === 'celebrate' || this.state === 'emote') && this.stateT < 1.6) want = this.state;
+        // a finish celebration plays out on the ground; idle emotes give way to the run at once
+        if (this.state === 'celebrate' && this.stateT < 1.6 && d.grounded) want = this.state;
         if (want !== this.state) this.setState(want, want === 'hopFall' ? 0.18 : 0.1);
       } else {
         if (this.state === 'run' || this.state === 'hopRise' || this.state === 'hopFall' || this.state === 'ride' || this.state === 'slam') this.setState('idle', 0.25);
@@ -498,6 +506,7 @@ export class CrabModel {
     const w = this.blendDur > 0 ? smooth01(this.blendT / this.blendDur) : 1;
     const o = this.out;
     for (let i = 0; i < P_N; i++) o[i] = (this.from[i] as number) + ((this.target[i] as number) - (this.from[i] as number)) * w;
+    this.base.set(o);
 
     this.applyOverlays(dt, d);
     this.writeRig(dt, d);
@@ -668,7 +677,7 @@ export class CrabModel {
         const up = smooth01((t - 1.0) / 0.3) * k;
         for (let s2 = 0; s2 < 2; s2++) {
           p[P_CLAW + s2 * 4] = 0.3 + up * 1.0;
-          p[P_CLAW + s2 * 4 + 1] = (s2 === 0 ? -1 : 1) * 0.3 * up;
+          p[P_CLAW + s2 * 4 + 1] = (s2 === 0 ? -1 : 1) * 0.7 * up;
           p[P_CLAW + s2 * 4 + 3] = 0.6;
         }
         this.mouth = 1;
@@ -679,7 +688,7 @@ export class CrabModel {
         for (let s2 = 0; s2 < 2; s2++) {
           const ph = t * 7 + s2 * Math.PI;
           p[P_CLAW + s2 * 4] = (1.1 + Math.sin(ph) * 0.3) * k;
-          p[P_CLAW + s2 * 4 + 1] = Math.sin(ph) * 0.55 * k;
+          p[P_CLAW + s2 * 4 + 1] = (s2 === 0 ? -1 : 1) * (0.55 + Math.sin(ph) * 0.3) * k;
           p[P_CLAW + s2 * 4 + 2] = (0.4 + Math.cos(ph) * 0.3) * k;
           p[P_CLAW + s2 * 4 + 3] = 0.45;
         }
@@ -742,7 +751,7 @@ export class CrabModel {
         p[P_ROOT_RY] = smooth01(spin) * Math.PI * 2;
         const pose = smooth01((t - 1.8) / 0.15) * k;
         p[P_CLAW + 4] = 0.3 + pose * 1.25;
-        p[P_CLAW + 4 + 1] = -0.4 * pose;
+        p[P_CLAW + 4 + 1] = 0.75 * pose;
         p[P_CLAW + 4 + 2] = 0.1;
         p[P_CLAW + 4 + 3] = 0.05;
         p[P_CLAW] = 0.25;
@@ -753,13 +762,14 @@ export class CrabModel {
         break;
       }
       default: {
-        // Claw Clap: claw clap, jump spin, hat toss caught on the head
+        // Claw Clap: claps at chest height (under the eyes), a jump spin, a hat toss caught on the head
         const clap = t < 0.9 ? Math.abs(Math.sin(t * 14)) : 0;
+        const spinUp = smooth01((t - 0.9) / 0.25) * (1 - smooth01((t - 1.7) / 0.4));
         for (let s2 = 0; s2 < 2; s2++) {
           const sg = s2 === 0 ? 1 : -1;
-          p[P_CLAW + s2 * 4] = 0.3;
-          p[P_CLAW + s2 * 4 + 1] = sg * (0.15 + clap * 0.6);
-          p[P_CLAW + s2 * 4 + 2] = 0.4;
+          p[P_CLAW + s2 * 4] = -0.35 * (1 - spinUp) + 1.0 * spinUp;
+          p[P_CLAW + s2 * 4 + 1] = sg * (0.05 + clap * 0.42) * (1 - spinUp) - sg * 0.6 * spinUp;
+          p[P_CLAW + s2 * 4 + 2] = 0.15;
           p[P_CLAW + s2 * 4 + 3] = 0.5 * (1 - clap);
         }
         const j = (t - 0.9) / 0.7;
@@ -876,11 +886,30 @@ export class CrabModel {
     // lean follows lateral speed
     this.lean.target = d.running ? clamp(d.vx / 16, -1, 1) : 0;
     const lean = this.lean.update(dt);
-    o[P_BODY_RZ] = (o[P_BODY_RZ] as number) - lean * 0.24;
-    o[P_BODY_RY] = (o[P_BODY_RY] as number) + lean * 0.12;
+    o[P_BODY_RZ] = (o[P_BODY_RZ] as number) - lean * 0.38;
+    o[P_BODY_RY] = (o[P_BODY_RY] as number) + lean * 0.2;
+    if (this.laneT < 0.32) {
+      // lane change: the lead claw reaches into the move, the other tucks, the body lifts a little
+      const k = Math.min(1, this.laneT / 0.05) * (1 - smooth01((this.laneT - 0.12) / 0.2));
+      const lead = this.laneDir < 0 ? 0 : 1;
+      const trail = 1 - lead;
+      o[P_CLAW + lead * 4] = (o[P_CLAW + lead * 4] as number) + 0.55 * k;
+      o[P_CLAW + lead * 4 + 1] = (o[P_CLAW + lead * 4 + 1] as number) + (lead === 0 ? -1 : 1) * 0.45 * k;
+      o[P_CLAW + lead * 4 + 3] = (o[P_CLAW + lead * 4 + 3] as number) + 0.4 * k;
+      o[P_CLAW + trail * 4] = (o[P_CLAW + trail * 4] as number) - 0.15 * k;
+      o[P_BODY_Y] = (o[P_BODY_Y] as number) + 0.05 * k;
+      o[P_BODY_RX] = (o[P_BODY_RX] as number) - 0.08 * k;
+      o[P_LOOK_X] = (o[P_LOOK_X] as number) + this.laneDir * 0.5 * k;
+    }
+    if (!this.laneSettled && this.laneT > 0.2) {
+      // arrival: a little squash and the hat sways on
+      this.laneSettled = true;
+      this.squash.velocity -= 4;
+      this.hatZ.impulse(-this.laneDir * 2);
+    }
     if (this.laneT < 0.25) {
       // legs on the leading side splay out during the scuttle
-      const k = 1 - this.laneT / 0.25;
+      const k = Math.min(1, this.laneT / 0.04) * (1 - this.laneT / 0.25);
       for (let l = 0; l < 6; l++) {
         const leading = (l < 3 ? -1 : 1) === this.laneDir;
         o[P_LEG + l * 4 + 1] = (o[P_LEG + l * 4 + 1] as number) + (leading ? 0.25 : -0.1) * k;
@@ -888,7 +917,7 @@ export class CrabModel {
     }
     // landing: leg splay
     if (this.landT < 0.25) {
-      const k = (1 - this.landT / 0.25) * (this.landHard ? 1.4 : 1);
+      const k = Math.min(1, this.landT / 0.05) * (1 - this.landT / 0.25) * (this.landHard ? 1.4 : 1);
       for (let l = 0; l < 6; l++) {
         o[P_LEG + l * 4 + 1] = (o[P_LEG + l * 4 + 1] as number) - 0.35 * k;
         o[P_LEG + l * 4 + 2] = (o[P_LEG + l * 4 + 2] as number) + 0.3 * k;
@@ -897,7 +926,7 @@ export class CrabModel {
     }
     // bump: head snap, eyes squeezed shut
     if (this.bumpT < 0.35) {
-      const k = 1 - this.bumpT / 0.35;
+      const k = Math.min(1, this.bumpT / 0.04) * (1 - this.bumpT / 0.35);
       o[P_BODY_RX] = (o[P_BODY_RX] as number) - 0.35 * k * k;
       o[P_LID] = Math.max(o[P_LID] as number, this.bumpT < 0.25 ? 1 : 0);
       this.mouth = 2;

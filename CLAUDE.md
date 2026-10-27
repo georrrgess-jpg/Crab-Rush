@@ -9,6 +9,8 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - `npm run shots -- <label> [--no-build] [--only=title,run,...] [--views=phone,desktop,...]`: Playwright screenshots into `docs/screenshots/`. Chromium and Playwright are preinstalled: use `require('playwright')` and never run `playwright install`.
 - `node scripts/smoke.mjs [--no-build]`: end-to-end browser smoke test (shader compile check, controls, tutorial, shop, settings, pause, rotation, results)
 - `node scripts/perf.mjs [--no-build] [--tiers=high,medium,low]`: draw-call/triangle budget check per tier and zone (exit 1 if over)
+- `node scripts/ui-audit.mjs [--no-build] [--only=...] [--views=...]`: every screen at the five reference viewports; fails on overlapping controls, text overflow, tap targets under 40 px, horizontal scroll
+- `node scripts/anim-strip.mjs <label> [--no-build]`: crab animation strips (run, turntable, hop, crash, emotes, dances, bodies, hats, lane, slam)
 - `BALANCE=1 npx vitest run tests/balance.test.ts`: simulated-player balance report
 - Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`, `xp`, `level`, `daily`, `setDate`, `wear`, `unlockAll`, `shaderCheck`, `budgets`.
 

@@ -66,7 +66,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
       b.sphere(PALETTE.hatBand, 0.06, [0.33, 0.08, 0.35], [1.3, 1, 0.6], 8);
       b.sphere(PALETTE.hatBand, 0.06, [0.4, 0.08, 0.28], [1.3, 1, 0.6], 8);
       b.box(PALETTE.hatBand, 0.05, 0.14, 0.03, [0.37, 0.0, 0.34], [0, 0.8, 0.3]);
-      return out('clay', [0, 0.99, -0.07], -0.22);
+      return out('clay', [0, 1.01, -0.08], -0.22);
     }
     case 'shades':
       // rounded frames with gradient lenses
@@ -77,7 +77,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
         b.sphere(0xffffff, 0.03, [s * 0.27 - 0.06, 0.04, 0.06], [1.6, 1, 0.5], 6);
       }
       b.tube(0x1a1a24, [[-0.12, 0.03, 0.01], [0, 0.07, 0.02], [0.12, 0.03, 0.01]], 0.022, 6, 6, false);
-      return out('gloss', [0, 0.9, 0.46], 0);
+      return out('gloss', [0, 0.9, 0.57], 0);
     case 'flower':
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
@@ -113,13 +113,13 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
       b.torus(0xe9b53a, 0.51, 0.02, [0, 0.12, 0], [Math.PI / 2, 0, 0], seg(24));
       b.cyl(0xe9b53a, 0.1, 0.1, 0.04, [0, 0.18, 0.52], [Math.PI / 2 - 0.15, 0, 0], 12);
       b.sphere(0x1f3f87, 0.05, [0, 0.18, 0.545], [1, 1, 0.4], 8);
-      return out('clay', [0, 0.99, -0.05], -0.2);
+      return out('clay', [0, 1.05, -0.05], -0.2);
     case 'tophat':
       b.lathe(0x17171f, smooth([[0.0, 0.0], [0.55, 0.0], [0.62, 0.04], [0.58, 0.05], [0.38, 0.05], [0.36, 0.3], [0.38, 0.55], [0.3, 0.56], [0.0, 0.56]], 20), seg(24));
       b.cyl(0xe03a8e, 0.385, 0.375, 0.1, [0, 0.11, 0], [0, 0, 0], seg(20));
       b.sphere(0xffd23a, 0.06, [0.37, 0.11, 0.05], [1, 1, 0.5], 8);
       b.sphere(0xffffff, 0.04, [0.33, 0.2, 0.18], [1, 1, 1], 6);
-      return out('gloss', [0, 0.98, -0.08], -0.18);
+      return out('gloss', [0, 1, -0.08], -0.18);
     case 'parrot': {
       // a little parrot perched on top, looking at the camera
       b.sphere(0x2fbf4a, 0.2, [0, 0.2, 0], [0.85, 1.1, 0.8], seg(14));
@@ -157,7 +157,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
       b.lathe(0xd4342c, [[0.53, -0.02], [0.55, 0.06], [0.53, 0.14], [0.5, 0.14], [0.5, -0.02]], seg(22));
       b.sphere(0xffffff, 0.13, [0, 0.56, 0], [1, 1, 1], 10);
       b.paint((x, y, z, c) => c.multiplyScalar(0.88 + hash(Math.round(x * 50), Math.round(y * 50), Math.round(z * 50)) * 0.12));
-      return out('clay', [0, 0.92, -0.06], -0.2);
+      return out('clay', [0, 1.01, -0.07], -0.2);
     }
     case 'snorkel':
       b.torus(0xff7a2a, 0.24, 0.045, [0, 0, 0], [0, 0, 0], seg(24), [1.5, 0.8, 1]);
@@ -166,7 +166,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
       b.torus(0x1a1a24, 0.52, 0.025, [0, 0.0, -0.32], [Math.PI / 2, 0, 0], seg(24), [1, 0.75, 1]);
       b.tube(0x2a8ae8, [[0.36, 0.0, -0.05], [0.44, 0.2, -0.1], [0.45, 0.5, -0.12], [0.42, 0.62, -0.08]], 0.035, 6, 10, false);
       b.cyl(0xff7a2a, 0.045, 0.045, 0.08, [0.42, 0.64, -0.08], [0, 0, 0], 8);
-      return out('gloss', [0, 0.9, 0.44], 0);
+      return out('gloss', [0, 0.9, 0.58], 0);
     case 'crown':
       b.cyl(0xffd23a, 0.4, 0.37, 0.18, [0, 0.09, 0], [0, 0, 0], seg(20));
       for (let i = 0; i < 7; i++) {
@@ -175,7 +175,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
         b.sphere(0xfff4c0, 0.035, [Math.cos(a) * 0.38, 0.39, Math.sin(a) * 0.38], [1, 1, 1], 6);
         b.sphere(i % 2 ? 0xe8302f : 0x2a7ad8, 0.05, [Math.cos(a + 0.45) * 0.4, 0.09, Math.sin(a + 0.45) * 0.4], [1, 1, 0.5], 6, [0, -(a + 0.45) + Math.PI / 2, 0]);
       }
-      return out('gold', [0, 0.97, -0.05], -0.12);
+      return out('gold', [0, 0.99, -0.06], -0.12);
     case 'chef':
       b.cyl(0xffffff, 0.42, 0.42, 0.22, [0, 0.11, 0], [0, 0, 0], seg(20));
       for (let i = 0; i < 6; i++) {
@@ -184,7 +184,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
       }
       b.sphere(0xffffff, 0.27, [0, 0.46, 0], [1, 0.9, 1], seg(12));
       b.paint((x, y, z, c) => c.multiplyScalar(0.94 + Math.min(1, y) * 0.06));
-      return out('clay', [0, 0.94, -0.06], -0.15);
+      return out('clay', [0, 0.98, -0.1], -0.15);
     case 'propeller': {
       b.lathe(0xe8302f, smooth([[0.47, 0.0], [0.46, 0.12], [0.36, 0.26], [0.18, 0.33], [0.0, 0.34]], 12), seg(16));
       b.paint((x, y, z, c) => {
@@ -198,7 +198,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
       p.sphere(0xffd23a, 0.22, [0.2, 0, 0], [1, 0.08, 0.3], 8, [0.3, 0, 0]);
       p.sphere(0x2a7ad8, 0.22, [-0.2, 0, 0], [1, 0.08, 0.3], 8, [-0.3, 0, 0]);
       p.sphere(0xe8302f, 0.04, [0, 0.01, 0], [1, 1, 1], 6);
-      const m = out('clay', [0, 0.95, -0.06], -0.15);
+      const m = out('clay', [0, 1.02, -0.07], -0.15);
       m.spinner = { geo: p.build(), pos: [0, 0.45, 0] };
       return m;
     }
@@ -213,7 +213,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
           b.sphere(0xffb020, 0.03, [Math.cos(a + 0.2) * r, 0.11, Math.sin(a + 0.2) * r], [1, 1, 1], 6);
         }
       }
-      return out('clay', [0, 0.95, -0.04], -0.18);
+      return out('clay', [0, 0.99, -0.07], -0.18);
     case 'headphones':
       b.tube(0x2a2a34, [[-0.56, 0.0, 0], [-0.46, 0.34, 0], [0, 0.5, 0], [0.46, 0.34, 0], [0.56, 0.0, 0]], 0.04, 6, 16, false);
       for (const s of [-1, 1]) {
@@ -229,7 +229,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
         if (r > 0.5) c.multiplyScalar(0.92 + Math.sin(r * 90) * 0.05);
       });
       b.cyl(0x6a8a4a, 0.445, 0.46, 0.07, [0, 0.04, 0], [0, 0, 0], seg(22));
-      return out('clay', [0, 0.97, -0.06], -0.2);
+      return out('clay', [0, 1.01, -0.06], -0.2);
     case 'viking':
       b.lathe(0x9aa4ae, smooth([[0.5, 0.0], [0.5, 0.1], [0.44, 0.28], [0.28, 0.4], [0.0, 0.44]], 14), seg(22));
       b.cyl(0xb88a3a, 0.52, 0.52, 0.09, [0, 0.04, 0], [0, 0, 0], seg(22));
@@ -241,7 +241,7 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
         b.tube(0xf4ead2, [[s * 0.4, 0.2, 0], [s * 0.66, 0.34, 0], [s * 0.74, 0.62, 0.02]], (t) => 0.1 * (1 - t) + 0.015, 8, 10, false);
         b.paint((x, y, z, c) => c.lerp(new THREE.Color(0xb8a888), Math.max(0, y - 0.45) * 2.5));
       }
-      return out('gloss', [0, 0.95, -0.06], -0.15);
+      return out('gloss', [0, 1.01, -0.06], -0.15);
     case 'halo':
       b.torus(0xffe27a, 0.34, 0.05, [0, 0, 0], [Math.PI / 2, 0, 0], seg(28));
       return out('gold', [0, 1.38, -0.04], -0.15);

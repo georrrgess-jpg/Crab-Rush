@@ -3,7 +3,7 @@
  * boosts; v1 blobs migrate transparently. */
 import { defaultDaily, type DailyState } from '../meta/daily';
 import { PASS_TIERS } from '../meta/xp';
-import { V1_CRAB_HATS, defaultWardrobe, exists, syncFromCrabs, type Slot, type WardrobeState } from '../meta/wardrobe';
+import { ITEM_BY_ID, V1_CRAB_HATS, defaultWardrobe, exists, syncFromCrabs, type Slot, type WardrobeState } from '../meta/wardrobe';
 
 export type QualitySetting = 'auto' | 'low' | 'medium' | 'high';
 export type TouchButtons = 'auto' | 'show' | 'hide';
@@ -60,6 +60,8 @@ export interface SaveData {
   wardrobe: WardrobeState;
   levels: Record<string, LevelRecord>;
   daily: DailyState;
+  /** wardrobe items the player has looked at ("slot:id"); owned but unseen items show NEW */
+  seen: string[];
 }
 
 export const SAVE_KEY = 'crabdash.save';
@@ -82,6 +84,7 @@ export function defaultSave(): SaveData {
     wardrobe: defaultWardrobe(),
     levels: {},
     daily: defaultDaily(),
+    seen: ['bodies:sandy', 'hats:straw', 'hats:none', 'trails:sand', 'dances:clap'],
   };
 }
 
@@ -161,6 +164,7 @@ export function sanitize(raw: unknown): SaveData {
     for (const [k, v] of Object.entries(go.progress as Record<string, unknown>)) if (typeof v === 'number' && Number.isFinite(v)) progress[k] = v;
   }
   const crabs = { owned: [...new Set(owned)], selected };
+  const wardrobe = sanitizeWardrobe(r.wardrobe, crabs.owned, selected);
   const claimed = Array.isArray(r.passClaimed)
     ? [...new Set(r.passClaimed.filter((t): t is number => typeof t === 'number' && Number.isInteger(t) && t >= 1 && t <= PASS_TIERS))]
     : [];
@@ -198,10 +202,16 @@ export function sanitize(raw: unknown): SaveData {
     xp: Math.floor(num(r.xp, 0)),
     passClaimed: claimed,
     boosts: Math.floor(num(r.boosts, 0, 0, 3)),
-    wardrobe: sanitizeWardrobe(r.wardrobe, crabs.owned, selected),
+    wardrobe,
     levels: sanitizeLevels(r.levels),
     daily: sanitizeDaily(r.daily),
+    // older saves had no NEW tracking: everything already owned counts as seen
+    seen: Array.isArray(r.seen) ? [...new Set(strArr(r.seen).filter((k) => ITEM_BY_ID.has(k)))] : ownedKeys(wardrobe),
   };
+}
+
+function ownedKeys(w: WardrobeState): string[] {
+  return (Object.keys(w.owned) as Slot[]).flatMap((slot) => w.owned[slot].map((id) => `${slot}:${id}`));
 }
 
 /** string → non-negative integer counts */

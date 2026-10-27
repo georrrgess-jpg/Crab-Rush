@@ -6,12 +6,12 @@ import { Input, type Action } from './core/input';
 import { Loop } from './core/loop';
 import { QualityManager } from './core/quality';
 import { SaveStore, type Settings } from './core/save';
-import { buyCrab, buyUpgrade, canBuyCrab, grantSkillUnlocks, nextUnlock, selectCrab, upgradeCost } from './sim/economy';
+import { buyCrab, buyUpgrade, canBuyCrab, grantSkillUnlocks, nextUnlock, upgradeCost } from './sim/economy';
 import { Goals, type RunSnapshot } from './sim/goals';
 import { HowToScreen } from './ui/howto';
 import { SettingsScreen, StatsScreen } from './ui/settings';
 import { Haptics } from './core/haptics';
-import { PASS_TIERS, tierFromXp, xpFor } from './meta/xp';
+import { PASS_TIERS, tierFromXp, totalXpForTier, xpFor } from './meta/xp';
 import { MAX_BOOSTS, PASS_REWARDS, claim, claimable, type Reward } from './meta/pass';
 import { MODIFIERS, currentStreak, dateKey, modifierFor, recordFinish, seedFor, type Modifier } from './meta/daily';
 import { PassScreen, rewardView } from './ui/pass';
@@ -23,7 +23,7 @@ import { LEVELS, LEVEL_BY_ID } from './sim/levelData';
 import { compileLevel, type CompiledLevel } from './sim/levels';
 import { evalStars, ruleHud, ruleState, ruleText } from './sim/objectives';
 import { ISLAND_NAMES, ISLAND_REWARD_HATS, TOTAL_STARS, applyLevelResult, islandComplete, islandStars, islandUnlocked, levelUnlocked, nextLevel, totalStars } from './meta/islands';
-import { ITEMS, equip, grant, type Slot } from './meta/wardrobe';
+import { ITEMS, equip, grant, unseen, type Slot } from './meta/wardrobe';
 import { HAT_KINDS, type HatKind } from './render/models/hats';
 import type { TrailKind } from './render/materials';
 
@@ -185,6 +185,11 @@ export class Game {
           this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold' });
         } else this.audio.play('deny');
         this.shop.render(this.save.data);
+      },
+      seen: (keys) => {
+        const d = this.save.data;
+        for (const k of keys) if (!d.seen.includes(k)) d.seen.push(k);
+        this.save.save();
       },
       buyUpgrade: (k: PowerKind) => {
         if (buyUpgrade(this.save.data, k)) {
@@ -485,6 +490,22 @@ export class Game {
 
   private itemName(r: Reward): string {
     return rewardView(r, this.shop.thumbs).name;
+  }
+
+  /** The closest reward from any source, for the results teaser. */
+  private nearestReward(): { label: string; name: string; have: number; need: number; unit: 'shells' | 'XP' } | null {
+    const d = this.save.data;
+    const out: { label: string; name: string; have: number; need: number; unit: 'shells' | 'XP' }[] = [];
+    const crab = nextUnlock(d, Object.fromEntries(CRAB_SKINS.map((k) => [k.id, k.name])));
+    if (crab) out.push({ label: 'Next crab', ...crab, unit: 'shells' });
+    const tier = tierFromXp(d.xp).tier;
+    const i = PASS_REWARDS.findIndex((r, k) => k + 1 > tier && r.kind === 'item');
+    if (i >= 0) {
+      const from = totalXpForTier(tier);
+      out.push({ label: 'Pass reward', name: this.itemName(PASS_REWARDS[i] as Reward), have: d.xp - from, need: totalXpForTier(i + 1) - from, unit: 'XP' });
+    }
+    out.sort((a, b) => b.have / b.need - a.have / a.need);
+    return out[0] ?? null;
   }
 
   /** "Next: Parrot Pal in 2 tiers" for the Home pass pill. */
@@ -1041,6 +1062,7 @@ export class Game {
 
   private anyAffordable(): boolean {
     const d = this.save.data;
+    if (unseen(d.wardrobe, d.seen).length > 0) return true;
     if (CRAB_SKINS.some((k) => canBuyCrab(d, k.id))) return true;
     return (['magnet', 'shield', 'rider'] as PowerKind[]).some((k) => {
       const c = upgradeCost(d.upgrades[k]);
@@ -1239,7 +1261,7 @@ export class Game {
       xpBefore,
       xpGained,
       goals: this.goalViews(),
-      unlock: nextUnlock(d, Object.fromEntries(CRAB_SKINS.map((k) => [k.id, k.name]))),
+      unlock: this.nearestReward(),
       wardrobeBadge: this.anyAffordable(),
     });
     if (newBest) {

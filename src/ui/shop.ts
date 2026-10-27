@@ -2,7 +2,7 @@ import { CFG } from '../config';
 import type { SaveData } from '../core/save';
 import { CRAB_ORDER, SKILL_UNLOCKS, crabPrice, powerDuration, upgradeCost } from '../sim/economy';
 import type { PowerKind } from '../sim/events';
-import { ITEMS, type Item, type Slot, owns } from '../meta/wardrobe';
+import { ITEMS, type Item, type Slot, owns, unseen } from '../meta/wardrobe';
 import type { CrabSkin } from '../render/models/crab';
 import { btn, el, fmt } from './dom';
 import { DANCE_SVG, ICON, TRAIL_SVG } from './icons';
@@ -14,6 +14,8 @@ export interface ShopHandlers {
   equip(slot: Slot, id: string): void;
   buyCrab(id: string): void;
   buyUpgrade(kind: PowerKind): void;
+  /** these owned items have now been looked at */
+  seen(keys: string[]): void;
 }
 
 const UP_INFO: Record<PowerKind, { name: string; desc: string }> = {
@@ -45,6 +47,8 @@ export class ShopScreen {
   private tab: Tab = 'bodies';
   private previewId: Record<Slot, string> = { bodies: 'sandy', hats: 'straw', trails: 'sand', dances: 'clap' };
   private last: SaveData | null = null;
+  /** items that were new when the Wardrobe opened (they keep their NEW tag for this visit) */
+  private fresh = new Set<string>();
   /** portraits from the renderer (bodies and hats); filled in the background */
   thumbs: { bodies: Record<string, string>; hats: Record<string, string> } = { bodies: {}, hats: {} };
 
@@ -78,6 +82,7 @@ export class ShopScreen {
   }
 
   open(save: SaveData): void {
+    this.fresh = new Set(unseen(save.wardrobe, save.seen));
     const e = save.wardrobe.equipped;
     this.previewId = { bodies: e.body, hats: e.hat, trails: e.trail, dances: e.dance };
     this.render(save);
@@ -90,10 +95,25 @@ export class ShopScreen {
       const on = b.dataset.tab === this.tab;
       b.classList.toggle('on', on);
       b.setAttribute('aria-selected', String(on));
+      const t = b.dataset.tab as Tab;
+      const n = t === 'upgrades' ? 0 : unseen(save.wardrobe, save.seen, t).length;
+      let dot = b.querySelector('.wdot');
+      if (n > 0 && !dot) {
+        dot = el('i', 'wdot');
+        b.appendChild(dot);
+      }
+      if (dot) {
+        dot.textContent = String(n);
+        dot.classList.toggle('hidden', n <= 0);
+      }
     }
     this.body.innerHTML = '';
     if (this.tab === 'upgrades') this.renderUpgrades(save);
-    else this.renderSlot(save, this.tab);
+    else {
+      this.renderSlot(save, this.tab);
+      const keys = unseen(save.wardrobe, save.seen, this.tab);
+      if (keys.length) this.h.seen(keys);
+    }
   }
 
   private items(slot: Slot): Item[] {
@@ -136,7 +156,8 @@ export class ShopScreen {
         const buyable = slot === 'bodies' && (CRAB_ORDER as readonly string[]).includes(id) && !SKILL_UNLOCKS[id];
         badge = buyable ? `<span class="badge">${ICON.shell}${fmt(crabPrice(id))}</span>` : `<span class="badge lock">${ICON.lock}</span>`;
       }
-      t.innerHTML = `${this.art(slot, id)}${badge}<span class="nm">${item.name}</span>`;
+      const isNew = owned && this.fresh.has(`${slot}:${id}`);
+      t.innerHTML = `${this.art(slot, id)}${badge}${isNew ? '<span class="new-tag">NEW</span>' : ''}<span class="nm">${item.name}</span>`;
       t.addEventListener('click', () => {
         this.previewId[slot] = id;
         this.h.preview(slot, id);
