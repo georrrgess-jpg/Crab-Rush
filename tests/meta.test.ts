@@ -150,3 +150,15 @@ describe('island hop progression', async () => {
     completed = [];
   });
 });
+
+import { BONUS_XP, bonusProgress, bonusReady } from '../src/meta/pass';
+import { totalXpForTier as txp } from '../src/meta/xp';
+describe('pass bonus loop', () => {
+  it('a chest every 1,000 XP after tier 40', () => {
+    const full = txp(40);
+    expect(bonusReady(full - 1, 0)).toBe(0);
+    expect(bonusReady(full + BONUS_XP * 2.5, 0)).toBe(2);
+    expect(bonusReady(full + BONUS_XP * 2.5, 2)).toBe(0);
+    expect(bonusProgress(full + 250)).toBe(250);
+  });
+});

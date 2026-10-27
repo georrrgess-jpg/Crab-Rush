@@ -211,7 +211,9 @@ try {
   await page.evaluate(() => { window.__crab.game.save.data.cove.lastGift = new Date('2026-05-01T07:00:00').getTime(); window.__crab.game.save.data.cove.banked = 0; });
   await fr(70);
   const sh0 = await page.evaluate(() => window.__crab.game.save.data.shells);
-  await page.click('#cove .cove-gift');
+  // the ready button pulses forever, so it never counts as "stable": wait for it, then click
+  await page.waitForSelector('#cove .cove-gift.ready:not([disabled])');
+  await page.click('#cove .cove-gift', { force: true });
   const sh1 = await page.evaluate(() => window.__crab.game.save.data.shells);
   check(sh1 - sh0 === 120, `three hours of Tide Gifts pay 120 shells (${sh1 - sh0})`);
   await page.evaluate(() => { window.__crab.grant(5000); });

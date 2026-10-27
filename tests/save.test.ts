@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SaveStore, defaultSave, sanitize, SAVE_KEY } from '../src/core/save';
 
 class MemStorage {
@@ -30,7 +30,12 @@ describe('save', () => {
   it('falls back to defaults on corrupt JSON', () => {
     const st = new MemStorage();
     st.setItem(SAVE_KEY, '{not json');
-    expect(new SaveStore(st).data).toEqual(defaultSave());
+    vi.useFakeTimers({ now: 1_700_000_000_000 }); // the Cove's gift clock starts at Date.now()
+    try {
+      expect(new SaveStore(st).data).toEqual(defaultSave());
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('sanitizes malformed fields', () => {
     const d = sanitize({ shells: 'lots', best: -5, crabs: { owned: ['chill', 3], selected: 'ghost' }, upgrades: { magnet: 99 }, settings: { quality: 'ultra', music: 7 } });

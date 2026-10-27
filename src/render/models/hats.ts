@@ -247,3 +247,24 @@ export function buildHat(kind: HatKind, detail = true): HatModel {
       return out('gold', [0, 1.38, -0.04], -0.15);
   }
 }
+
+/** Hat dyes (UPDATE3_PLAN.md §5.2): 0 = original, 1..3 rotate the hue of every coloured part. */
+export const DYE_SHIFTS = [0, 0.33, 0.58, 0.8] as const;
+export function dyeHat(geo: THREE.BufferGeometry, dye: number): THREE.BufferGeometry {
+  const shift = DYE_SHIFTS[dye] ?? 0;
+  if (!shift) return geo;
+  const col = geo.attributes.color as THREE.BufferAttribute | undefined;
+  if (!col) return geo;
+  const c = new THREE.Color();
+  const hsl = { h: 0, s: 0, l: 0 };
+  for (let i = 0; i < col.count; i++) {
+    c.setRGB(col.getX(i), col.getY(i), col.getZ(i));
+    c.getHSL(hsl);
+    // greys, whites and blacks stay as they are; only coloured parts change
+    if (hsl.s < 0.18) continue;
+    c.setHSL((hsl.h + shift) % 1, hsl.s, hsl.l);
+    col.setXYZ(i, c.r, c.g, c.b);
+  }
+  col.needsUpdate = true;
+  return geo;
+}

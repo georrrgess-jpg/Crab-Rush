@@ -4,7 +4,7 @@ import { Spring } from '../anim/spring';
 import { GeoBuilder } from '../geo';
 import type { Materials } from '../materials';
 import { makeOutline } from '../shaders/toy';
-import { type HatKind, buildHat } from './hats';
+import { type HatKind, buildHat, dyeHat } from './hats';
 
 export type { HatKind } from './hats';
 
@@ -310,7 +310,11 @@ export class CrabModel {
   }
 
   /** Rebuild the crab for a body skin; `hat` overrides the skin's own hat (wardrobe). */
-  setSkin(skin: CrabSkin, hat: HatKind = skin.hat): void {
+  /** hat dye (Wardrobe): 0 = original colours */
+  private hatDye = 0;
+
+  setSkin(skin: CrabSkin, hat: HatKind = skin.hat, dye = this.hatDye): void {
+    this.hatDye = dye;
     this.skin = skin;
     const clay = new GeoBuilder();
     const gloss = new GeoBuilder();
@@ -335,7 +339,7 @@ export class CrabModel {
     this.hatKind = kind;
     const h = buildHat(kind, this.detail);
     this.hatMesh.geometry.dispose();
-    this.hatMesh.geometry = h.geo ?? new THREE.BufferGeometry();
+    this.hatMesh.geometry = h.geo ? dyeHat(h.geo, this.hatDye) : new THREE.BufferGeometry();
     this.hatMesh.visible = h.geo !== null;
     this.hatMesh.material = h.mat === 'gold' ? this.mats.gold : h.mat === 'gloss' ? this.mats.gloss : this.mats.clay;
     const r = restPos(B_HAT);

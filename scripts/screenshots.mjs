@@ -65,7 +65,7 @@ const SCENES = {
     await p.evaluate(() => window.__crab.startRun({ seed: 11, autopilot: true, tutorial: false, start: 760 }));
     await p.evaluate(() => window.__crab.frames(60 * 3));
   },
-  cove: async (p) => {
+  tidepool: async (p) => {
     await p.evaluate(() => window.__crab.startRun({ seed: 12, autopilot: true, tutorial: false, start: 1660 }));
     await p.evaluate(() => window.__crab.frames(60 * 3));
   },
@@ -132,6 +132,45 @@ const SCENES = {
     await p.waitForTimeout(2500);
     await p.evaluate(() => { window.__crab.setState('pass'); window.__crab.frames(10); });
     await p.waitForTimeout(900);
+  },
+  // ---- Update 3 Phase F: outfits, dyes, pass bonus, Daily calendar
+  outfits: async (p) => {
+    await p.evaluate(() => {
+      const d = window.__crab.game.save.data;
+      d.pearls = 60;
+      d.wardrobe.owned.hats.push('parrot', 'sunflower', 'chef');
+      d.dyes.parrot = [1, 2];
+      d.outfits[0] = { body: 'sandy', hat: 'parrot', trail: 'sand', dance: 'clap' };
+      window.__crab.wear('hats', 'parrot');
+      window.__crab.setState('shop');
+      window.__crab.frames(10);
+    });
+    await p.waitForTimeout(2500);
+    await p.click('#shop [data-tab="hats"]');
+    await p.evaluate(() => { window.__crab.frames(30); document.querySelector('#shop .dyes')?.scrollIntoView({ block: 'center' }); });
+    await p.waitForTimeout(300);
+  },
+  passbonus: async (p) => {
+    await p.evaluate(() => { window.__crab.xp(200000); const d = window.__crab.game.save.data; d.passBonus = Math.max(0, d.passBonus + 174); for (let t = 1; t <= 40; t++) d.passClaimed.push(t); window.__crab.setState('pass'); window.__crab.frames(10); });
+    await p.waitForTimeout(2500);
+    await p.evaluate(() => { window.__crab.setState('pass'); window.__crab.frames(10); });
+    await p.waitForTimeout(600);
+  },
+  dailycal: async (p) => {
+    await p.evaluate(() => {
+      window.__crab.setDate('2026-10-26T15:00:00');
+      const d = window.__crab.game.save.data.daily;
+      const hist = [];
+      for (let i = 1; i <= 24; i++) if (i % 5) hist.push(new Date(Date.UTC(2026, 9, 26 - i)).toISOString().slice(0, 10));
+      Object.assign(d, { lastDate: '2026-10-25', streak: 4, history: hist.reverse() });
+      d.scores = Object.fromEntries(hist.map((k, i) => [k, 600 + ((i * 397) % 1900)]));
+      d.bestByMod = { gullDay: 1840, bigWaves: 2410, mirror: 960 };
+      window.__crab.setState('daily');
+      window.__crab.frames(10);
+    });
+    await p.waitForTimeout(900);
+    await p.evaluate(() => document.querySelector('#daily .dt-almanac')?.scrollIntoView({ block: 'end' }));
+    await p.waitForTimeout(300);
   },
   daily: async (p) => {
     await p.evaluate(() => {

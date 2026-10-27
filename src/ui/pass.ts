@@ -1,8 +1,8 @@
-import { MAX_BOOSTS, PASS_REWARDS, type Reward } from '../meta/pass';
+import { BONUS_REWARD, MAX_BOOSTS, PASS_REWARDS, type Reward } from '../meta/pass';
 import { ITEM_BY_ID } from '../meta/wardrobe';
 import { PASS_TIERS } from '../meta/xp';
 import { btn, el, fmt } from './dom';
-import { BOOST_SVG, DANCE_SVG, ICON, TRAIL_SVG } from './icons';
+import { BOOST_SVG, DANCE_SVG, GIFT_SVG, ICON, TRAIL_SVG } from './icons';
 
 export interface PassData {
   tier: number;
@@ -12,12 +12,15 @@ export interface PassData {
   boosts: number;
   /** portraits from the Wardrobe (may still be empty) */
   thumbs: { bodies: Record<string, string>; hats: Record<string, string> };
+  /** after tier 40: bonus chests ready and XP into the next */
+  bonus?: { ready: number; into: number; need: number };
 }
 
 export interface PassHandlers {
   back(): void;
   claim(tier: number): void;
   claimAll(): void;
+  claimBonus?(): void;
 }
 
 const SLOT_LABEL: Record<string, string> = { bodies: 'Crab', hats: 'Hat', trails: 'Trail', dances: 'Dance' };
@@ -103,6 +106,15 @@ export class PassScreen {
       const left = nextItem + 1 - d.tier;
       this.next.innerHTML = `<span class="pn-art">${v.art}</span><span>Next big reward: <b>${v.name}</b> ${left === 1 ? 'at the next tier' : `in ${left} tiers`}</span>`;
       this.next.classList.remove('hidden');
+    } else if (d.bonus) {
+      // the bonus loop: a pearl chest every 1,000 XP after the last tier
+      const b = d.bonus;
+      this.next.innerHTML = `<span class="pn-art">${GIFT_SVG}</span><span>Bonus chests: <b>${b.ready ? `${b.ready} ready!` : `${fmt(b.into)}/${fmt(b.need)} XP`}</b> · ${BONUS_REWARD.pearls} pearls + ${BONUS_REWARD.shells} shells each</span>`;
+      if (b.ready) {
+        const cb = btn('Open', 'small green', () => this.h.claimBonus?.(), 'Open a bonus chest');
+        this.next.appendChild(cb);
+      }
+      this.next.classList.remove('hidden');
     } else this.next.classList.add('hidden');
 
     this.track.innerHTML = '';
@@ -113,7 +125,7 @@ export class PassScreen {
       const claimed = d.claimed.includes(t);
       const v = rewardView(r, d.thumbs);
       const big = r.kind === 'item';
-      const c = el('div', `pt${big ? ' big' : ''}${claimed ? ' claimed' : reached ? ' ready' : ' locked'}${t === d.tier + 1 ? ' current' : ''}`);
+      const c = el('div', `pt${big ? ' big' : ''}${claimed ? ' claimed' : reached ? ' ready' : ' locked'}${t === d.tier + 1 ? ' current' : ''}${reached ? ' lit' : ''}`);
       c.setAttribute('role', 'listitem');
       c.dataset.tier = String(t);
       c.innerHTML = `<span class="pt-num">${t}</span><span class="pt-art">${v.art}</span><span class="pt-name">${v.name}</span><span class="pt-kind">${v.kind}</span>`;

@@ -16,7 +16,16 @@ export interface ShopHandlers {
   buyUpgrade(kind: PowerKind): void;
   /** these owned items have now been looked at */
   seen(keys: string[]): void;
+  /** outfits: wear / save slot i; a random outfit from owned items */
+  outfit(i: number): void;
+  saveOutfit(i: number): void;
+  surprise(): void;
+  /** hat dye: wear (or buy with pearls) dye n of a hat */
+  dye(hat: string, n: number): void;
 }
+
+export const DYE_COST = 10;
+const DYE_COLORS = [['#f2cf7a', '#2a5ab0'], ['#7ad85a', '#ff5a8a'], ['#5ab8ff', '#ffd23a'], ['#d07aff', '#3fbf55']];
 
 const UP_INFO: Record<PowerKind, { name: string; desc: string }> = {
   magnet: { name: 'Shell Magnet', desc: 'Pulls nearby shells toward you.' },
@@ -110,6 +119,7 @@ export class ShopScreen {
     this.body.innerHTML = '';
     if (this.tab === 'upgrades') this.renderUpgrades(save);
     else {
+      this.renderOutfits(save);
       this.renderSlot(save, this.tab);
       const keys = unseen(save.wardrobe, save.seen, this.tab);
       if (keys.length) this.h.seen(keys);
@@ -189,11 +199,60 @@ export class ShopScreen {
       action = el('div', 'w-lock', ICON.lock);
     }
     d.append(txt, action);
+    if (slot === 'hats' && owned && item.id !== 'none') {
+      const owns = save.dyes[item.id] ?? [];
+      const worn = save.hatDye[item.id] ?? 0;
+      const sw = el('div', 'dyes');
+      sw.setAttribute('aria-label', 'Hat colours');
+      for (let n = 0; n < 4; n++) {
+        const have = n === 0 || owns.includes(n);
+        const [a, b] = DYE_COLORS[n] as [string, string];
+        const dbtn = el('button', `dye${have ? '' : ' locked'}${worn === n ? ' on' : ''}`, have ? '' : `<span class="dye-cost">${DYE_COST}</span>`) as HTMLButtonElement;
+        dbtn.type = 'button';
+        dbtn.style.background = `linear-gradient(135deg, ${a} 50%, ${b} 50%)`;
+        dbtn.setAttribute('aria-label', n === 0 ? 'Original colours' : have ? `Dye ${n}` : `Buy dye ${n} for ${DYE_COST} pearls`);
+        dbtn.disabled = !have && save.pearls < DYE_COST;
+        dbtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.h.dye(item.id, n);
+        });
+        sw.appendChild(dbtn);
+      }
+      d.appendChild(sw);
+    }
     if (slot === 'dances') {
       const again = btn(ICON.restart, 'icon small blue', () => this.h.preview('dances', item.id), 'Play the dance again');
       d.insertBefore(again, action);
     }
     this.body.appendChild(d);
+  }
+
+  /** three saved looks and a Surprise Me button */
+  private renderOutfits(save: SaveData): void {
+    const bar = el('div', 'outfits');
+    bar.appendChild(el('span', 'of-lbl', 'Outfits'));
+    save.outfits.forEach((o, i) => {
+      const slot = el('span', `of-slot${o ? ' saved' : ''}`);
+      const wear = el('button', 'of-wear', o ? `<b>${i + 1}</b>` : `<b>${i + 1}</b><small>empty</small>`) as HTMLButtonElement;
+      wear.type = 'button';
+      wear.disabled = !o;
+      wear.setAttribute('aria-label', o ? `Wear outfit ${i + 1}` : `Outfit ${i + 1} is empty`);
+      wear.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.h.outfit(i);
+      });
+      const sv = el('button', 'of-save', `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h18l6 6v22H9z" fill="#fff"/><rect x="14" y="8" width="11" height="8" fill="#1e5e8c"/><rect x="14" y="22" width="14" height="9" rx="2" fill="#1e5e8c"/></svg>`) as HTMLButtonElement;
+      sv.type = 'button';
+      sv.setAttribute('aria-label', `Save the current look as outfit ${i + 1}`);
+      sv.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.h.saveOutfit(i);
+      });
+      slot.append(wear, sv);
+      bar.appendChild(slot);
+    });
+    bar.appendChild(btn(`${ICON.sparkle}<span>Surprise me</span>`, 'small surprise', () => this.h.surprise(), 'Wear a random outfit'));
+    this.body.appendChild(bar);
   }
 
   private renderUpgrades(save: SaveData): void {

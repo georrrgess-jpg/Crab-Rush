@@ -20,7 +20,7 @@ export type GameEvent =
   | { t: 'streak'; n: number }
   | { t: 'waveHopped' }
   | { t: 'knock'; id: number }
-  | { t: 'gullDive'; x: number }
+  | { t: 'gullDive'; x: number; coconut: boolean }
   | { t: 'tutorial'; step: string; need: 'move' | 'hop' | 'none'; show: boolean }
   // Island Hop
   | { t: 'dollar'; n: number; x: number; y: number }

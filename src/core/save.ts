@@ -79,6 +79,20 @@ export interface SaveData {
   achievements: string[];
   /** the title shown on the profile card ('' = automatic) */
   title: string;
+  /** Wardrobe outfits: three saved looks */
+  outfits: (Outfit | null)[];
+  /** hat dyes owned (indexes 1..3; 0 is the original) and the dye worn per hat */
+  dyes: Record<string, number[]>;
+  hatDye: Record<string, number>;
+  /** Sunny Pass bonus chests claimed after tier 40 */
+  passBonus: number;
+}
+
+export interface Outfit {
+  body: string;
+  hat: string;
+  trail: string;
+  dance: string;
 }
 
 export const SAVE_KEY = 'crabdash.save';
@@ -109,6 +123,10 @@ export function defaultSave(): SaveData {
     friends: defaultFriends(),
     achievements: [],
     title: '',
+    outfits: [null, null, null],
+    dyes: {},
+    hatDye: {},
+    passBonus: 0,
   };
 }
 
@@ -158,6 +176,8 @@ function sanitizeDaily(raw: unknown): DailyState {
     bestToday: num(r.bestToday, 0),
     bestDate: isKey(r.bestDate) ? r.bestDate : '',
     history: Array.isArray(r.history) ? r.history.filter(isKey).slice(-30) : [],
+    scores: Object.fromEntries(Object.entries(countMap(r.scores)).filter(([k]) => isKey(k))),
+    bestByMod: countMap(r.bestByMod),
   };
 }
 
@@ -241,11 +261,34 @@ export function sanitize(raw: unknown): SaveData {
     friends: sanitizeFriends(r.friends),
     achievements: [...new Set(strArr(r.achievements).filter((k) => ACHIEVEMENTS.some((a) => a.key === k)))],
     title: typeof r.title === 'string' ? r.title.slice(0, 40) : '',
+    outfits: [0, 1, 2].map((i) => sanitizeOutfit(Array.isArray(r.outfits) ? (r.outfits as unknown[])[i] : null, wardrobe)),
+    dyes: sanitizeDyes(r.dyes, wardrobe),
+    hatDye: Object.fromEntries(Object.entries(countMap(r.hatDye)).filter(([k, v]) => v >= 1 && v <= 3 && sanitizeDyes(r.dyes, wardrobe)[k]?.includes(v))),
+    passBonus: Math.floor(num(r.passBonus, 0)),
   };
 }
 
 function ownedKeys(w: WardrobeState): string[] {
   return (Object.keys(w.owned) as Slot[]).flatMap((slot) => w.owned[slot].map((id) => `${slot}:${id}`));
+}
+
+function sanitizeOutfit(raw: unknown, w: WardrobeState): Outfit | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const ok = (slot: Slot, v: unknown): v is string => typeof v === 'string' && w.owned[slot].includes(v);
+  if (!ok('bodies', r.body) || !ok('hats', r.hat) || !ok('trails', r.trail) || !ok('dances', r.dance)) return null;
+  return { body: r.body, hat: r.hat, trail: r.trail, dance: r.dance };
+}
+
+function sanitizeDyes(raw: unknown, w: WardrobeState): Record<string, number[]> {
+  const out: Record<string, number[]> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [hat, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!w.owned.hats.includes(hat) || !Array.isArray(v)) continue;
+    const ds = [...new Set(v.filter((x): x is number => x === 1 || x === 2 || x === 3))].sort();
+    if (ds.length) out[hat] = ds;
+  }
+  return out;
 }
 
 function sanitizeCove(raw: unknown): CoveState {

@@ -218,8 +218,8 @@ export class GameView {
     this.reduceMotion = on;
   }
 
-  setSkin(skin: CrabSkin, hat?: HatKind): void {
-    this.crab.setSkin(skin, hat ?? skin.hat);
+  setSkin(skin: CrabSkin, hat?: HatKind, dye = 0): void {
+    this.crab.setSkin(skin, hat ?? skin.hat, dye);
   }
 
   /** Wardrobe: running trail and victory dance */

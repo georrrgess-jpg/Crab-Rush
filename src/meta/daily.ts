@@ -19,10 +19,13 @@ export interface DailyState {
   bestToday: number;
   bestDate: string;
   history: string[]; // recent dates with a finish (max 30)
+  /** best score per date (last 30 days) and per modifier (UPDATE3_PLAN.md §5.2) */
+  scores: Record<string, number>;
+  bestByMod: Record<string, number>;
 }
 
 export function defaultDaily(): DailyState {
-  return { lastDate: '', streak: 0, savers: 0, bestToday: 0, bestDate: '', history: [] };
+  return { lastDate: '', streak: 0, savers: 0, bestToday: 0, bestDate: '', history: [], scores: {}, bestByMod: {} };
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -100,5 +103,9 @@ export function recordFinish(s: DailyState, today: string, score: number): Finis
   }
   const newBest = score > s.bestToday;
   if (newBest) s.bestToday = score;
+  s.scores[today] = Math.max(s.scores[today] ?? 0, score);
+  for (const k of Object.keys(s.scores)) if (daysBetween(k, today) > 30) delete s.scores[k];
+  const mod = modifierFor(today);
+  s.bestByMod[mod] = Math.max(s.bestByMod[mod] ?? 0, score);
   return { firstToday, streak: s.streak, usedSavers, newBest, milestone };
 }

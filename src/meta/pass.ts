@@ -1,5 +1,5 @@
 /** Sunny Pass reward track (UPDATE2_PLAN.md §6.1). Pure. */
-import { PASS_TIERS, tierFromXp } from './xp';
+import { PASS_TIERS, tierFromXp, totalXpForTier } from './xp';
 import { grant, type Slot, type WardrobeState } from './wardrobe';
 
 export type Reward =
@@ -65,4 +65,19 @@ export function claim(s: PassTarget, tier: number): Reward | null {
   else grant(s.wardrobe, r.slot, r.id);
   s.passClaimed.push(tier);
   return r;
+}
+
+/** After tier 40 (UPDATE3_PLAN.md §5.2): a bonus chest every 1,000 XP. */
+export const BONUS_XP = 1000;
+export const BONUS_REWARD = { pearls: 8, shells: 300 } as const;
+
+export function bonusReady(xp: number, claimed: number): number {
+  const over = xp - totalXpForTier(PASS_TIERS);
+  return over <= 0 ? 0 : Math.max(0, Math.floor(over / BONUS_XP) - claimed);
+}
+
+/** XP into the next bonus chest (0..BONUS_XP) */
+export function bonusProgress(xp: number): number {
+  const over = xp - totalXpForTier(PASS_TIERS);
+  return over <= 0 ? 0 : over % BONUS_XP;
 }

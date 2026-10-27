@@ -8,7 +8,9 @@ export type Sfx =
   | 'rider' | 'closeShave' | 'goal' | 'newBest' | 'zone' | 'tap' | 'purchase' | 'countdown' | 'go' | 'milestone' | 'deny'
   | 'tick' | 'pop' | 'levelUp'
   // Update 2 (UPDATE2_PLAN.md §7)
-  | 'dollar' | 'win' | 'star' | 'claim' | 'equip' | 'gull' | 'boing' | 'splash' | 'whoosh' | 'streakFlame';
+  | 'dollar' | 'win' | 'star' | 'claim' | 'equip' | 'gull' | 'boing' | 'splash' | 'whoosh' | 'streakFlame'
+  // Update 3 (UPDATE3_PLAN.md §7)
+  | 'giftCollect' | 'pearl' | 'place' | 'chatter' | 'trophy' | 'chestOpen' | 'coconut' | 'ring';
 
 type Gen = (sr: number) => Float32Array;
 
@@ -254,6 +256,73 @@ export const SFX: Record<Sfx, Gen> = {
     for (let i = 0; i < crackle.length; i++) crackle[i] = r() > 0.995 ? r() : 0;
     const swell = tone(sr, 0.7, (t) => 220 + t * 220, 'tri', (t) => Math.sin(Math.min(1, t / 0.7) * Math.PI) * 0.5);
     return normalize(mix(svf(crackle, sr, () => 3000, 0.5, 'hp'), swell), 0.5);
+  },
+  /** Tide Gifts: a cascade of shell chimes */
+  giftCollect: (sr) => {
+    const x = buf(sr, 1.1);
+    [84, 86, 88, 91, 93, 96, 98, 100].forEach((m, i) => bell(sr, midiHz(m), 0.35, x, i * 0.055, 0.7 + (i % 2) * 0.2));
+    return normalize(x, 0.65);
+  },
+  /** a pearl: a soft glassy ping with a shimmer */
+  pearl: (sr) => {
+    const x = buf(sr, 0.7);
+    bell(sr, midiHz(100), 0.6, x, 0, 1);
+    bell(sr, midiHz(107), 0.5, x, 0.03, 0.5);
+    return normalize(mix(x, svf(noise(sr, 0.5, (t) => Math.exp(-t * 7) * 0.2, 43), sr, () => 10000, 0.4, 'hp')), 0.5);
+  },
+  /** a decoration lands: soft sand thud and a sparkle */
+  place: (sr) => {
+    const thud = tone(sr, 0.18, (t) => 150 - t * 400, 'sine', (t) => Math.exp(-t * 20));
+    const sand = svf(noise(sr, 0.25, (t) => Math.min(1, t * 60) * Math.exp(-t * 14), 47), sr, () => 1400, 0.7, 'lp');
+    const x = buf(sr, 0.5);
+    bell(sr, midiHz(91), 0.3, x, 0.08, 0.5);
+    return normalize(mix(thud, sand, x), 0.55);
+  },
+  /** friend chatter: little pitched crab blips */
+  chatter: (sr) => {
+    const x = buf(sr, 0.55);
+    [0, 0.09, 0.17, 0.27, 0.36].forEach((at, i) => {
+      const f0 = 520 + ((i * 137) % 5) * 90;
+      const n = tone(sr, 0.07, (t) => f0 + Math.sin(t * 90) * 60, 'square', (t) => Math.exp(-t * 30) * 0.5);
+      const o = Math.floor(at * sr);
+      for (let k = 0; k < n.length && o + k < x.length; k++) x[o + k] = (x[o + k] as number) + (n[k] as number);
+    });
+    return normalize(svf(x, sr, () => 2600, 0.5, 'lp'), 0.4);
+  },
+  /** trophy: a bright little fanfare */
+  trophy: (sr) => {
+    const x = buf(sr, 1.2);
+    const notes: [number, number][] = [[76, 0], [79, 0.1], [84, 0.2], [88, 0.32], [91, 0.32]];
+    for (const [m, at] of notes) {
+      const n = mix(tone(sr, 0.7, () => midiHz(m), 'tri', (t) => Math.exp(-t * 3)), tone(sr, 0.7, () => midiHz(m) * 2, 'sine', (t) => Math.exp(-t * 6) * 0.3));
+      const o = Math.floor(at * sr);
+      for (let k = 0; k < n.length && o + k < x.length; k++) x[o + k] = (x[o + k] as number) + (n[k] as number);
+    }
+    bell(sr, midiHz(103), 0.5, x, 0.45, 0.6);
+    return normalize(x, 0.6);
+  },
+  /** treasure chest: wooden rattle, a creak, then a burst of chimes */
+  chestOpen: (sr) => {
+    const x = buf(sr, 1.45);
+    for (let i = 0; i < 6; i++) {
+      const n = svf(noise(sr, 0.06, (t) => Math.exp(-t * 60), 50 + i), sr, () => 900, 1.5, 'bp');
+      const o = Math.floor(i * 0.12 * sr);
+      for (let k = 0; k < n.length && o + k < x.length; k++) x[o + k] = (x[o + k] as number) + (n[k] as number) * 0.7;
+    }
+    const creak = tone(sr, 0.25, (t) => 220 + t * 300 + Math.sin(t * 160) * 30, 'square', (t) => Math.sin(Math.min(1, t / 0.25) * Math.PI) * 0.25);
+    const o = Math.floor(0.75 * sr);
+    for (let k = 0; k < creak.length && o + k < x.length; k++) x[o + k] = (x[o + k] as number) + (creak[k] as number);
+    [84, 88, 91, 96, 100].forEach((m, i) => bell(sr, midiHz(m), 0.4, x, 0.95 + i * 0.05, 0.8));
+    return normalize(x, 0.65);
+  },
+  /** a coconut drops: a falling whistle */
+  coconut: (sr) => normalize(tone(sr, 0.55, (t) => 1500 - t * 1700, 'sine', (t) => Math.min(1, t * 20) * (1 - t / 0.55) * 0.6), 0.4),
+  /** through a shell ring: a rising sparkle chord */
+  ring: (sr) => {
+    const x = buf(sr, 0.7);
+    [86, 90, 93, 98].forEach((m, i) => bell(sr, midiHz(m), 0.4, x, i * 0.035, 0.8));
+    const sweep = svf(noise(sr, 0.3, (t) => Math.sin(Math.min(1, t / 0.3) * Math.PI) * 0.4, 53), sr, (t) => 3000 + t * 20000, 0.5, 'bp');
+    return normalize(mix(x, sweep), 0.55);
   },
   deny: (sr) => normalize(tone(sr, 0.14, () => 170, 'square', (t) => Math.exp(-t * 10)), 0.3),
 };
@@ -526,7 +595,7 @@ export class Audio {
   private loops = new Map<MusicLoop, AudioBuffer>();
   private loopGain = new Map<MusicLoop, GainNode>();
   private loopSrc = new Map<MusicLoop, AudioBufferSourceNode>();
-  private track: 'beach' | 'island' | 'chase' = 'beach';
+  private track: 'beach' | 'island' | 'chase' | 'mellow' = 'beach';
   private zone = 0;
   private rumbleGain: GainNode | null = null;
   private buffers = new Map<Sfx, AudioBuffer>();
@@ -649,11 +718,12 @@ export class Audio {
     if (!ctx) return;
     const t = ctx.currentTime;
     const beach = this.track === 'beach';
+    const mellow = this.track === 'mellow';
     const want: Record<MusicLoop, number> = {
-      beach: beach ? (this.zone === 3 ? 0.7 : 1) : 0,
+      beach: beach ? (this.zone === 3 ? 0.7 : 1) : mellow ? 0.5 : 0,
       whistle: beach && this.zone === 1 ? 1 : 0,
       steel: beach && this.zone === 2 ? 1 : 0,
-      pad: beach && this.zone === 3 ? 1 : 0,
+      pad: (beach && this.zone === 3) || mellow ? 1 : 0,
       island: this.track === 'island' ? 1 : 0,
       chase: this.track === 'chase' ? 1 : 0,
     };
@@ -663,12 +733,13 @@ export class Audio {
     }
   }
 
-  /** Which loop plays: Beach Run (with zone layers), Island Hop, or the Great Wave chase. */
-  setTrack(track: 'beach' | 'island' | 'chase'): void {
+  /** Which loop plays: Beach Run (with zone layers), Island Hop, the Great Wave chase, or the mellow
+   * mix (Crab Cove, Home at night). */
+  setTrack(track: 'beach' | 'island' | 'chase' | 'mellow'): void {
     if (track === this.track) return;
     this.track = track;
     // mode loops restart from the top so the tune begins with the level
-    if (track !== 'beach' && this.loops.has(track)) this.startLoop(track, 0);
+    if ((track === 'island' || track === 'chase') && this.loops.has(track)) this.startLoop(track, 0);
     this.applyMix(0.35);
   }
 

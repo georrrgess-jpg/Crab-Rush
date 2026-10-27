@@ -12,7 +12,7 @@ import { HowToScreen } from './ui/howto';
 import { SettingsScreen, StatsScreen } from './ui/settings';
 import { Haptics } from './core/haptics';
 import { PASS_TIERS, tierFromXp, totalXpForTier, xpFor } from './meta/xp';
-import { MAX_BOOSTS, PASS_REWARDS, claim, claimable, type Reward } from './meta/pass';
+import { BONUS_REWARD, BONUS_XP, MAX_BOOSTS, PASS_REWARDS, bonusProgress, bonusReady, claim, claimable, type Reward } from './meta/pass';
 import { MODIFIERS, currentStreak, dateKey, modifierFor, recordFinish, seedFor, type Modifier } from './meta/daily';
 import { PassScreen, rewardView } from './ui/pass';
 import { DailyScreen, type DailyData } from './ui/daily';
@@ -34,7 +34,7 @@ import { HAT_KINDS, type HatKind } from './render/models/hats';
 import type { TrailKind } from './render/materials';
 
 const ITEM_NAMES: Record<string, string> = Object.fromEntries(ITEMS.filter((i) => i.slot === 'hats').map((i) => [i.id, i.name]));
-import { ShopScreen } from './ui/shop';
+import { DYE_COST, ShopScreen } from './ui/shop';
 import { Autopilot } from './sim/autopilot';
 import type { GameEvent } from './sim/events';
 import { World, defaultRunOptions, type RunOptions } from './sim/world';
@@ -205,6 +205,60 @@ export class Game {
         } else this.audio.play('deny');
         this.shop.render(this.save.data);
       },
+      outfit: (i) => {
+        const d = this.save.data;
+        const o = d.outfits[i];
+        if (!o) return;
+        equip(d.wardrobe, 'bodies', o.body);
+        equip(d.wardrobe, 'hats', o.hat);
+        equip(d.wardrobe, 'trails', o.trail);
+        equip(d.wardrobe, 'dances', o.dance);
+        if (d.crabs.owned.includes(o.body)) d.crabs.selected = o.body;
+        this.save.save();
+        this.audio.play('equip');
+        this.applyLook();
+        this.view.crab.emote();
+        this.shop.open(d);
+      },
+      saveOutfit: (i) => {
+        const d = this.save.data;
+        const e = d.wardrobe.equipped;
+        d.outfits[i] = { body: e.body, hat: e.hat, trail: e.trail, dance: e.dance };
+        this.save.save();
+        this.audio.play('claim');
+        this.ui.toast(`Outfit ${i + 1} saved`, { kind: 'green', life: 1.6 });
+        this.shop.render(d);
+      },
+      surprise: () => {
+        const d = this.save.data;
+        const o = d.wardrobe.owned;
+        const pick = (a: string[]): string => a[Math.floor(Math.random() * a.length)] as string;
+        equip(d.wardrobe, 'bodies', pick(o.bodies));
+        equip(d.wardrobe, 'hats', pick(o.hats));
+        equip(d.wardrobe, 'trails', pick(o.trails));
+        equip(d.wardrobe, 'dances', pick(o.dances));
+        this.save.save();
+        this.audio.play('whoosh');
+        this.applyLook();
+        this.view.crab.celebrate();
+        this.shop.open(d);
+      },
+      dye: (hat, n) => {
+        const d = this.save.data;
+        const owns = (d.dyes[hat] ??= []);
+        if (n > 0 && !owns.includes(n)) {
+          if (d.pearls < DYE_COST) return this.audio.play('deny');
+          d.pearls -= DYE_COST;
+          owns.push(n);
+          this.audio.play('purchase');
+        } else this.audio.play('equip');
+        if (n === 0) delete d.hatDye[hat];
+        else d.hatDye[hat] = n;
+        this.save.save();
+        if (d.wardrobe.equipped.hat !== hat) equip(d.wardrobe, 'hats', hat);
+        this.applyLook();
+        this.shop.render(d);
+      },
       seen: (keys) => {
         const d = this.save.data;
         for (const k of keys) if (!d.seen.includes(k)) d.seen.push(k);
@@ -234,6 +288,17 @@ export class Game {
       back: () => this.closeOverlay(),
       claim: (t) => this.claimTiers([t]),
       claimAll: () => this.claimTiers(claimable(this.save.data)),
+      claimBonus: () => {
+        const d = this.save.data;
+        if (bonusReady(d.xp, d.passBonus) <= 0) return;
+        d.passBonus++;
+        d.pearls += BONUS_REWARD.pearls;
+        d.shells += BONUS_REWARD.shells;
+        this.save.save();
+        this.audio.play('claim');
+        this.ui.toast('Bonus chest!', { kind: 'gold', sub: `+${BONUS_REWARD.pearls} pearls · +${BONUS_REWARD.shells} shells`, life: 2.2 });
+        this.passScreen.render(this.passData(), false);
+      },
     });
     this.dailyScreen = new DailyScreen({
       back: () => this.closeOverlay(),
@@ -300,7 +365,7 @@ export class Game {
       },
       place: (plot, id) => {
         if (place(this.save.data.cove, plot, id, this.now())) {
-          this.audio.play('equip');
+          this.audio.play('place');
           this.haptics.play('light');
           this.afterCoveChange();
         }
@@ -327,7 +392,8 @@ export class Game {
           extra = DECOR_BY_ID.get(q.gift)?.name ?? '';
         }
         this.save.save();
-        this.audio.play('claim');
+        this.audio.play('chatter');
+        setTimeout(() => this.audio.play('pearl'), 350);
         this.haptics.play('success');
         this.ui.toast(`${FRIEND_BY_ID.get(id)?.name}: thank you!`, { kind: 'gold', sub: `+${q.pearls} pearls${extra ? ` · ${extra}` : ''}`, life: 2.6 });
         this.checkTrophies();
@@ -503,8 +569,10 @@ export class Game {
     this.setModifierView(null);
     this.dailyScreen.stop();
     const now = new Date(this.now());
-    this.view.setHomeHour(this.flags.shots && this.fakeNow === null ? 12 : now.getHours() + now.getMinutes() / 60);
-    this.audio.setTrack('beach');
+    const hour = this.flags.shots && this.fakeNow === null ? 12 : now.getHours() + now.getMinutes() / 60;
+    this.view.setHomeHour(hour);
+    // a softer mix for late evenings on Home
+    this.audio.setTrack(hour >= 20 || hour < 6 ? 'mellow' : 'beach');
     this.audio.setZone(0);
     this.audio.setRumble(0);
     this.ui.setLevelHUD(null);
@@ -667,7 +735,7 @@ export class Game {
     const [fam, tier] = (got[got.length - 1] as string).split(':');
     const f = FAMILIES.find((x) => x.id === fam);
     setTimeout(() => {
-      this.audio.play('levelUp');
+      this.audio.play('trophy');
       this.ui.toast(got.length === 1 ? `${TIER_NAMES[Number(tier) as 0 | 1 | 2]} trophy: ${f?.name}` : `${got.length} new trophies!`, { kind: 'gold', sub: `+${pearls} pearls · see the Trophy Shelf`, life: 2.8 });
     }, 600);
   }
@@ -682,7 +750,7 @@ export class Game {
     for (const id of fresh) {
       const f = FRIEND_BY_ID.get(id);
       setTimeout(() => {
-        this.audio.play('levelUp');
+        this.audio.play('chatter');
         this.ui.toast(`${f?.name} moved in!`, { kind: 'green', sub: f?.line, life: 3.2 });
       }, 500);
     }
@@ -729,6 +797,7 @@ export class Game {
       const d = this.save.data;
       this.returnTo = 'title';
       this.state = 'cove';
+      this.audio.setTrack('mellow');
       this.ui.home.hide();
       // the very first visit: Shelly is waiting on the beach
       moveIn(d.friends, comfort(d.cove), this.metrics());
@@ -761,8 +830,7 @@ export class Game {
     d.shells += n;
     d.stats.totalShells += n;
     this.save.save();
-    this.audio.play('bigShell');
-    this.audio.play('claim');
+    this.audio.play('giftCollect');
     this.haptics.play('success');
     this.ui.toast(`+${fmt(n)} shells`, { kind: 'gold', sub: 'Tide Gifts collected', life: 2 });
     this.checkTrophies();
@@ -846,7 +914,8 @@ export class Game {
   private passData() {
     const d = this.save.data;
     const t = tierFromXp(d.xp);
-    return { tier: t.tier, into: t.into, need: t.need, claimed: d.passClaimed, boosts: d.boosts, thumbs: this.shop.thumbs };
+    const bonus = t.tier >= PASS_TIERS ? { ready: bonusReady(d.xp, d.passBonus), into: bonusProgress(d.xp), need: BONUS_XP } : undefined;
+    return { tier: t.tier, into: t.into, need: t.need, claimed: d.passClaimed, boosts: d.boosts, thumbs: this.shop.thumbs, bonus };
   }
 
   openPass(): void {
@@ -928,6 +997,17 @@ export class Game {
         { days: 30, name: 'Moonscuttle dance', art: DANCE_SVG.moonwalk as string, got: d.wardrobe.owned.dances.includes('moonwalk') },
       ],
       firstXp: xpFor({ daily: true, streak: streak > 0 ? d.daily.streak + 1 : 1 }),
+      calendar: Array.from({ length: 30 }, (_, k) => {
+        const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() - (29 - k));
+        const key = dateKey(day);
+        return { key, day: day.getDate(), score: d.daily.scores?.[key] ?? 0, played: d.daily.history.includes(key), today: k === 29 };
+      }),
+      almanac: Array.from({ length: MODIFIERS.length }, (_, k) => {
+        const day = new Date(base.getFullYear(), base.getMonth(), base.getDate() + k);
+        const id = modifierFor(dateKey(day));
+        const m = MODIFIERS.find((x) => x.id === id)!;
+        return { id, name: m.name, desc: m.desc, best: d.daily.bestByMod?.[id] ?? 0, inDays: k };
+      }),
     };
   }
 
@@ -1027,7 +1107,7 @@ export class Game {
     const r = openChest(d, island, k);
     if (!r) return this.audio.play('deny');
     this.save.save();
-    this.audio.play('claim');
+    this.audio.play('chestOpen');
     this.haptics.play('success');
     const extras: string[] = [];
     if (r.body) extras.push('Reef crab!');
@@ -1299,7 +1379,7 @@ export class Game {
   /** Dress the game crab in the equipped wardrobe. */
   private applyLook(): void {
     const e = this.save.data.wardrobe.equipped;
-    this.view.setSkin(this.skinOf(e.body), e.hat as HatKind);
+    this.view.setSkin(this.skinOf(e.body), e.hat as HatKind, this.save.data.hatDye[e.hat] ?? 0);
     this.view.setTrail(e.trail as TrailKind);
     this.view.setDance(e.dance);
   }
@@ -1307,8 +1387,8 @@ export class Game {
   /** Wardrobe preview on the turntable (not saved): the rest of the outfit stays as equipped. */
   private previewItem(slot: Slot, id: string): void {
     const e = this.save.data.wardrobe.equipped;
-    if (slot === 'bodies') this.view.setSkin(this.skinOf(id), e.hat as HatKind);
-    else if (slot === 'hats') this.view.setSkin(this.skinOf(e.body), id as HatKind);
+    if (slot === 'bodies') this.view.setSkin(this.skinOf(id), e.hat as HatKind, this.save.data.hatDye[e.hat] ?? 0);
+    else if (slot === 'hats') this.view.setSkin(this.skinOf(e.body), id as HatKind, this.save.data.hatDye[id] ?? 0);
     else if (slot === 'trails') this.view.setTrail(id as TrailKind);
     else {
       this.view.setDance(id);
@@ -1836,12 +1916,12 @@ export class Game {
           this.audio.play('splash');
           break;
         case 'ring':
-          this.audio.play('bigShell', { pan: ev.x * 0.12, pitch: 3 });
+          this.audio.play('ring', { pan: ev.x * 0.12 });
           this.haptics.play('light');
           this.ui.floater(`Ring! +${ev.bonus}`, 0.5, 0.4);
           break;
         case 'gullDive':
-          this.audio.play('gull', { pan: ev.x * 0.15 });
+          this.audio.play(ev.coconut ? 'coconut' : 'gull', { pan: ev.x * 0.15 });
           break;
         case 'tutorial':
           if (ev.step === 'complete') {

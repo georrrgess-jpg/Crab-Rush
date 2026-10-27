@@ -1016,3 +1016,44 @@
 .cove-plot.filled.sel { background: rgba(255, 210, 60, 0.35); border-color: #ffd23a; }
 .cove-plot.filled.sel .cp-name { display: block; }
 .cove-plot.filled.target { border-style: dashed; border-color: #3fbf55; }
+
+/* wardrobe outfits and dyes (UPDATE3_PLAN.md §5.2) */
+.outfits { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.outfits .of-lbl { font-family: var(--font-display); color: var(--navy); margin-right: 2px; }
+.of-slot { display: inline-flex; border-radius: 14px; overflow: hidden; box-shadow: var(--e-1); }
+.of-slot button { min-height: 44px; border: 0; cursor: pointer; }
+.of-wear { min-width: 48px; padding: 0 8px; background: #fff; color: var(--navy); font-family: var(--font-display); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.of-wear b { font-weight: 400; font-size: 18px; }
+.of-wear small { font-family: var(--font-body); font-size: 10px; color: var(--teal); }
+.of-slot.saved .of-wear { background: linear-gradient(180deg, #fff6c8, #ffd96a); }
+.of-wear:disabled { cursor: default; }
+.of-save { width: 40px; background: #2a78b0; display: grid; place-items: center; }
+.of-save svg { width: 22px; height: 22px; }
+.outfits .surprise { margin-left: auto; min-height: 44px; }
+.outfits .surprise svg { width: 20px; height: 20px; }
+.dyes { display: flex; gap: 6px; flex: none; }
+.dye { position: relative; width: 40px; height: 40px; min-height: 40px; border-radius: 50%; border: 3px solid #fff; box-shadow: var(--e-1); cursor: pointer; padding: 0; }
+.dye.on { box-shadow: 0 0 0 3px #ff9a1f, var(--e-1); }
+.dye.locked { filter: saturate(0.4) brightness(0.9); }
+.dye-cost { position: absolute; inset: auto -4px -6px auto; font-family: var(--font-display); font-size: 11px; color: #fff; background: #6a4ab0; border-radius: 8px; padding: 0 4px; }
+.crab-detail { flex-wrap: wrap; }
+.crab-detail .txt { flex: 1 1 140px; min-width: 0; }
+.crab-detail .dyes { flex: 1 0 100%; justify-content: center; }
+/* the pass road lights up to the current tier */
+.pt.lit::before { content: ''; position: absolute; left: -12px; right: -12px; top: -3px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, #ffd23a, #ff9a3a); box-shadow: 0 0 8px rgba(255, 190, 60, 0.9); }
+.pass-next .btn { margin-left: auto; }
+/* daily tide history and almanac */
+.dt-sec { font-family: var(--font-display); color: var(--navy); font-size: 17px; margin: 4px 0 6px; }
+.cal-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
+.cd-day { position: relative; height: 38px; border-radius: 8px; background: rgba(30, 94, 140, 0.08); overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
+.cd-day i { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--h) * 100%); background: linear-gradient(180deg, #ffd23a, #ff9a3a); }
+.cd-day small { position: relative; font-size: 10px; color: var(--navy); font-family: var(--font-display); }
+.cd-day.today { box-shadow: 0 0 0 2px #4aa8ff; }
+.al-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-md); background: #fff; box-shadow: var(--e-1); margin-bottom: 6px; }
+.al-row.now { box-shadow: 0 0 0 3px #ff9a3a, var(--e-1); }
+.al-art { width: 38px; height: 38px; flex: none; border-radius: 50%; background: #2a86cf; padding: 5px; }
+.al-art svg { width: 100%; height: 100%; }
+.al-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.al-col b { font-family: var(--font-display); font-weight: 400; color: var(--navy); }
+.al-col small, .al-when small { font-size: 12px; color: var(--teal); }
+.al-when { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--font-display); color: var(--navy); font-size: 14px; white-space: nowrap; }

@@ -28,6 +28,10 @@ export interface DailyData {
   /** Flower Crown at 7, Moonscuttle at 30 */
   milestones: { days: number; name: string; art: string; got: boolean }[];
   firstXp: number;
+  /** the last 30 days with their best scores (oldest first) */
+  calendar?: { key: string; day: number; score: number; played?: boolean; today: boolean }[];
+  /** every modifier: your best, and how many days until it comes round (0 = today) */
+  almanac?: { id: Modifier; name: string; desc: string; best: number; inDays: number }[];
 }
 
 /**
@@ -73,7 +77,23 @@ export class DailyScreen {
     }
     const play = btn(`${ICON.play}<span>${d.playedToday ? 'Play again' : 'Play'}</span>`, 'big daily-play', () => this.h.play());
     const foot = el('div', 'dt-foot', `New tide in <b class="cd">${countdown(d.msLeft)}</b> · Everyone gets the same course today`);
-    this.body.append(hero, stats, week, rewards, ms, play, foot);
+    const extra: HTMLElement[] = [];
+    if (d.calendar) {
+      const best = Math.max(1, ...d.calendar.map((c) => c.score));
+      const cal = el('div', 'dt-cal');
+      cal.innerHTML = `<div class="dt-sec">Last 30 days</div><div class="cal-grid">${d.calendar
+        .map((c) => `<span class="cd-day${c.score || c.played ? ' played' : ''}${c.today ? ' today' : ''}" title="${c.key}${c.score ? `: ${fmt(c.score)}` : ''}" style="--h:${c.score ? Math.max(0.25, c.score / best) : c.played ? 0.25 : 0}"><i></i><small>${c.day}</small></span>`)
+        .join('')}</div>`;
+      extra.push(cal);
+    }
+    if (d.almanac) {
+      const al = el('div', 'dt-almanac');
+      al.innerHTML = `<div class="dt-sec">Tide almanac</div>${d.almanac
+        .map((a) => `<div class="al-row${a.inDays === 0 ? ' now' : ''}"><span class="al-art">${MODIFIER_SVG[a.id]}</span><span class="al-col"><b>${a.name}</b><small>${a.desc}</small></span><span class="al-when">${a.inDays === 0 ? 'Today' : a.inDays === 1 ? 'Tomorrow' : `in ${a.inDays} days`}${a.best ? `<small>Best ${fmt(a.best)}</small>` : ''}</span></div>`)
+        .join('')}`;
+      extra.push(al);
+    }
+    this.body.append(hero, stats, week, rewards, ms, play, foot, ...extra);
     clearInterval(this.timer);
     this.timer = window.setInterval(() => {
       this.msLeft -= 1000;
