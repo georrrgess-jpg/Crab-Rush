@@ -12,6 +12,7 @@ import { Materials, type TrailKind, makeTrailTex } from './materials';
 import { BODY_SKINS, CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, type HatKind, IDLE_DRIVE } from './models/crab';
 import { greatWave, powerupIcon, riderWave } from './models/obstacles';
 import { Spring } from './anim/spring';
+import { cues, sample, type Key } from './anim/timeline';
 import { Ocean } from './ocean';
 import * as P from './props';
 import { GeoBuilder } from './geo';
@@ -23,7 +24,7 @@ import { Sky } from './sky';
 import { ToyLighting, toyVariants } from './shaders/toy';
 import { sandTexture } from './textures';
 
-export type CamMode = 'title' | 'intro' | 'run' | 'shop';
+export type CamMode = 'title' | 'intro' | 'run' | 'shop' | 'map';
 
 const POWER_COLORS: Record<PowerKind, number> = { magnet: 0xff5a4a, shield: 0x6fd0ff, rider: 0x3fd6d0 };
 
@@ -54,6 +55,20 @@ export class GameView {
   private trailHue = 0;
   /** Daily Tide "Night Run": force the night palette (0..1) */
   nightForce = 0;
+  /** boot cinematic time (s), <0 when not playing (UPDATE3_PLAN.md §2.1) */
+  private cineT = -1;
+  private cineCue: ((name: string) => void) | null = null;
+  private readonly cineV = [0, 0, 0, 0, 0, 0];
+  /** smoothed menu camera (screens glide instead of cutting) */
+  private menuCamInit = false;
+  /** Home sky follows the local clock: golden hour (0..1) and night (0..1) blends on menus */
+  private homeGolden = 0;
+  private homeNight = 0;
+  private menuLook = false;
+  private parX = 0;
+  private parY = 0;
+  /** screenshots and tests want the camera exactly where it ends up */
+  smoothMenuCam = true;
   readonly entities: EntityViews;
   private palette = clonePalette(ZONE_PALETTES[0]!);
   private world = new THREE.Group();
@@ -220,6 +235,46 @@ export class GameView {
     m.needsUpdate = true;
   }
 
+  /** Start the boot cinematic; `onCue` gets 'spray', 'logo', 'crab', 'wave', 'ui' and 'done'. */
+  startCinematic(onCue: (name: string) => void): void {
+    this.cineT = 0;
+    this.cineCue = onCue;
+  }
+
+  /** Jump to the end of the cinematic (fires the cues it skips). */
+  skipCinematic(): void {
+    if (this.cineT < 0) return;
+    const prev = this.cineT;
+    this.cineT = CINE_LEN;
+    for (const c of cues(CINE_CUES, prev, CINE_LEN + 1)) this.cineCue?.(c);
+    this.cineT = -1;
+  }
+
+  /** jump to time `t` (screenshots), firing the cues on the way */
+  seekCinematic(t: number): void {
+    if (this.cineT < 0) return;
+    const prev = this.cineT;
+    this.cineT = Math.min(t, CINE_LEN - 0.01);
+    for (const c of cues(CINE_CUES, prev, this.cineT)) if (c !== 'spray' && c !== 'crab') this.cineCue?.(c);
+  }
+
+  get cinematicPlaying(): boolean {
+    return this.cineT >= 0;
+  }
+
+  /** local hour (0..24) → the Home sky: morning and noon as usual, golden hour, a starry night */
+  setHomeHour(h: number): void {
+    const ramp = (a: number, b: number, x: number): number => Math.max(0, Math.min(1, (x - a) / (b - a)));
+    this.homeGolden = h >= 12 ? ramp(16.5, 18, h) * (1 - ramp(19.5, 20.5, h)) : 0;
+    this.homeNight = Math.max(ramp(19.5, 21, h), 1 - ramp(5, 6.5, h)) * 0.85;
+  }
+
+  /** a gentle camera drift with the mouse on Home (-1..1) */
+  setParallax(x: number, y: number): void {
+    this.parX = x;
+    this.parY = y;
+  }
+
   setDance(id: string): void {
     this.crab.dance = id;
   }
@@ -376,7 +431,8 @@ export class GameView {
     const t = zoneBlend(dist, z);
     if (z === 0) lerpPalette(this.palette, ZONE_PALETTES[0]!, ZONE_PALETTES[0]!, 0);
     else lerpPalette(this.palette, ZONE_PALETTES[z - 1]!, ZONE_PALETTES[z]!, t);
-    this.night = Math.max(this.nightForce, Math.min(1, (dist - CFG.nightStart) / (CFG.nightFull - CFG.nightStart)));
+    if (this.menuLook && this.homeGolden > 0) lerpPalette(this.palette, this.palette, ZONE_PALETTES[3]!, this.homeGolden * 0.8);
+    this.night = Math.max(this.nightForce, this.menuLook ? this.homeNight : 0, Math.min(1, (dist - CFG.nightStart) / (CFG.nightFull - CFG.nightStart)));
     if (this.night > 0) lerpPalette(this.palette, this.palette, NIGHT_PALETTE, this.night * this.night * (3 - 2 * this.night));
     this.sky.apply(this.palette);
     this.mats.lighting.fromPalette(this.palette);
@@ -509,7 +565,27 @@ export class GameView {
    */
   frame(w: World, alpha: number, dt: number, mode: CamMode, introT = 1): void {
     this.time += dt;
-    const running = w.mode !== 'idle' && mode !== 'title' && mode !== 'shop';
+    this.menuLook = mode === 'title' || mode === 'shop' || mode === 'map';
+    if (this.cineT >= 0) {
+      const prev = this.cineT;
+      this.cineT += dt;
+      for (const c of cues(CINE_CUES, prev, this.cineT)) {
+        if (c === 'spray') for (let i = 0; i < 40; i++) this.sparks.spawn(14 + (Math.random() - 0.5) * 8, 0.5 + Math.random() * 2, w.dist + 16 + (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 3, 3 + Math.random() * 4, (Math.random() - 0.5) * 3, 0.9, 0.5, 0xeaffff, 6, 0.6);
+        if (c === 'crab') {
+          for (let i = 0; i < 28; i++) {
+            const a = (i / 28) * Math.PI * 2;
+            this.dust.spawn(Math.cos(a) * 0.4, 0.2, w.dist + Math.sin(a) * 0.4, Math.cos(a) * (2 + Math.random() * 2), 3 + Math.random() * 3, Math.sin(a) * (2 + Math.random() * 2), 0.8, 0.5, 0xf2d8a0, 9, 1.2);
+          }
+          this.shake(0.12, 0.2);
+        }
+        this.cineCue?.(c);
+      }
+      if (this.cineT >= CINE_LEN) {
+        this.cineT = -1;
+        this.cineCue?.('done');
+      }
+    }
+    const running = w.mode !== 'idle' && mode !== 'title' && mode !== 'shop' && mode !== 'map';
     const dist = running ? w.prevDist + (w.dist - w.prevDist) * alpha : w.dist;
     const p = w.player;
     const px = running ? p.prevX + (p.x - p.prevX) * alpha : 0;
@@ -531,7 +607,7 @@ export class GameView {
 
     // entities & shells
     this.shadows.begin();
-    if (running || mode === 'title') {
+    if (running || mode === 'title' || mode === 'map') {
       this.entities.group.visible = true;
       this.entities.sync(w.entities, dist, this.time, dt, this.shadows);
     }
@@ -552,11 +628,19 @@ export class GameView {
     dv.magnet = running && w.power.kind === 'magnet';
     dv.shield = running && w.power.kind === 'shield';
     // on Home the crab stands on the diorama mound; it scuttles off as the run starts
-    this.homeSet.visible = dist < 30 && (mode === 'title' || mode === 'intro' || mode === 'shop' || (running && dist < 30));
+    this.homeSet.visible = dist < 30 && (mode === 'title' || mode === 'intro' || mode === 'shop' || mode === 'map' || (running && dist < 30));
     this.homeSet.position.set(0, 0, dist);
     const onMound = Math.max(0, 1 - dist / 1.4);
     this.crab.root.position.set(px, py + onMound * onMound * 0.22, 0);
     this.crab.root.rotation.y = mode === 'shop' ? this.shopSpin : 0;
+    if (this.cineT >= 0) {
+      // the crab waits under the sand, then bursts out spinning and lands
+      const b = Math.max(0, Math.min(1, (this.cineT - CINE_CRAB) / 0.55));
+      const back = 1 + 2.70158 * Math.pow(b - 1, 3) + 1.70158 * Math.pow(b - 1, 2);
+      this.crab.root.position.y += -1.45 + 1.45 * back + Math.sin(b * Math.PI) * 0.9;
+      this.crab.root.rotation.y = (1 - b) * Math.PI * 2;
+      this.crab.root.visible = b > 0;
+    }
     const blink = running && p.invuln > 0 && w.mode === 'running' ? Math.floor(this.time * 16) % 2 === 0 : false;
     this.crab.root.visible = !blink;
     this.crab.update(dt, dv);
@@ -640,7 +724,7 @@ export class GameView {
       const portrait = aspect < 1;
       const r = portrait ? 6.4 : 4.4;
       const a = Math.sin(this.titleSpin * 0.18) * 0.35 + 0.28;
-      const titlePos = this.vTitlePos.set(Math.sin(a) * r, portrait ? 2.1 : 1.7, Math.cos(a) * r);
+      const titlePos = this.vTitlePos.set(Math.sin(a) * r + this.parX * 0.35, (portrait ? 2.1 : 1.7) + this.parY * 0.2, Math.cos(a) * r);
       const titleLook = this.vTitleLook.set(-0.3, portrait ? 0.45 : 1.3, -3);
       if (mode === 'title') {
         pos = titlePos;
@@ -650,6 +734,10 @@ export class GameView {
         pos = titlePos.lerp(runPos, e);
         look = titleLook.lerp(runLook, e);
       }
+    } else if (mode === 'map') {
+      // Island Hop: the camera rises and looks out over the ocean toward the islands
+      pos = this.vTitlePos.set(3.5, 6.5, 8);
+      look = this.vTitleLook.set(16, 0.5, -26);
     } else if (mode === 'shop') {
       const portrait = cam.aspect < 1;
       pos = this.vTitlePos.set(0, portrait ? 2.0 : 1.9, portrait ? 4.6 : 5.4);
@@ -658,8 +746,25 @@ export class GameView {
       pos = runPos;
       look = runLook;
     }
-    this.camPos.copy(pos);
-    this.camLook.copy(look);
+    if (this.cineT >= 0 && mode === 'title') {
+      // fly in over the ocean, along the shore, down to the crab, then settle on the Home view
+      const t = this.cineT;
+      const v = sample(CINE_CAM, t, this.cineV);
+      const k = Math.max(0, Math.min(1, (t - CINE_SETTLE) / (CINE_LEN - CINE_SETTLE)));
+      const e = k * k * (3 - 2 * k);
+      this.camPos.set(v[0] as number, v[1] as number, v[2] as number).lerp(pos, e);
+      this.camLook.set(v[3] as number, v[4] as number, v[5] as number).lerp(look, e);
+      this.menuCamInit = true;
+    } else if ((mode === 'title' || mode === 'shop' || mode === 'map') && this.menuCamInit && !this.reduceMotion && this.smoothMenuCam) {
+      // menu screens glide between their cameras instead of cutting
+      const f = Math.min(1, dt * 5);
+      this.camPos.lerp(pos, f);
+      this.camLook.lerp(look, f);
+    } else {
+      this.camPos.copy(pos);
+      this.camLook.copy(look);
+      this.menuCamInit = mode === 'title' || mode === 'shop' || mode === 'map';
+    }
     if (this.trauma > 0) {
       // smooth noise-like shake (sums of sines) scaled by trauma²
       const sh = this.trauma * this.trauma * 0.45;
@@ -830,3 +935,21 @@ function hsl(h: number): number {
   };
   return (f(0) << 16) | (f(8) << 8) | f(4);
 }
+
+/** Boot cinematic (UPDATE3_PLAN.md §2.1): camera keys [t, x, y, z, lookX, lookY, lookZ]. */
+const CINE_LEN = 4.4;
+const CINE_SETTLE = 3.0;
+const CINE_CRAB = 2.55;
+const CINE_CAM: Key[] = [
+  [0, 34, 2.4, -48, 8, 1.4, -70],
+  [1.3, 20, 3.4, -20, 2, 1.0, -12],
+  [2.3, 6, 2.6, 6, 0, 0.8, 0],
+  [3.0, 3.2, 1.9, 5.2, 0, 0.9, 0],
+];
+const CINE_CUES: (readonly [number, string])[] = [
+  [0.95, 'spray'],
+  [1.55, 'logo'],
+  [CINE_CRAB, 'crab'],
+  [3.25, 'wave'],
+  [3.7, 'ui'],
+];

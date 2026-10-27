@@ -151,6 +151,18 @@ try {
   check(await page.isVisible('#howto .howto-card'), 'how-to-play cards are shown');
   await page.click('#howto .btn.big');
   check((await st()).state === 'title', 'Got it returns to the title');
+  // ---------------- Home v3: cinematic skip, carousel keys
+  await page.evaluate(() => window.__crab.cine(1.2));
+  check(await page.evaluate(() => window.__crab.game.view.cinematicPlaying && document.getElementById('home').classList.contains('cine')), 'the boot cinematic hides the Home chrome while it plays');
+  await page.keyboard.press('KeyX');
+  await fr(2);
+  check(await page.evaluate(() => !window.__crab.game.view.cinematicPlaying && !document.getElementById('home').classList.contains('cine')), 'any key skips the cinematic');
+  await page.evaluate(() => window.__crab.setState('title'));
+  await page.keyboard.press('ArrowRight');
+  check((await page.evaluate(() => window.__crab.game.ui.home.focused)) === 'islands', 'arrow keys move the mode carousel');
+  await page.keyboard.press('ArrowLeft');
+  check((await page.evaluate(() => window.__crab.game.ui.home.focused)) === 'beach', 'and back');
+
   // ---------------- Island Hop: Home card → map → intro → level → stars
   await page.click('#home .mode-card.islands');
   check((await st()).state === 'map' && (await page.isVisible('.lv-node.next')), 'Island Hop map opens from Home with the next level marked');

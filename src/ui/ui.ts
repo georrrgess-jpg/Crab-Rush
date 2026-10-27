@@ -36,6 +36,8 @@ export class UI {
   private tutorial: HTMLElement;
   private toasts: HTMLElement;
   private fade: HTMLElement;
+  private wipe: HTMLElement;
+  reduceMotionUI = false;
   private touchL: HTMLButtonElement;
   private touchR: HTMLButtonElement;
   private shellsVal: HTMLElement;
@@ -157,8 +159,11 @@ export class UI {
 
     this.fade = el('div');
     this.fade.id = 'fade';
+    // wave wipe (UPDATE3_PLAN.md §2.4): a curling wave sweeps across between big screen changes
+    this.wipe = el('div', 'wave-wipe', `<svg viewBox="0 0 200 100" preserveAspectRatio="none" aria-hidden="true"><path d="M0 0h150c-14 10-22 22-18 34 6 18 30 14 28 34-2 16-22 22-20 32H0z" fill="#2fa6d6"/><path d="M0 0h138c-12 10-18 22-14 34 6 18 28 14 26 34-2 16-20 22-18 32H0z" fill="#4fc4f0"/><path d="M150 0c-14 10-22 22-18 34 6 18 30 14 28 34-2 16-22 22-20 32" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/></svg>`);
+    this.wipe.setAttribute('aria-hidden', 'true');
 
-    root.append(this.foam, this.home.el, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results.el, this.toasts, this.fade);
+    root.append(this.foam, this.home.el, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results.el, this.toasts, this.fade, this.wipe);
   }
 
   // ------------------------------------------------------------------ screens
@@ -269,6 +274,7 @@ export class UI {
 
   setReduceMotion(on: boolean): void {
     this.results.reduceMotion = on;
+    this.reduceMotionUI = on;
     document.getElementById('app')?.classList.toggle('reduce-motion', on);
   }
 
@@ -448,6 +454,17 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ fade
+  /** A wave sweeps across; `onMid` runs while the screen is covered. Reduce Motion: a quick fade. */
+  waveWipe(onMid: () => void): void {
+    if (this.reduceMotionUI) return this.flashFade(onMid);
+    const w = this.wipe;
+    w.classList.remove('go');
+    void w.offsetWidth;
+    w.classList.add('go');
+    setTimeout(onMid, 330);
+    setTimeout(() => w.classList.remove('go'), 800);
+  }
+
   flashFade(onMid: () => void): void {
     this.fade.classList.add('on');
     setTimeout(() => {

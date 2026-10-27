@@ -170,6 +170,19 @@ const SCENES = {
     });
     await p.waitForTimeout(4200);
   },
+  // ---- Update 3: boot cinematic frames
+  cine1: async (p) => { await p.evaluate(() => window.__crab.cine(0.6)); },
+  cine2: async (p) => { await p.evaluate(() => window.__crab.cine(1.9)); await p.waitForTimeout(600); },
+  cine3: async (p) => { await p.evaluate(() => window.__crab.cine(2.75)); await p.waitForTimeout(400); },
+  cine4: async (p) => { await p.evaluate(() => window.__crab.cine(3.6)); await p.waitForTimeout(500); },
+  homegolden: async (p) => {
+    await p.evaluate(() => { window.__crab.setDate('2026-10-26T18:10:00'); window.__crab.setState('title'); window.__crab.frames(30); });
+    await p.waitForTimeout(800);
+  },
+  homenight: async (p) => {
+    await p.evaluate(() => { window.__crab.setDate('2026-10-26T22:30:00'); window.__crab.setState('title'); window.__crab.frames(30); });
+    await p.waitForTimeout(800);
+  },
   stats: async (p) => {
     await p.evaluate(() => window.__crab.setState('stats'));
     await p.evaluate(() => window.__crab.frames(10));

@@ -117,7 +117,7 @@ function audit(rootSel) {
     const c = clipOf(e);
     if (c.right <= c.left || c.bottom <= c.top) continue;
     if (r.right < 0 || r.left > innerWidth) continue;
-    if ((r.left < -2 || r.right > innerWidth + 2) && !e.closest('.pass-track, .crab-grid')) out.push(`off screen: ${name(e)}`);
+    if ((r.left < -2 || r.right > innerWidth + 2) && !e.closest('.pass-track, .crab-grid, .mc-track')) out.push(`off screen: ${name(e)}`);
   }
   return out;
 }

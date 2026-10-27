@@ -137,6 +137,7 @@ export class Game {
           this.haptics.play('light');
           this.view.crab.emote();
         },
+        focus: () => this.audio.play('tick'),
         toggleBoost: () => {
           if (this.save.data.boosts <= 0) return;
           this.boostOn = !this.boostOn;
@@ -259,7 +260,10 @@ export class Game {
     window.addEventListener('pointermove', (e) => {
       if (this.state !== 'title' || e.pointerType !== 'mouse') return;
       const r = canvas.getBoundingClientRect();
-      this.view.crab.look(((e.clientX - r.left) / r.width) * 2 - 1, 1 - ((e.clientY - r.top) / r.height) * 2);
+      const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+      const ny = 1 - ((e.clientY - r.top) / r.height) * 2;
+      this.view.crab.look(nx, ny);
+      if (!this.reduceMotion) this.view.setParallax(nx, ny);
     });
 
     // viewport: pause on real size/orientation changes, not on small toolbar jitters
@@ -331,7 +335,9 @@ export class Game {
   }
 
   boot(): void {
+    this.view.smoothMenuCam = !this.flags.shots;
     this.toTitle();
+    this.maybeCinematic();
     this.loop.manual = this.flags.shots;
     this.loop.start();
     this.loop.tick(1 / 60);
@@ -348,12 +354,59 @@ export class Game {
     setTimeout(() => this.prepareThumbs(), 1200);
   }
 
+  /** The boot cinematic: first open of each session, skippable, never with Reduce Motion. */
+  private maybeCinematic(): void {
+    let seen = false;
+    try {
+      seen = sessionStorage.getItem('crabdash.cine') === '1';
+      sessionStorage.setItem('crabdash.cine', '1');
+    } catch {
+      seen = false;
+    }
+    if (seen || this.flags.shots || this.flags.autopilot || this.reduceMotion) return;
+    this.playCinematic();
+  }
+
+  playCinematic(): void {
+    const home = this.ui.home;
+    home.setCinematic(true);
+    this.view.crab.reset();
+    this.view.startCinematic((c) => {
+      if (c === 'logo') home.el.classList.add('logo-in');
+      else if (c === 'crab') {
+        this.audio.play('pop');
+        this.haptics.play('medium');
+      } else if (c === 'wave') this.view.crab.emote('wave');
+      else if (c === 'ui') {
+        home.el.classList.remove('logo-in');
+        home.setCinematic(false);
+      } else if (c === 'done') removeSkip();
+    });
+    // any tap or key skips to the end
+    const skip = (e: Event): void => {
+      e.stopPropagation();
+      e.preventDefault();
+      this.view.skipCinematic();
+      removeSkip();
+    };
+    const removeSkip = (): void => {
+      window.removeEventListener('pointerdown', skip, true);
+      window.removeEventListener('keydown', skip, true);
+      home.el.classList.remove('logo-in');
+      home.setCinematic(false);
+    };
+    window.addEventListener('pointerdown', skip, true);
+    window.addEventListener('keydown', skip, true);
+  }
+
   // ------------------------------------------------------------------ flow
   toTitle(): void {
     this.state = 'title';
     this.currentLevel = null;
     this.setModifierView(null);
     this.dailyScreen.stop();
+    const now = new Date(this.now());
+    this.view.setHomeHour(this.flags.shots && this.fakeNow === null ? 12 : now.getHours() + now.getMinutes() / 60);
     this.audio.setTrack('beach');
     this.audio.setZone(0);
     this.audio.setRumble(0);
@@ -466,6 +519,8 @@ export class Game {
       boosts: d.boosts,
       boostOn: this.boostOn && d.boosts > 0,
       nextReward: this.nextRewardText(),
+      avatar: this.shop.thumbs.bodies[d.wardrobe.equipped.body] ?? null,
+      title: playerTitle(t.tier, d.best),
     };
   }
 
@@ -872,8 +927,8 @@ export class Game {
 
   goHome(): void {
     if (this.state === 'paused' || this.state === 'running' || this.state === 'countdown') this.save.save();
-    this.audio.play('tap');
-    this.ui.flashFade(() => this.toTitle());
+    this.audio.play('whoosh');
+    this.ui.waveWipe(() => this.toTitle());
   }
 
   pause(): void {
@@ -958,6 +1013,7 @@ export class Game {
       .then((t) => {
         this.shop.thumbs = t;
         if (this.state === 'shop') this.shop.render(this.save.data);
+        if (this.state === 'title') this.ui.setHome(this.homeData());
       })
       .catch(() => (this.thumbsReady = false));
   }
@@ -1092,7 +1148,9 @@ export class Game {
       return;
     }
     if (s === 'title') {
-      if (a === 'confirm' || alsoConfirm) this.onPlay();
+      // arrows move the mode carousel; Enter/Space plays the focused mode
+      if (a === 'left' || a === 'right') this.ui.home.step(a === 'left' ? -1 : 1);
+      else if (a === 'confirm' || alsoConfirm) this.ui.home.activate();
       return;
     }
     if (s === 'results') {
@@ -1300,7 +1358,7 @@ export class Game {
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
     const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily';
-    const mode: CamMode = menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
+    const mode: CamMode = this.state === 'map' || this.state === 'levelIntro' ? 'map' : menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
     if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
     this.view.frame(this.world, alpha, dt, mode, this.introT);
@@ -1527,6 +1585,13 @@ export class Game {
       setDate(d: string | number | null) {
         g.fakeNow = d === null ? null : typeof d === 'number' ? d : new Date(d).getTime();
       },
+      /** play the boot cinematic and advance it to `t` seconds (screenshots) */
+      cine(t: number) {
+        g.toTitle();
+        g.playCinematic();
+        g.view.seekCinematic(t);
+        for (let i = 0; i < 12; i++) g.loop.tick(1 / 60);
+      },
       /** start today's Daily Tide run directly */
       daily(o: { autopilot?: boolean } = {}) {
         if (o.autopilot !== undefined) g.flags.autopilot = o.autopilot;
@@ -1587,4 +1652,14 @@ export class Game {
     };
     (window as unknown as { __crab: typeof hooks }).__crab = hooks;
   }
+}
+
+/** The profile card's title, earned with Sunny Pass tiers and distance. */
+export function playerTitle(tier: number, best: number): string {
+  if (tier >= 40) return 'Legend of the Shore';
+  if (tier >= 30 || best >= 8000) return 'Tide Master';
+  if (tier >= 20 || best >= 5000) return 'Wave Rider';
+  if (tier >= 10 || best >= 2800) return 'Shell Seeker';
+  if (tier >= 5 || best >= 700) return 'Sand Scuttler';
+  return 'Beach Rookie';
 }

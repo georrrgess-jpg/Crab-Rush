@@ -65,3 +65,22 @@ describe('tweens', () => {
     expect(tw.count).toBe(0);
   });
 });
+
+import { cues, sample } from '../src/render/anim/timeline';
+describe('timeline (boot cinematic)', () => {
+  const keys = [[0, 0, 10], [1, 10, 10], [2, 10, 0]] as const;
+  it('holds the ends and eases between keys', () => {
+    const o = [0, 0];
+    expect(sample(keys, -1, o)).toEqual([0, 10]);
+    expect(sample(keys, 3, o)).toEqual([10, 0]);
+    expect(sample(keys, 0.5, o)[0]).toBeCloseTo(5);
+    expect(sample(keys, 0.1, o)[0]).toBeLessThan(1); // eased start
+    expect(sample(keys, 1.5, o)).toEqual([10, 5]);
+  });
+  it('fires cues once per window', () => {
+    const c = [[0.5, 'a'], [1, 'b']] as const;
+    expect(cues(c, 0, 0.5)).toEqual(['a']);
+    expect(cues(c, 0.5, 1.2)).toEqual(['b']);
+    expect(cues(c, 1.2, 2)).toEqual([]);
+  });
+});
