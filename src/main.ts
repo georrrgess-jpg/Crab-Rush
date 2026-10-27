@@ -51,3 +51,11 @@ if (!webgl2Supported()) {
     }
   })();
 }
+
+// offline play and a quick start from the home screen (production builds on a real browser only:
+// tests and screenshots run without it so they always see the fresh build)
+if (import.meta.env.PROD && 'serviceWorker' in navigator && !navigator.webdriver && !/[?&]shots/.test(location.search)) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}

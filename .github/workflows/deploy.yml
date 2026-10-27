@@ -2,7 +2,8 @@ name: Build and deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # main, and the branch Claude develops on (the repository's default branch)
+    branches: [main, claude/great-cray-2m0jl9]
   workflow_dispatch:
 
 permissions:

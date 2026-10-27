@@ -59,7 +59,9 @@ You can change lanes in mid-air. Hitting something head-on ends the run; clippin
 
 1. In the repository on GitHub, open **Settings → Pages**.
 2. Under **Build and deployment → Source**, choose **GitHub Actions**.
-3. Run the workflow: **Actions → Build and deploy to GitHub Pages → Run workflow**, picking the branch with the game. It also runs automatically on every push to `main`.
+3. Run the workflow: **Actions → Build and deploy to GitHub Pages → Run workflow**, picking the branch with the game. It also runs automatically on every push to `main` or `claude/great-cray-2m0jl9`.
+
+The game is then at `https://<user>.github.io/<repo>/`. On a phone, open that address and add it to the home screen (Safari: **Share → Add to Home Screen**; Chrome: **⋮ → Add to Home screen / Install app**). It opens full screen like an app, and after the first visit it also plays offline (`public/sw.js`).
 
 GitHub Pages needs a public repository, or a paid GitHub plan for private ones. If the run is refused for the branch, open **Settings → Environments → github-pages** and allow that branch, or merge the work into the default branch first.
 
