@@ -1097,3 +1097,10 @@
   .wn-burst { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .wn-burst { animation: none; } }
+/* narrow phones: the Stars / Tide Rush switch drops to its own row under the map title */
+@media (max-width: 480px) {
+  #map .page-head { flex-wrap: wrap; row-gap: 6px; }
+  #map .map-mode:not(.hidden) { order: 5; flex: 1 0 100%; justify-content: center; margin-left: 0; }
+  #map .map-mode .mm { flex: 1; }
+  #map .map-mode + .map-count { margin-left: auto; }
+}

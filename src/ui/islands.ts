@@ -46,7 +46,7 @@ export interface MapData {
 export const CHEST_SVG = `<svg viewBox="0 0 64 56" aria-hidden="true"><path class="ch-lid" d="M6 22c0-12 10-18 26-18s26 6 26 18z" fill="#c9782e" stroke="#7a3e10" stroke-width="3"/><rect x="6" y="22" width="52" height="30" rx="4" fill="#e09440" stroke="#7a3e10" stroke-width="3"/><path d="M6 30h52" stroke="#7a3e10" stroke-width="3"/><rect x="27" y="24" width="10" height="13" rx="2" fill="#ffd23a" stroke="#7a3e10" stroke-width="2.4"/><path d="M14 22v30M50 22v30" stroke="#ffd23a" stroke-width="4"/></svg>`;
 export const CROWN_SVG = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 30 4 12l9 7 7-11 7 11 9-7-2 18z" fill="#ffd23a" stroke="#b5660a" stroke-width="2.4" stroke-linejoin="round"/><circle cx="20" cy="24" r="2.6" fill="#ff5a8a"/></svg>`;
 /** bonus node position (percent of the island art) */
-const BONUS_AT: [number, number][] = [[95, 70], [96, 66], [95, 66], [95, 64]];
+const BONUS_AT: [number, number][] = [[89, 72], [90, 68], [89, 68], [89, 66]];
 
 /** Node positions (percent of the island art) along each island's path. */
 const NODES: [number, number][][] = [
@@ -167,7 +167,13 @@ export class MapScreen {
       this.body.appendChild(panel);
     });
     const f = focus as HTMLElement | null;
-    if (f) requestAnimationFrame(() => f.scrollIntoView({ block: 'center', inline: 'center' }));
+    // centre the focused level vertically; scrollIntoView would also pan the clipped card sideways
+    if (f)
+      requestAnimationFrame(() => {
+        const r = f.getBoundingClientRect();
+        const b = this.body.getBoundingClientRect();
+        this.body.scrollTop += r.top + r.height / 2 - (b.top + b.height / 2);
+      });
   }
 }
 
