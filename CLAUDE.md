@@ -11,6 +11,8 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - `node scripts/perf.mjs [--no-build] [--tiers=high,medium,low]`: draw-call/triangle budget check per tier, zone, Home and a full Cove (exit 1 if over)
 - `node scripts/ui-audit.mjs [--no-build] [--only=...] [--views=...]`: every screen at the five reference viewports; fails on overlapping controls, text overflow, tap targets under 40 px, horizontal scroll
 - `node scripts/anim-strip.mjs <label> [--no-build]`: crab animation strips (run, turntable, hop, crash, emotes, dances, bodies, hats, lane, slam)
+- `node scripts/models.mjs <label> [--no-build]`: model review sheet (every obstacle, pickup and hero prop on its own)
+- `node scripts/ui-motion.mjs <label> [--no-build]`: UI motion frame strips (card morph, sheet, reward fly)
 - `node scripts/crab-closeup.mjs <label> [--no-build] [--body=id] [--hat=id]`: large front / three-quarter / side / back renders of the crab for model review
 - `BALANCE=1 npx vitest run tests/balance.test.ts`: simulated-player balance report
 - Test hooks live on `window.__crab` (see `installHooks` in `src/game.ts`): `startRun`, `setState`, `frames`, `skip`, `crash`, `grant`, `xp`, `level`, `daily`, `setDate`, `wear`, `unlockAll`, `cine`, `whatsNew`, `shaderCheck`, `budgets`.
@@ -31,6 +33,8 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - Crab model v3: `src/render/models/crab.ts` (shell sculpt, poses); hats and dyes in `hats.ts`. Guarded by `tests/pose.test.ts` and `tests/hats.test.ts`.
 - Claw guard: `src/render/models/clawGuard.ts` keeps the claws out of the eyes and any hat at runtime (sphere proxies + a small solver in `CrabModel.solveClaw`). `tests/clip.test.ts` checks skinned claw vertices against the real hat mesh, shell and eyes; `CLIP=1 npx vitest run tests/clip.test.ts` prints the full motion × hat table.
 - On the run the crab faces down the beach (yaw π, set in `GameView.frame`); lane/flinch/lean inputs are mirrored by `faceSign`. It turns back to the camera for menus and celebrations.
+- Update 4 UI: `src/ui/kit.ts` (size classes on `<html data-size>`, Wallet, pageHead, actionBar, Sheet, toast lane) and `src/ui/motion.ts` (press, stagger, morph, reward fly, tab line); layouts in `src/ui/v4.css`. Primary actions stay on screen: `ui-audit` checks it.
+- Scenery tiles have a far copy (`propsFar`: low palms, no small props) used beyond 30 m; the ocean grid is dense only near the track.
 - Save format is v3 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
 
 ## Rules

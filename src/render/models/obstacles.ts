@@ -242,28 +242,33 @@ export function waveSweep(lo = false, chevrons = true, beads = true): THREE.Buff
 
 /** Beach ball v2: pillowy six-panel ball with white caps and a valve. Rolls about x. */
 export function beachBall(lo = false): THREE.BufferGeometry {
+  // crisp six-gore panels: colour per triangle (no blur across seams), white caps and a valve
   const r = 0.58;
-  const g = new THREE.SphereGeometry(r, lo ? 12 : 24, lo ? 8 : 16);
+  const g = new THREE.SphereGeometry(r, lo ? 12 : 24, lo ? 8 : 14).toNonIndexed();
   const pa = g.attributes.position as THREE.BufferAttribute;
   const col = new Float32Array(pa.count * 3);
   const palette = [0xe53935, 0xffffff, 0x2f6fd6, 0xffffff, 0xffc933, 0xffffff].map((h) => new THREE.Color(h));
   const cap = new THREE.Color(0xffffff);
+  const seam = new THREE.Color(0xd8d8d8);
   const c = new THREE.Color();
-  for (let i = 0; i < pa.count; i++) {
-    const x = pa.getX(i);
-    const y = pa.getY(i);
-    const z = pa.getZ(i);
-    const ang = Math.atan2(z, x) + Math.PI;
-    const f = (ang / (Math.PI * 2)) * 6;
+  for (let t = 0; t < pa.count; t += 3) {
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let k = 0; k < 3; k++) {
+      cx += pa.getX(t + k);
+      cy += pa.getY(t + k);
+      cz += pa.getZ(t + k);
+    }
+    const f = ((Math.atan2(cz, cx) + Math.PI) / (Math.PI * 2)) * 6;
     const sector = Math.floor(f) % 6;
-    c.copy(Math.abs(y) > r * 0.86 ? cap : (palette[sector] as THREE.Color));
-    // panels bulge a little: darker toward the seams
-    c.multiplyScalar(0.9 + 0.1 * Math.sin((f % 1) * Math.PI));
-    col[i * 3] = c.r;
-    col[i * 3 + 1] = c.g;
-    col[i * 3 + 2] = c.b;
+    const edge = Math.min(f % 1, 1 - (f % 1));
+    c.copy(Math.abs(cy / 3) > r * 0.84 ? cap : (palette[sector] as THREE.Color));
+    if (!lo && edge < 0.06 && Math.abs(cy / 3) <= r * 0.84) c.copy(seam);
+    for (let k = 0; k < 3; k++) col.set([c.r, c.g, c.b], (t + k) * 3);
   }
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
   const b = new GeoBuilder();
   b.raw(g);
   b.cyl(0xf2f2f2, 0.06, 0.07, 0.05, [0, r + 0.01, 0], [0, 0, 0], 8);
@@ -571,15 +576,26 @@ export function greatWave(): THREE.BufferGeometry {
 
 /** A coconut (hairy brown ball with three "eyes"); it drops from the palm canopy above the lane. */
 export function coconut(lo = false): THREE.BufferGeometry {
+  // fibrous husk with ridges, three eyes and a little tuft at the stem
   const b = new GeoBuilder();
-  b.sphere(0x7a4a24, 0.42, [0, 0, 0], [1, 1.08, 1], lo ? 8 : 14).paint((x, y, z, c) => {
-    // fibrous streaks
-    const f = Math.sin(Math.atan2(z, x) * 22 + y * 9) * 0.5 + 0.5;
-    c.multiplyScalar(0.82 + f * 0.3);
-  });
+  b.sphere(0x7a4a24, 0.42, [0, 0, 0], [1, 1.08, 1], lo ? 10 : 16)
+    .warp((p) => {
+      const a = Math.atan2(p.z, p.x);
+      const k = 1 + (lo ? 0 : Math.max(0, Math.sin(a * 3)) * 0.06 + Math.sin(a * 26 + p.y * 9) * 0.012);
+      p.set(p.x * k, p.y, p.z * k);
+    })
+    .paint((x, y, z, c) => {
+      const f = Math.sin(Math.atan2(z, x) * 26 + y * 9) * 0.5 + 0.5;
+      c.multiplyScalar(0.72 + f * 0.36);
+      if (y > 0.3) c.lerp(new THREE.Color(0x4a2a10), sstep(0.3, 0.45, y) * 0.6);
+    });
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2;
-    b.sphere(0x3a200c, 0.06, [Math.cos(a) * 0.09, 0.42, Math.sin(a) * 0.09], [1, 0.4, 1], 6);
+    b.sphere(0x2a1608, 0.055, [Math.cos(a) * 0.1, 0.43, Math.sin(a) * 0.1], [1, 0.45, 1], 6);
+  }
+  if (!lo) for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    b.seg(0x8a5a2b, [0, 0.44, 0], [Math.cos(a) * 0.12, 0.56, Math.sin(a) * 0.12], 0.02, 0.006, 3);
   }
   return b.build();
 }

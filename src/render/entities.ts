@@ -457,13 +457,14 @@ export class EntityViews {
     return e.kind === 'block' || e.kind === 'low' ? `${e.kind}:${skin}:${e.id % 2}` : `${e.kind}:${skin}`;
   }
 
-  /** Detach a knocked entity's view and let it tumble away. */
-  knock(id: number, dist: number): void {
+  /** Detach a knocked entity's view and let it tumble away; returns where it was (for a crumble burst). */
+  knock(id: number, dist: number): { x: number; wz: number; key: string } | null {
     const v = this.active.get(id);
-    if (!v) return;
+    if (!v) return null;
     this.active.delete(id);
     const wz = dist - v.obj.position.z;
     this.flying.push({ v, t: 0, vx: (Math.random() - 0.5) * 8, vy: 7 + Math.random() * 3, spin: (Math.random() - 0.5) * 12, z: v.obj.position.z, wz });
+    return { x: v.obj.position.x, wz, key: v.key };
   }
 
   sync(entities: readonly Entity[], dist: number, time: number, dt: number, shadows: BlobShadows): void {

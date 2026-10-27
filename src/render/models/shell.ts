@@ -1,67 +1,61 @@
 import * as THREE from 'three';
 import { PALETTE } from '../../config';
 
-/** A stylised scallop: a fan of ridged wedges standing upright, hinge at the bottom. */
+/**
+ * A scallop (Update 4 v2): a domed fan with rounded ribs that bulge toward the rim, a wavy edge,
+ * two ears at the hinge and a nacre sheen on the rib crests. Upright, hinge at the bottom.
+ */
 export function scallopGeometry(): THREE.BufferGeometry {
-  const ribs = 11;
-  const spread = Math.PI * 0.88; // fan angle
-  const R = 0.34;
-  const pos: number[] = [];
-  const col: number[] = [];
-  const idx: number[] = [];
+  const ribs = 9;
+  const RU = ribs * 2; // samples across the fan: crest and groove per rib (smooth normals round them)
+  const RV = 3; // rings from hinge to rim (the back is a single ring)
+  const spread = Math.PI * 0.86;
+  const R = 0.36;
+  const hy = -R * 0.55;
   const base = new THREE.Color(PALETTE.shellGold);
   const hi = new THREE.Color(PALETTE.shellHighlight);
   const edge = new THREE.Color(PALETTE.shellEdge);
-  const c = new THREE.Color();
   const pearl = new THREE.Color(0xfff2f6);
-  const push = (x: number, y: number, z: number, color: THREE.Color): number => {
+  const pos: number[] = [];
+  const col: number[] = [];
+  const idx: number[] = [];
+  const c = new THREE.Color();
+  const at = (u: number, v: number, back: boolean): void => {
+    const a = -spread / 2 + u * spread;
+    const rib = Math.cos(u * ribs * Math.PI * 2) * 0.5 + 0.5; // 1 on a crest, 0 in a groove
+    const rr = R * (0.12 + v * 1.0) * (1 + (v > 0.9 ? Math.sin(u * ribs * Math.PI * 2) * 0.02 : 0));
+    const x = Math.sin(a) * rr * 1.05;
+    const y = hy + Math.cos(a) * rr * 1.25;
+    const dome = Math.sin(v * Math.PI * 0.92) * 0.13 * Math.cos((u - 0.5) * 1.6);
+    const z = back ? -0.02 - dome * 0.25 : dome + rib * 0.03 * v;
     pos.push(x, y, z);
-    col.push(color.r, color.g, color.b);
-    return pos.length / 3 - 1;
+    if (back) c.copy(edge);
+    else c.copy(base).lerp(hi, rib * 0.8 * v).lerp(pearl, rib * 0.35 * v * v).lerp(edge, Math.max(0, v - 0.88) * 3);
+    col.push(c.r, c.g, c.b);
   };
-  // hinge (centre) is slightly thick
-  const hinge = push(0, -R * 0.55, 0.04, hi);
-  const hingeBack = push(0, -R * 0.55, -0.05, edge);
-  // outer ring of vertices: for each rib an edge point and a mid-rib raised point
-  const ring: { rib: number; mid: number; back: number }[] = [];
-  for (let i = 0; i <= ribs; i++) {
-    const a = -spread / 2 + (i / ribs) * spread;
-    const ex = Math.sin(a) * R * 1.05;
-    const ey = -R * 0.55 + Math.cos(a) * R * 1.3;
-    const edgeIdx = push(ex, ey, 0.0, edge);
-    ring.push({ rib: edgeIdx, mid: -1, back: push(ex, ey, -0.02, edge) });
+  for (const back of [false, true]) {
+    const o = pos.length / 3;
+    const rv = back ? 1 : RV;
+    for (let j = 0; j <= rv; j++) for (let i = 0; i <= RU; i++) at(i / RU, j / rv, back);
+    for (let j = 0; j < rv; j++) {
+      for (let i = 0; i < RU; i++) {
+        const a = o + j * (RU + 1) + i;
+        const b2 = a + RU + 1;
+        if (back) idx.push(a, b2, a + 1, a + 1, b2, b2 + 1);
+        else idx.push(a, a + 1, b2, a + 1, b2 + 1, b2);
+      }
+    }
   }
-  // raised mid-points between ribs
-  const mids: number[] = [];
-  for (let i = 0; i < ribs; i++) {
-    const a = -spread / 2 + ((i + 0.5) / ribs) * spread;
-    const mx = Math.sin(a) * R * 1.0;
-    const my = -R * 0.55 + Math.cos(a) * R * 1.22;
-    // pearly ridges: alternate a pale nacre tone with the gold
-    const m = push(mx, my, 0.11, i % 2 === 0 ? c.copy(hi).lerp(pearl, 0.35) : base);
-    mids.push(m);
-    // inner raised point halfway to the hinge
-    c.copy(base);
-  }
-  const inner: number[] = [];
-  for (let i = 0; i < ribs; i++) {
-    const a = -spread / 2 + ((i + 0.5) / ribs) * spread;
-    inner.push(push(Math.sin(a) * R * 0.5, -R * 0.55 + Math.cos(a) * R * 0.55, 0.15, base));
-  }
-  for (let i = 0; i < ribs; i++) {
-    const e0 = (ring[i] as { rib: number }).rib;
-    const e1 = (ring[i + 1] as { rib: number }).rib;
-    const m = mids[i] as number;
-    const n = inner[i] as number;
-    // front: hinge → inner → mid → edges
-    idx.push(hinge, e0, n, hinge, n, e1);
-    idx.push(n, e0, m, n, m, e1);
-    idx.push(m, e0, e1);
-    // back
-    const b0 = (ring[i] as { back: number }).back;
-    const b1 = (ring[i + 1] as { back: number }).back;
-    idx.push(hingeBack, b1, b0);
-    idx.push(b0, b1, m);
+  // ears at the hinge
+  for (const s of [-1, 1]) {
+    const o = pos.length / 3;
+    const ear: [number, number, number][] = [[0, hy - 0.02, 0.05], [s * 0.16, hy - 0.03, 0.03], [s * 0.15, hy + 0.08, 0.04], [s * 0.04, hy + 0.06, 0.07]];
+    for (const p of ear) {
+      pos.push(...p);
+      col.push(base.r * 0.9, base.g * 0.9, base.b * 0.9);
+    }
+    if (s < 0) idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+    else idx.push(o, o + 2, o + 1, o, o + 3, o + 2);
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));

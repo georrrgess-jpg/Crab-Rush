@@ -190,15 +190,47 @@ export function bush(seed: number, col: number = PALETTE.palmLeaf): THREE.Buffer
 }
 
 export function hut(): THREE.BufferGeometry {
+  // Hut v2: bamboo walls, a layered thatch roof with a fringe, door, shuttered window and a step
   const b = new GeoBuilder();
-  b.box(0xc9955a, 2.2, 1.6, 2.0, [0, 0.8, 0]);
-  b.box(0x7a5530, 0.6, 1.0, 0.05, [0.3, 0.5, 1.01]);
-  b.cone(0xd9b15e, 1.9, 1.5, [0, 2.3, 0], [0, Math.PI / 4, 0], 4, [1, 1, 1]);
-  b.cone(0xc49c48, 1.95, 0.2, [0, 1.62, 0], [0, Math.PI / 4, 0], 4);
-  for (const x of [-1.05, 1.05]) for (const z of [-0.95, 0.95]) b.cyl(0x8a5a2b, 0.08, 0.08, 1.7, [x, 0.85, z], [0, 0, 0], 5);
+  b.box(0xc9955a, 2.2, 0.18, 2.0, [0, 0.09, 0]);
+  // bamboo walls: panels painted with pole stripes and knuckle bands (cheap), round corner posts
+  const bamboo = (x: number, y: number, z: number, c: THREE.Color): void => {
+    const u = Math.abs(x) > 1.0 ? z : x;
+    const pole = Math.abs(Math.sin(u * Math.PI * 4));
+    c.multiplyScalar(0.78 + pole * 0.26);
+    if (Math.abs(Math.sin((y + (Math.floor(u * 4) % 3) * 0.2) * 5.2)) > 0.96) c.multiplyScalar(0.72);
+  };
+  b.box(0xc9955a, 0.18, 1.5, 1.9, [-1.02, 0.9, 0]).paint(bamboo);
+  b.box(0xc9955a, 0.18, 1.5, 1.9, [1.02, 0.9, 0]).paint(bamboo);
+  b.box(0xc9955a, 2.0, 1.5, 0.18, [0, 0.9, -0.94]).paint(bamboo);
+  b.box(0xc9955a, 1.0, 1.5, 0.18, [-0.5, 0.9, 0.94]).paint(bamboo);
+  b.box(0xc9955a, 0.4, 1.5, 0.18, [0.82, 0.9, 0.94]).paint(bamboo);
+  for (const x of [-1.05, 1.05]) for (const z of [-0.97, 0.97]) b.cyl(0x9a6a34, 0.1, 0.1, 1.6, [x, 0.85, z], [0, 0, 0], 5);
+  b.box(0x5a3418, 0.56, 1.1, 0.06, [0.34, 0.73, 0.98]);
+  b.box(0x3a200c, 0.62, 0.08, 0.1, [0.34, 1.32, 0.98]);
+  // window with shutters on the side
+  b.box(0x2a1a10, 0.06, 0.45, 0.55, [1.11, 1.05, -0.2]);
+  for (const s of [-1, 1]) b.box(0x3dae8a, 0.04, 0.48, 0.28, [1.15, 1.05, -0.2 + s * 0.42], [0, s * 0.5, 0]);
+  // thatch: three stacked layers, each with a ragged fringe
+  for (let k = 0; k < 3; k++) {
+    const r = 1.95 - k * 0.5;
+    const y = 1.62 + k * 0.42;
+    b.cone(k % 2 ? 0xd9b15e : 0xe2bd6a, r, 0.9 - k * 0.12, [0, y + 0.42, 0], [0, Math.PI / 4, 0], 4).paint((x, yy, z, c) => c.multiplyScalar(0.88 + 0.12 * Math.sin(Math.atan2(z, x) * 40 + yy * 6)));
+    if (k === 0) {
+      // a ragged fringe on the bottom layer
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 + 0.26;
+        b.cone(0xc49c48, 0.1, 0.34, [Math.cos(a) * r * 0.74, y + 0.02, Math.sin(a) * r * 0.74], [Math.PI, 0, 0], 3);
+      }
+    }
+  }
+  b.sphere(0xb08040, 0.12, [0, 3.1, 0], [1, 1.3, 1], 6);
+  // step and a potted plant
+  b.box(0xa8743f, 0.8, 0.12, 0.35, [0.34, 0.06, 1.25]);
+  b.cyl(0xc8604a, 0.16, 0.12, 0.26, [-0.6, 0.13, 1.25], [0, 0, 0], 8);
+  b.sphere(0x3dae4f, 0.22, [-0.6, 0.38, 1.25], [1, 0.8, 1], 6);
   return b.build();
 }
-
 export function miniCastle(): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.cyl(0xe2b974, 0.5, 0.6, 0.6, [0, 0.3, 0], [0, 0, 0], 10);
@@ -253,13 +285,34 @@ export function ropePost(): THREE.BufferGeometry {
 }
 
 export function kiosk(colA: number, colB: number): THREE.BufferGeometry {
+  // Kiosk v2: a counter with panelling, a scalloped striped awning, a sign board and an ice-cream cone
   const b = new GeoBuilder();
-  b.box(0xfff4dc, 2.4, 1.3, 1.8, [0, 0.65, 0]);
-  b.box(0xd9b15e, 2.5, 0.1, 1.9, [0, 1.35, 0]);
-  for (let i = 0; i < 6; i++) b.box(i % 2 ? colA : colB, 0.42, 0.06, 1.2, [-1.05 + i * 0.42, 2.0, 0.8], [0.45, 0, 0]);
-  for (const x of [-1.15, 1.15]) b.cyl(0xffffff, 0.05, 0.05, 1.0, [x, 1.85, 0.4], [0, 0, 0], 5);
-  b.box(0xfff4dc, 2.4, 0.9, 0.1, [0, 1.9, -0.85]);
-  b.box(colA, 2.0, 0.35, 0.06, [0, 2.15, -0.79]);
+  b.box(0xfff4dc, 2.4, 1.1, 1.8, [0, 0.55, 0]);
+  for (let i = 0; i < 6; i++) b.box(i % 2 ? colA : 0xfff4dc, 0.4, 0.9, 0.04, [-1.0 + i * 0.4, 0.55, 0.91]);
+  b.box(0xd9b15e, 2.6, 0.12, 2.0, [0, 1.16, 0.05]);
+  // back wall and posts
+  b.box(0xfff4dc, 2.4, 1.25, 0.1, [0, 1.8, -0.85]);
+  for (const x of [-1.15, 1.15]) b.cyl(0xffffff, 0.05, 0.05, 1.35, [x, 1.85, 0.75], [0, 0, 0], 6);
+  // awning: stripes plus a scalloped valance
+  for (let i = 0; i < 8; i++) {
+    const x = -1.225 + i * 0.35;
+    b.box(i % 2 ? colA : colB, 0.35, 0.05, 1.3, [x, 2.42, 0.25], [0.32, 0, 0]);
+    b.cyl(i % 2 ? colA : colB, 0.175, 0.175, 0.05, [x, 2.2, 0.88], [Math.PI / 2, 0, 0], 6, [1, 1, 1]);
+  }
+  // sign with a fish on it
+  b.box(colA, 2.0, 0.42, 0.08, [0, 2.75, -0.8]);
+  b.box(0xfff4dc, 1.8, 0.3, 0.02, [0, 2.75, -0.75]);
+  b.sphere(0x2f6fd6, 0.12, [-0.45, 2.75, -0.73], [1.6, 0.8, 0.3], 6);
+  b.cone(0x2f6fd6, 0.1, 0.16, [-0.24, 2.75, -0.73], [0, 0, -Math.PI / 2], 3, [1, 1, 0.3]);
+  // a giant cone on the roof
+  b.cone(0xd9a05a, 0.22, 0.6, [0.8, 3.15, -0.8], [Math.PI, 0, 0], 6);
+  b.sphere(0xffb0c8, 0.24, [0.8, 3.5, -0.8], [1, 0.9, 1], 6);
+  b.sphere(0xff5a8a, 0.06, [0.8, 3.75, -0.8], [1, 1, 1], 5);
+  // stools in front
+  for (const x of [-0.6, 0.6]) {
+    b.cyl(0xb0b8c0, 0.04, 0.04, 0.6, [x, 0.3, 1.35], [0, 0, 0], 4);
+    b.cyl(colA, 0.2, 0.2, 0.08, [x, 0.62, 1.35], [0, 0, 0], 7);
+  }
   return b.build();
 }
 
@@ -394,22 +447,49 @@ export function deckChair(variant = 0, lo = false): THREE.BufferGeometry {
 
 /** Boulder v2: strata bands, barnacles, a moss cap and a starfish. */
 export function boulder(seed = 11, lo = false): THREE.BufferGeometry {
+  // Boulder v3 (UPDATE4_PLAN.md §4.2): a smooth, noise-sculpted rock with banded strata, a mossy cap,
+  // a wet dark foot, barnacles and a small rock beside it
   const b = new GeoBuilder();
-  const strata = (x: number, y: number, z: number, c: THREE.Color): void => {
-    const band = Math.sin(y * 9 + Math.sin(x * 2 + z) * 0.6);
-    c.multiplyScalar(0.88 + band * 0.08 + hash(Math.round(x * 12), Math.round(y * 12), Math.round(z * 12)) * 0.08);
-    if (y < 0.25) c.multiplyScalar(0.8);
+  const n3 = (x: number, y: number, z: number): number =>
+    Math.sin(x * 2.1 + seed) * Math.sin(y * 2.7 + seed * 0.7) * Math.sin(z * 2.3 + seed * 1.3) * 0.5 +
+    Math.sin(x * 5.3 + y * 3.1 + seed) * 0.18 + Math.sin(z * 6.1 - y * 4.2 + seed * 2) * 0.12;
+  // ridged noise: sharp creases between rounded lobes read as rock, not a blob
+  const ridge = (x: number, y: number, z: number): number => 1 - Math.abs(Math.sin(x * 3.3 + z * 2.1 + seed) * Math.cos(y * 2.9 - x * 1.7 + seed * 0.3));
+  const sculpt = (p: THREE.Vector3): void => {
+    const r = Math.hypot(p.x, p.y - 0.95, p.z) || 1;
+    const k = 1 + n3(p.x, p.y, p.z) * 0.24 - ridge(p.x, p.y, p.z) * 0.1 + Math.round(Math.sin(p.x * 4 + p.y * 3 + seed) * 2) * 0.02;
+    p.set(p.x * k, 0.95 + (p.y - 0.95) * k, p.z * k);
+    // flat-ish base so it sits on the sand
+    if (p.y < 0.08) p.y = 0.08 * (1 - Math.exp((p.y - 0.08) * 6));
+    void r;
   };
-  b.ico(0x9b8577, 1.0, [0, 0.95, 0], [1.0, 1.15, 0.75], lo ? 1 : 2, 0.16, seed).paint(strata);
-  b.ico(0x8a7466, 0.55, [0.5, 0.45, 0.25], [1, 0.9, 1], 1, 0.2, seed + 1).paint(strata);
-  b.sphere(0xff7a3a, 0.2, [-0.2, 1.5, 0.6], [1, 1, 0.3], 5);
-  b.sphere(0x4cbc5c, 0.5, [0, 2.0, 0], [1.4, 0.25, 1], lo ? 6 : 10).paint((x, y, z, c) => c.multiplyScalar(0.85 + hash(Math.round(x * 9), 1, Math.round(z * 9)) * 0.25));
-  if (!lo) {
-    for (let i = 0; i < 9; i++) {
-      const a = -0.6 + hash(seed, i, 1) * 1.6;
-      const y = 0.25 + hash(seed, i, 2) * 0.6;
-      b.cone(0xf2ece0, 0.04 + hash(seed, i, 3) * 0.02, 0.06, [Math.sin(a) * 0.95, y, Math.cos(a) * 0.72], [Math.PI / 2 - 0.3, a, 0], 5);
-    }
+  const strata = (x: number, y: number, z: number, c: THREE.Color): void => {
+    const band = Math.sin(y * 7 + Math.sin(x * 1.7 + z * 1.3) * 0.9);
+    c.multiplyScalar(0.86 + band * 0.07 + hash(Math.round(x * 14), Math.round(y * 14), Math.round(z * 14)) * 0.07);
+    // dark creases
+    c.multiplyScalar(1 - Math.max(0, ridge(x, y, z) - 0.8) * 1.2);
+    // wet foot
+    if (y < 0.4) c.lerp(new THREE.Color(0x5a4a40), sstep(0.4, 0.05, y) * 0.55);
+    // moss on the upward-facing top
+    if (y > 1.7) c.lerp(new THREE.Color(0x4f9a46), sstep(1.7, 2.0, y) * Math.max(0, 0.5 + 0.5 * Math.sin(x * 6 + z * 5)));
+  };
+  // faceted to match the cliffs, but finely: many small planes over big sculpted lobes
+  b.ico(0x9b8577, 1.0, [0, 0.95, 0], [1.0, 1.08, 0.8], lo ? 1 : 2, 0.08, seed).warp(sculpt).paint(strata);
+  b.ico(0x8a7466, 0.48, [0.72, 0.36, 0.3], [1.1, 0.8, 1], lo ? 1 : 2, 0.1, seed + 3).warp((p) => {
+    const k = 1 + n3(p.x * 2, p.y * 2, p.z * 2) * 0.18;
+    p.set(0.72 + (p.x - 0.72) * k, Math.max(0.02, 0.36 + (p.y - 0.36) * k), 0.3 + (p.z - 0.3) * k);
+  }).paint(strata);
+  // moss tufts and a starfish clinging on
+  if (!lo) for (let i = 0; i < 5; i++) {
+    const a = hash(seed, i, 7) * Math.PI * 2;
+    b.sphere(i % 2 ? 0x5fb04f : 0x3f8a3c, 0.13 + hash(seed, i, 8) * 0.08, [Math.cos(a) * 0.38, 1.98 - hash(seed, i, 9) * 0.1, Math.sin(a) * 0.3], [1.4, 0.45, 1.2], 6);
+  }
+  b.sphere(0xff7a3a, 0.16, [-0.25, 1.2, 0.76], [1, 1, 0.3], 5);
+  // barnacles round the foot
+  for (let i = 0; i < (lo ? 0 : 10); i++) {
+    const a = -0.9 + hash(seed, i, 1) * 1.8;
+    const y = 0.2 + hash(seed, i, 2) * 0.55;
+    b.cone(0xf2ece0, 0.05 + hash(seed, i, 3) * 0.025, 0.07, [Math.sin(a) * 0.98, y, Math.cos(a) * 0.78], [Math.PI / 2 - 0.3, a, 0], 5);
   }
   return b.build();
 }

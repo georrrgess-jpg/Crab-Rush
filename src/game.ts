@@ -2137,6 +2137,33 @@ export class Game {
         g.view.setQuality(g.quality);
       },
       /** compile + draw every toy shader variant (plain and instanced); returns per-variant status */
+      /** model review (scripts/models.mjs): portraits of every obstacle and pickup model */
+      async models(size = 256) {
+        const P = await import('./render/props');
+        const O = await import('./render/models/obstacles');
+        const S = await import('./render/models/shell');
+        const list: { id: string; geo: () => THREE.BufferGeometry; mat?: THREE.Material; yaw?: number }[] = [
+          { id: 'sandcastle', geo: () => O.sandcastle(0) },
+          { id: 'sandcastle-b', geo: () => O.sandcastle(1) },
+          { id: 'crates', geo: () => P.crateStack(0) },
+          { id: 'boulder', geo: () => P.boulder(17) },
+          { id: 'log', geo: () => O.driftwoodLog(0) },
+          { id: 'deckchair', geo: () => P.deckChair(0) },
+          { id: 'urchins', geo: () => P.urchins(0) },
+          { id: 'ball', geo: () => O.beachBall() },
+          { id: 'gull', geo: () => O.gullGeometry() },
+          { id: 'coconut', geo: () => O.coconut() },
+          { id: 'wave', geo: () => O.waveSweep(), yaw: -0.2 },
+          { id: 'magnet', geo: () => O.powerupIcon('magnet') },
+          { id: 'shield', geo: () => O.powerupIcon('shield') },
+          { id: 'rider', geo: () => O.powerupIcon('rider') },
+          { id: 'shell', geo: () => S.scallopGeometry(), yaw: 0 },
+          { id: 'hut', geo: () => P.hut() },
+          { id: 'kiosk', geo: () => P.kiosk(0xff5a4a, 0xffffff) },
+          { id: 'palm', geo: () => P.palm(3, 6) },
+        ];
+        return g.view.renderGeoThumbs(list, size);
+      },
       shaderCheck() {
         return g.view.shaderCheck();
       },

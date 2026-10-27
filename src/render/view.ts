@@ -542,9 +542,18 @@ export class GameView {
             this.sparks.spawn((Math.random() - 0.5) * 6, 3 + Math.random() * 2, w.dist + 6 + Math.random() * 8, (Math.random() - 0.5) * 4, 2 + Math.random() * 3, 0, 1.2, 0.25, cols[i % 5] as number, 4);
           }
           break;
-        case 'knock':
-          this.entities.knock(ev.id, w.dist);
+        case 'knock': {
+          const k = this.entities.knock(ev.id, w.dist);
+          if (!k || this.reduceMotion) break;
+          // a crumble burst: sand chunks for castles, splinters for crates and logs, spray for waves
+          const col = k.key.startsWith('sweep') ? 0xeaffff : /block:1|low:1|crate|log/.test(k.key) ? 0xb07a42 : 0xf0cf8e;
+          for (let i = 0; i < 14; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const sp = 2 + Math.random() * 3;
+            this.dust.spawn(k.x + Math.cos(a) * 0.5, 0.4 + Math.random() * 1.2, k.wz, Math.cos(a) * sp, 3 + Math.random() * 4, Math.sin(a) * sp * 0.5, 0.7 + Math.random() * 0.3, 0.22 + Math.random() * 0.18, col, 14, -0.3);
+          }
           break;
+        }
         // ---- Island Hop
         case 'dollar':
           this.shake(0.05, 0.08);
@@ -926,6 +935,11 @@ export class GameView {
 
   /** Crab Cove decoration portraits (framed on each model's bounding box). */
   async renderDecorThumbs(ids: readonly string[], size = 128): Promise<Record<string, string>> {
+    return this.renderGeoThumbs(ids.map((id) => ({ id, geo: () => decorGeometry(id) })), size);
+  }
+
+  /** Portraits of arbitrary geometries (model review: scripts/models.mjs), framed on their bounding box. */
+  async renderGeoThumbs(items: { id: string; geo: () => THREE.BufferGeometry; mat?: THREE.Material; yaw?: number }[], size = 128): Promise<Record<string, string>> {
     const gl = this.renderer.gl;
     const scene = new THREE.Scene();
     const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 80);
@@ -943,10 +957,11 @@ export class GameView {
     const box = new THREE.Box3();
     const ctr = new THREE.Vector3();
     const sz = new THREE.Vector3();
-    for (const id of ids) {
-      const geo = decorGeometry(id);
-      const m = new THREE.Mesh(geo, this.mats.clayWind);
-      m.rotation.y = -0.5;
+    for (const it of items) {
+      const id = it.id;
+      const geo = it.geo();
+      const m = new THREE.Mesh(geo, it.mat ?? this.mats.clayWind);
+      m.rotation.y = it.yaw ?? -0.5;
       scene.add(m);
       box.setFromObject(m);
       box.getCenter(ctr);

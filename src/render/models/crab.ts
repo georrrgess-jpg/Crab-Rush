@@ -1350,6 +1350,8 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
   const body = skin.body;
   const dark = skin.dark;
   const belly = skin.belly;
+  // a lighter tint of the body colour for the raised back plates
+  const light = new THREE.Color(skin.body).offsetHSL(0, 0.04, 0.05).getHex();
   // the outline hull only needs silhouettes: it is built from a low-detail pass of the same shapes
   let lineTo: GeoBuilder | null = line;
   if (hi) {
@@ -1475,11 +1477,23 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     }
   }
   // back plates: grooves following the shell over the back, and a little tail flap underneath
-  for (let k = 0; k < (hi ? 3 : 1); k++) {
-    const y = 0.8 - k * 0.11;
+  // (Update 4: the run camera now sees the back, so the plates are bolder: deeper grooves, raised
+  // lighter plates between them, a keel ridge down the middle and the plates read from the run camera)
+  for (let k = 0; k < (hi ? 3 : 2); k++) {
+    const y = 0.82 - k * 0.11;
     const pts: V3[] = [];
-    for (let i = 0; i <= 6; i++) pts.push(onShell(y - Math.abs(i - 3) * 0.012, Math.PI + (i - 3) * 0.28, 0.006));
-    gloss.bone(B_BODY).tube(dark, pts, 0.016, 4, tub(10), true);
+    for (let i = 0; i <= 8; i++) pts.push(onShell(y - Math.abs(i - 4) * 0.01, Math.PI + (i - 4) * 0.25, 0.008));
+    gloss.bone(B_BODY).tube(dark, pts, 0.022, 4, tub(10), true);
+    if (hi && k < 3) {
+      // a raised plate between this groove and the next
+      const yp = y - 0.05;
+      for (let i = -1; i <= 1; i++) ball(gloss.bone(B_BODY), light, 0.13 - Math.abs(i) * 0.015, onShell(yp - Math.abs(i) * 0.01, Math.PI + i * 0.42, -0.03), [1.35, 0.22, 0.6], 5, [0, Math.PI + i * 0.3, 0]);
+    }
+  }
+  {
+    const keel: V3[] = [];
+    for (let i = 0; i <= 5; i++) keel.push(onShell(0.9 - i * 0.07, Math.PI, 0.012));
+    gloss.bone(B_BODY).tube(dark, keel, 0.018, 4, tub(8), true);
   }
   ball(gloss.bone(B_BODY), belly, 0.14, onShell(0.2, Math.PI, 0.02), [1.3, 0.32, 0.7], 10);
   // mouthparts: two small plates under the mouth

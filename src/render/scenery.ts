@@ -15,11 +15,18 @@ const SUN = new THREE.Vector3(-0.4, 0.8, 0.45).normalize();
 interface Variant {
   ground: THREE.BufferGeometry;
   props: THREE.BufferGeometry;
+  /** the same layout with low-detail palms and no small props, for tiles far ahead (budget, UPDATE4_PLAN.md §4.1) */
+  propsFar: THREE.BufferGeometry;
   glow: THREE.BufferGeometry | null;
 }
 
+/** tiles starting further ahead than this use the far props */
+const FAR_FROM = 30;
+
 interface Tile {
   k: number;
+  v: Variant | null;
+  far: boolean;
   group: THREE.Group;
   ground: THREE.Mesh;
   props: THREE.Mesh;
@@ -132,11 +139,15 @@ function deckGround(): THREE.BufferGeometry {
 
 class Placer {
   list: THREE.BufferGeometry[] = [];
+  /** the far copy: same positions (same random draws), swapped or dropped geometry */
+  far: THREE.BufferGeometry[] = [];
   glow: THREE.BufferGeometry[] = [];
-  constructor(private r: () => number, private density: number) {}
+  constructor(private r: () => number, private density: number, private farMap: Map<THREE.BufferGeometry, THREE.BufferGeometry | null>) {}
   add(g: THREE.BufferGeometry, x: number, z: number, rotY = 0, scale = 1, y = 0, essential = false): void {
     if (!essential && this.r() > this.density) return;
     this.list.push(translated(g, x, y, z, rotY, scale));
+    const f = this.farMap.has(g) ? this.farMap.get(g) : g;
+    if (f) this.far.push(translated(f, x, y, z, rotY, scale));
   }
   addGlow(g: THREE.BufferGeometry, x: number, z: number, y = 0): void {
     this.glow.push(translated(g, x, y, z));
@@ -188,11 +199,16 @@ class PropKit {
   hammock = P.hammock();
   bonfire = P.bonfireLogs();
   bonfireFlame = P.bonfireFlame();
+  /** far tiles: palms swap to their low-detail versions, small ground props are dropped */
+  farMap = new Map<THREE.BufferGeometry, THREE.BufferGeometry | null>();
   constructor() {
     const b = new GeoBuilder();
     b.cyl(0xa8743f, 0.18, 0.22, 1.6, [0, 0.18, 0], [0, 0, Math.PI / 2], 8);
     b.cyl(0xe2bd8a, 0.17, 0.17, 0.03, [0.8, 0.18, 0], [0, 0, Math.PI / 2], 8);
     this.log = b.build();
+    this.palms.forEach((g, i) => this.farMap.set(g, this.palmsFar[i] as THREE.BufferGeometry));
+    this.palmsDusk.forEach((g, i) => this.farMap.set(g, this.palmsDuskFar[i] as THREE.BufferGeometry));
+    for (const g of [this.starfish, this.starfishPurple, this.pinkShell, this.tinyCrab, this.seaweed, this.towelA, this.towelB, this.miniCastle, ...this.buckets, ...this.burrows, ...this.starClusters, ...this.corals, this.urchins, this.postGull, this.net, this.bench, this.buoy]) this.farMap.set(g, null);
   }
 }
 
@@ -222,7 +238,7 @@ export class Scenery {
       const glow = new THREE.Mesh(EMPTY, this.glowMat);
       group.add(ground, props, glow);
       this.group.add(group);
-      this.tiles.push({ k: -999, group, ground, props, glow });
+      this.tiles.push({ k: -999, v: null, far: false, group, ground, props, glow });
     }
   }
 
@@ -233,6 +249,7 @@ export class Scenery {
     for (const zone of this.variants) for (const v of zone) {
       v.ground.dispose();
       v.props.dispose();
+      v.propsFar.dispose();
       v.glow?.dispose();
     }
     this.buildVariants(d);
@@ -251,7 +268,7 @@ export class Scenery {
   private buildVariant(zone: number, v: number, density: number): Variant {
     const seed = 1000 + zone * 37 + v * 7;
     const r = P.prng(seed);
-    const pl = new Placer(r, density);
+    const pl = new Placer(r, density, this.kit.farMap);
     const K = this.kit;
     const L = TILE_LEN;
     const rz = (a = 0, b = L): number => -(a + r() * (b - a));
@@ -278,11 +295,15 @@ export class Scenery {
           pl.add(pb, s * (hw - 0.1), -(i / 4) * L - 2, 0, 1, 0, true);
         }
       }
-      pl.list.push(ropeB.build());
+      const rope = ropeB.build();
+      pl.list.push(rope);
+      pl.far.push(rope);
       // painted lane guides
       const lines = new GeoBuilder();
       for (const x of [-1.1, 1.1]) lines.box(0xe8d2a6, 0.16, 0.02, L, [x, 0.012, -L / 2]);
-      pl.list.push(lines.build());
+      const ln = lines.build();
+      pl.list.push(ln);
+      pl.far.push(ln);
       // lamps
       for (const s of [-1, 1]) {
         pl.add(K.lamp, s * (hw + 0.3), -6, 0, 1, 0, true);
@@ -323,6 +344,7 @@ export class Scenery {
           }
         }
         pl.list.push(addWind(bb.build(), (x, y) => (y < 3.5 ? -0.05 : -0.01)));
+        // bunting is a near-only detail
       }
     } else {
       const shore = zone === 2 ? 7.4 : 8.4;
@@ -397,6 +419,7 @@ export class Scenery {
     return {
       ground,
       props: pl.list.length ? mergeAll(pl.list) : EMPTY,
+      propsFar: pl.far.length ? mergeAll(pl.far) : EMPTY,
       glow: pl.glow.length ? mergeAll(pl.glow) : null,
     };
   }
@@ -416,11 +439,19 @@ export class Scenery {
         const v = (this.variants[zone] as Variant[])[vi] as Variant;
         t.ground.geometry = v.ground;
         t.ground.material = this.groundMats[zone] as THREE.ShaderMaterial;
-        t.props.geometry = v.props;
+        t.v = v;
+        t.far = t.k * TILE_LEN - dist > FAR_FROM;
+        t.props.geometry = t.far ? v.propsFar : v.props;
         t.glow.geometry = v.glow ?? EMPTY;
         t.glow.visible = !!v.glow && this.glowOn;
       }
       t.group.position.z = -(t.k * TILE_LEN - dist);
+      // swap to the detailed props as the tile comes within range
+      const far = t.k * TILE_LEN - dist > FAR_FROM;
+      if (far !== t.far && t.v) {
+        t.far = far;
+        t.props.geometry = far ? t.v.propsFar : t.v.props;
+      }
       // tiles that start beyond the fog are invisible anyway: skip their draw calls
       t.group.visible = t.k * TILE_LEN - dist < viewDist;
     }

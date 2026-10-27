@@ -82,6 +82,37 @@ void main() {
   gl_FragColor = vec4(col, alpha);
 }`;
 
+/** Ocean grid with variable spacing (x: -w..w, z: 20..20-l), already lying flat at y = -0.04. */
+function oceanGrid(w: number, l: number): THREE.BufferGeometry {
+  const xs: number[] = [];
+  for (let x = -w; x < -44; x += 24) xs.push(x);
+  for (let x = -44; x < 64; x += 3.6) xs.push(x);
+  for (let x = 64; x <= w; x += 24) xs.push(x);
+  if (xs[xs.length - 1] !== w) xs.push(w);
+  const zs: number[] = [];
+  for (let z = 20; z > -112; z -= 3.3) zs.push(z);
+  for (let z = -112; z >= 20 - l; z -= 30) zs.push(z);
+  if (zs[zs.length - 1] !== 20 - l) zs.push(20 - l);
+  const pos: number[] = [];
+  const uv: number[] = [];
+  for (const z of zs) for (const x of xs) {
+    pos.push(x, -0.04, z);
+    uv.push((x + w) / (2 * w), (z - 20 + l) / l);
+  }
+  const idx: number[] = [];
+  const nx = xs.length;
+  for (let j = 0; j < zs.length - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = j * nx + i;
+    idx.push(a, a + 1, a + nx, a + 1, a + nx + 1, a + nx);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, k) => (k % 3 === 1 ? 1 : 0)), 3));
+  g.setIndex(idx);
+  return g;
+}
+
 export class Ocean {
   readonly mesh: THREE.Mesh = new THREE.Mesh();
   private mat: THREE.ShaderMaterial;
@@ -114,15 +145,18 @@ export class Ocean {
     this.mesh.renderOrder = -5;
     this.mesh.frustumCulled = false;
   }
-  private geo: THREE.PlaneGeometry | null = null;
+  private geo: THREE.BufferGeometry | null = null;
   private setWaves(waves: boolean): void {
     this.geo?.dispose();
     // x from shore to far sea, z from behind the camera to far ahead
     const w = 160;
     const l = 260;
-    this.geo = new THREE.PlaneGeometry(w * 2, l, waves ? 60 : 1, waves ? 80 : 1);
-    this.geo.rotateX(-Math.PI / 2);
-    this.geo.translate(0, -0.04, -l / 2 + 20);
+    // waves: dense where the swell is seen (beside the track, up to the fog), coarse beyond
+    this.geo = waves ? oceanGrid(w, l) : new THREE.PlaneGeometry(w * 2, l, 1, 1);
+    if (!waves) {
+      this.geo.rotateX(-Math.PI / 2);
+      this.geo.translate(0, -0.04, -l / 2 + 20);
+    }
     this.mesh.geometry = this.geo;
     this.mesh.material = this.mat;
     (this.mat.uniforms.uWaves as { value: number }).value = waves ? 1 : 0;
