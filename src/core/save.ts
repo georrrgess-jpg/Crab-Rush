@@ -2,6 +2,9 @@
  * v2 (UPDATE2_PLAN.md §8.2) adds XP/Sunny Pass, the Wardrobe, Island Hop level records, Daily Tide and
  * boosts; v1 blobs migrate transparently. */
 import { defaultDaily, type DailyState } from '../meta/daily';
+import { DECOR_BY_ID, PLOTS, defaultCove, type CoveState } from '../meta/cove';
+import { FRIEND_BY_ID, defaultFriends, type FriendsState } from '../meta/friends';
+import { ACHIEVEMENTS } from '../meta/achievements';
 import { PASS_TIERS } from '../meta/xp';
 import { ITEM_BY_ID, V1_CRAB_HATS, defaultWardrobe, exists, syncFromCrabs, type Slot, type WardrobeState } from '../meta/wardrobe';
 
@@ -69,6 +72,13 @@ export interface SaveData {
   chests: number[][];
   /** level ids with a Tide Rush crown */
   crowns: string[];
+  /** Crab Cove: plots, decorations, gifts */
+  cove: CoveState;
+  friends: FriendsState;
+  /** earned trophy keys ("family:tier") */
+  achievements: string[];
+  /** the title shown on the profile card ('' = automatic) */
+  title: string;
 }
 
 export const SAVE_KEY = 'crabdash.save';
@@ -95,6 +105,10 @@ export function defaultSave(): SaveData {
     pearls: 0,
     chests: [[], [], [], []],
     crowns: [],
+    cove: defaultCove(Date.now()),
+    friends: defaultFriends(),
+    achievements: [],
+    title: '',
   };
 }
 
@@ -223,11 +237,45 @@ export function sanitize(raw: unknown): SaveData {
       return Array.isArray(c) ? [...new Set(c.filter((k): k is number => k === 0 || k === 1 || k === 2))].sort() : [];
     }),
     crowns: [...new Set(strArr(r.crowns))],
+    cove: sanitizeCove(r.cove),
+    friends: sanitizeFriends(r.friends),
+    achievements: [...new Set(strArr(r.achievements).filter((k) => ACHIEVEMENTS.some((a) => a.key === k)))],
+    title: typeof r.title === 'string' ? r.title.slice(0, 40) : '',
   };
 }
 
 function ownedKeys(w: WardrobeState): string[] {
   return (Object.keys(w.owned) as Slot[]).flatMap((slot) => w.owned[slot].map((id) => `${slot}:${id}`));
+}
+
+function sanitizeCove(raw: unknown): CoveState {
+  const now = Date.now();
+  const c = defaultCove(now);
+  if (!raw || typeof raw !== 'object') return c;
+  const r = raw as Record<string, unknown>;
+  c.owned = [...new Set(strArr(r.owned).filter((id) => DECOR_BY_ID.has(id)))];
+  const plots = Array.isArray(r.plots) ? r.plots : [];
+  for (let i = 0; i < PLOTS; i++) {
+    const id = plots[i];
+    c.plots[i] = typeof id === 'string' && c.owned.includes(id) && !c.plots.includes(id) ? id : null;
+  }
+  // a clock in the future (changed device time) must not freeze the gifts
+  c.lastGift = Math.min(now, num(r.lastGift, now));
+  c.banked = num(r.banked, 0, 0, 1e6);
+  return c;
+}
+
+function sanitizeFriends(raw: unknown): FriendsState {
+  const f = defaultFriends();
+  if (!raw || typeof raw !== 'object') return f;
+  const r = raw as Record<string, unknown>;
+  f.moved = [...new Set(strArr(r.moved).filter((id) => FRIEND_BY_ID.has(id)))];
+  const qs = (r.quests && typeof r.quests === 'object' ? r.quests : {}) as Record<string, unknown>;
+  for (const id of f.moved) {
+    const q = (qs[id] && typeof qs[id] === 'object' ? qs[id] : {}) as Record<string, unknown>;
+    f.quests[id] = { idx: Math.floor(num(q.idx, 0, 0, 3)), base: num(q.base, 0) };
+  }
+  return f;
 }
 
 /** string → non-negative integer counts */

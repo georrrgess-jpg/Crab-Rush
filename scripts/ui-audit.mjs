@@ -31,6 +31,9 @@ const SCREENS = {
   daily: { open: "window.__crab.setState('daily')", root: '#daily' },
   map: { open: "window.__crab.setState('map')", root: '#map' },
   levelintro: { open: "window.__crab.level('shore-3', { intro: true })", root: '#level-intro' },
+  cove: { open: "window.__crab.setState('cove')", root: '#cove' },
+  covefriends: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"friends\"]').click()", root: '#cove' },
+  covetrophies: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"trophies\"]').click()", root: '#cove' },
   stats: { open: "window.__crab.setState('stats')", root: '#stats' },
   settings: { open: "window.__crab.setState('settings')", root: '#settings' },
   howto: { open: "window.__crab.setState('howto')", root: '#howto' },
@@ -59,6 +62,7 @@ function audit(rootSel) {
   const vis = (e) => {
     const r = e.getBoundingClientRect();
     if (r.width < 1 || r.height < 1) return false;
+    if (getComputedStyle(e).visibility === 'hidden') return false;
     for (let n = e; n; n = n.parentElement) {
       const cs = getComputedStyle(n);
       if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) < 0.05) return false;

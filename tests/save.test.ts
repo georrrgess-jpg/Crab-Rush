@@ -158,3 +158,21 @@ describe('save v2 → v3 migration (UPDATE3_PLAN.md §6.4)', () => {
     expect(d.crowns).toEqual(['shore-1']);
   });
 });
+
+describe('save v3: Crab Cove fields', () => {
+  it('fill defaults for older saves and sanitize garbage', () => {
+    const d = sanitize({ v: 2, shells: 5 });
+    expect(d.cove.plots.length).toBe(12);
+    expect(d.cove.owned).toEqual([]);
+    expect(d.friends).toEqual({ moved: [], quests: {} });
+    expect(d.achievements).toEqual([]);
+    const e = sanitize({ v: 3, cove: { owned: ['chair', 'nope', 'chair'], plots: ['chair', 'chair', 'bench', null], lastGift: 9e15, banked: -4 }, friends: { moved: ['shelly', 'ghost'], quests: { shelly: { idx: 7, base: 'x' } } }, achievements: ['dist:0', 'dist:9'] });
+    expect(e.cove.owned).toEqual(['chair']);
+    expect(e.cove.plots.slice(0, 3)).toEqual(['chair', null, null]);
+    expect(e.cove.lastGift).toBeLessThanOrEqual(Date.now());
+    expect(e.cove.banked).toBe(0);
+    expect(e.friends.moved).toEqual(['shelly']);
+    expect(e.friends.quests.shelly).toEqual({ idx: 3, base: 0 });
+    expect(e.achievements).toEqual(['dist:0']);
+  });
+});

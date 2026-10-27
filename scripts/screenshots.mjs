@@ -203,6 +203,36 @@ const SCENES = {
     await p.evaluate(() => { window.__crab.unlockAll(3); window.__crab.level('pier-4', { intro: true, rush: true }); window.__crab.frames(10); });
     await p.waitForTimeout(500);
   },
+  // ---- Update 3 Phase E: Crab Cove
+  cove: async (p) => {
+    await p.evaluate(() => { window.__crab.setState('cove'); window.__crab.frames(40); });
+    await p.waitForTimeout(3500);
+    await p.evaluate(() => window.__crab.frames(4));
+  },
+  covefull: async (p) => {
+    await p.evaluate(() => {
+      const g = window.__crab.game;
+      const d = g.save.data;
+      d.shells = 9000; d.pearls = 140;
+      d.stats.totalShells = 12000; d.stats.totalDistance = 64000; d.stats.runs = 60; d.best = 3400; d.stats.totalHops = 700;
+      const ids = ['tiki', 'bonfire', 'flamingo', 'palms', 'lighthouse', 'chest', 'statue', 'flowers', 'surfboards', 'hammock', 'fountain', 'lanterns'];
+      d.cove.owned = ids.slice();
+      ids.forEach((id, i) => { d.cove.plots[i] = id; });
+      d.cove.lastGift = Date.now() - 3 * 3600_000;
+      window.__crab.setState('cove');
+      window.__crab.frames(40);
+    });
+    await p.waitForTimeout(3500);
+    await p.evaluate(() => window.__crab.frames(30));
+  },
+  covefriends: async (p) => {
+    await p.evaluate(() => { document.querySelector('#cove .wtabs [data-tab="friends"]').click(); window.__crab.frames(4); });
+    await p.waitForTimeout(300);
+  },
+  covetrophies: async (p) => {
+    await p.evaluate(() => { document.querySelector('#cove .wtabs [data-tab="trophies"]').click(); window.__crab.frames(4); });
+    await p.waitForTimeout(300);
+  },
   stats: async (p) => {
     await p.evaluate(() => window.__crab.setState('stats'));
     await p.evaluate(() => window.__crab.frames(10));

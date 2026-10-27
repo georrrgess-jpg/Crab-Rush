@@ -21,6 +21,10 @@ import type { HomeData } from './ui/home';
 import { ChestScreen, LevelEnd, LevelIntro, MapScreen, type MapData, type MapLevel } from './ui/islands';
 import { ALL_CROWNS, CHEST_STARS, awardCrown, bonusUnlocked, chestsReady, openChest, rushUnlocked } from './meta/chests';
 import { PEARL } from './ui/home';
+import { CoveScreen, type CoveData } from './ui/cove';
+import { DECOR, DECOR_BY_ID, MAX_COMFORT, buyDecor, collectGifts, comfort, giftCap, giftRate, pendingGifts, place, store } from './meta/cove';
+import { FRIEND_BY_ID, claimQuest, moveIn, questProgress } from './meta/friends';
+import { FAMILIES, TIER_NAMES, evaluate, pearlsFor, titlesFor, type Metrics } from './meta/achievements';
 import { BONUS_LEVELS, LEVELS, LEVEL_BY_ID } from './sim/levelData';
 import { compileLevel, type CompiledLevel } from './sim/levels';
 import { evalStars, ruleHud, ruleState, ruleText } from './sim/objectives';
@@ -43,7 +47,7 @@ import { ICON } from './ui/icons';
 import type { PowerKind } from './sim/events';
 
 type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats'
-  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily' | 'chest';
+  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily' | 'chest' | 'cove';
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
@@ -97,6 +101,10 @@ export class Game {
   /** a level cleared for the first time this visit (confetti on the map) */
   private freshClear: string | null = null;
   private chestScreen: ChestScreen;
+  private coveScreen: CoveScreen;
+  private coveThumbs: Record<string, string> = {};
+  private coveTick = 0;
+  private readonly vTmp = new THREE.Vector3();
   // Sunny Pass, Daily Tide, boosts (Phase F)
   private passScreen: PassScreen;
   private dailyScreen: DailyScreen;
@@ -136,6 +144,7 @@ export class Game {
         play: () => this.onPlay(),
         islands: () => this.openMap(),
         daily: () => this.openDaily(),
+        cove: () => this.openCove(),
         wardrobe: () => this.openShop(),
         pass: () => this.openPass(),
         settings: () => this.openSettings(),
@@ -273,6 +282,66 @@ export class Game {
     this.ui.addScreen(this.levelIntro.el);
     this.ui.addScreen(this.levelEnd.el);
     this.ui.addScreen(this.chestScreen.el);
+    this.coveScreen = new CoveScreen({
+      back: () => this.closeOverlay(),
+      collect: () => this.collectCoveGifts(),
+      buy: (id) => {
+        const d = this.save.data;
+        if (buyDecor(d.cove, d, id)) {
+          this.audio.play('purchase');
+          this.haptics.play('success');
+          // put it straight out on the first free plot
+          const free = d.cove.plots.indexOf(null);
+          if (free >= 0) place(d.cove, free, id, this.now());
+          this.afterCoveChange();
+          this.ui.toast(`${DECOR_BY_ID.get(id)?.name} added!`, { kind: 'gold', sub: `+${DECOR_BY_ID.get(id)?.comfort} Comfort`, life: 2 });
+        } else this.audio.play('deny');
+        this.renderCove();
+      },
+      place: (plot, id) => {
+        if (place(this.save.data.cove, plot, id, this.now())) {
+          this.audio.play('equip');
+          this.haptics.play('light');
+          this.afterCoveChange();
+        }
+        this.renderCove();
+      },
+      store: (plot) => {
+        if (store(this.save.data.cove, plot, this.now())) {
+          this.audio.play('tap');
+          this.afterCoveChange();
+        }
+        this.renderCove();
+      },
+      claim: (id) => {
+        const d = this.save.data;
+        const q = claimQuest(d.friends, id, this.metrics());
+        if (!q) return;
+        d.pearls += q.pearls;
+        let extra = '';
+        if (q.gift?.startsWith('hat:')) {
+          const hat = q.gift.slice(4);
+          if (grant(d.wardrobe, 'hats', hat)) extra = ITEM_NAMES[hat] ?? hat;
+        } else if (q.gift && !d.cove.owned.includes(q.gift)) {
+          d.cove.owned.push(q.gift);
+          extra = DECOR_BY_ID.get(q.gift)?.name ?? '';
+        }
+        this.save.save();
+        this.audio.play('claim');
+        this.haptics.play('success');
+        this.ui.toast(`${FRIEND_BY_ID.get(id)?.name}: thank you!`, { kind: 'gold', sub: `+${q.pearls} pearls${extra ? ` · ${extra}` : ''}`, life: 2.6 });
+        this.checkTrophies();
+        this.renderCove();
+      },
+      title: (t) => {
+        this.save.data.title = t;
+        this.save.save();
+        this.audio.play('tap');
+        this.renderCove();
+      },
+      tab: () => this.audio.play('tap'),
+    });
+    this.ui.addScreen(this.coveScreen.el);
     this.ui.addScreen(this.passScreen.el);
     this.ui.addScreen(this.dailyScreen.el);
     this.input.attachSurface(this.touchLayer);
@@ -548,8 +617,182 @@ export class Game {
       boostOn: this.boostOn && d.boosts > 0,
       nextReward: this.nextRewardText(),
       avatar: this.shop.thumbs.bodies[d.wardrobe.equipped.body] ?? null,
-      title: playerTitle(t.tier, d.best),
+      title: d.title || playerTitle(t.tier, d.best),
+      pearls: d.pearls,
+      cove: (() => {
+        const gifts = pendingGifts(d.cove, this.now());
+        const m = this.metrics();
+        const quest = d.friends.moved.some((id) => questProgress(d.friends, id, m).done);
+        return { gifts, comfort: comfort(d.cove), ready: quest || gifts >= giftCap(comfort(d.cove)) * 0.5 };
+      })(),
     };
+  }
+
+  // ------------------------------------------------------------------ Crab Cove, friends, trophies
+  /** lifetime numbers that quests and trophies measure (UPDATE3_PLAN.md §6) */
+  metrics(): Metrics {
+    const d = this.save.data;
+    const o = d.wardrobe.owned;
+    return {
+      distance: d.stats.totalDistance,
+      best: d.best,
+      shells: d.stats.totalShells,
+      runs: d.stats.runs,
+      hops: d.stats.totalHops,
+      waves: d.stats.totalWaves,
+      closeShaves: d.stats.totalCloseShaves,
+      powerups: d.stats.totalPowerups,
+      stars: totalStars(d.levels),
+      crowns: d.crowns.length,
+      streak: Math.max(d.daily.streak, currentStreak(d.daily, this.todayKey())),
+      items: o.bodies.length + o.hats.length + o.trails.length + o.dances.length,
+      comfort: comfort(d.cove),
+      friends: d.friends.moved.length,
+      tier: tierFromXp(d.xp).tier,
+    };
+  }
+
+  /** award any newly earned trophies (pearls + a toast each) */
+  private checkTrophies(): void {
+    const d = this.save.data;
+    const got = evaluate(d.achievements, this.metrics());
+    if (got.length === 0) return;
+    let pearls = 0;
+    for (const k of got) {
+      d.achievements.push(k);
+      pearls += pearlsFor(k);
+    }
+    d.pearls += pearls;
+    this.save.save();
+    const [fam, tier] = (got[got.length - 1] as string).split(':');
+    const f = FAMILIES.find((x) => x.id === fam);
+    setTimeout(() => {
+      this.audio.play('levelUp');
+      this.ui.toast(got.length === 1 ? `${TIER_NAMES[Number(tier) as 0 | 1 | 2]} trophy: ${f?.name}` : `${got.length} new trophies!`, { kind: 'gold', sub: `+${pearls} pearls · see the Trophy Shelf`, life: 2.8 });
+    }, 600);
+  }
+
+  /** Comfort changed: newcomers move in, trophies may unlock */
+  private afterCoveChange(): void {
+    const d = this.save.data;
+    const fresh = moveIn(d.friends, comfort(d.cove), this.metrics());
+    this.save.save();
+    this.view.cove.setPlots(d.cove.plots);
+    this.view.cove.setFriends(d.friends.moved);
+    for (const id of fresh) {
+      const f = FRIEND_BY_ID.get(id);
+      setTimeout(() => {
+        this.audio.play('levelUp');
+        this.ui.toast(`${f?.name} moved in!`, { kind: 'green', sub: f?.line, life: 3.2 });
+      }, 500);
+    }
+    this.checkTrophies();
+  }
+
+  private coveData(): CoveData {
+    const d = this.save.data;
+    const now = this.now();
+    const comf = comfort(d.cove);
+    const m = this.metrics();
+    const progress: Record<string, number> = {};
+    for (const f of FAMILIES) progress[f.id] = m[f.metric];
+    return {
+      cove: d.cove,
+      comfort: comf,
+      maxComfort: MAX_COMFORT,
+      rate: giftRate(comf),
+      gifts: pendingGifts(d.cove, now),
+      cap: giftCap(comf),
+      shells: d.shells,
+      pearls: d.pearls,
+      friends: [...FRIEND_BY_ID.keys()].map((id) => {
+        const moved = d.friends.moved.includes(id);
+        const p = moved ? questProgress(d.friends, id, m) : { quest: null, have: 0, done: false };
+        return { id, moved, quest: p.quest, have: p.have, done: p.done, step: d.friends.quests[id]?.idx ?? 0 };
+      }),
+      earned: d.achievements,
+      progress,
+      titles: titlesFor(d.achievements),
+      title: d.title || playerTitle(tierFromXp(d.xp).tier, d.best),
+      thumbs: this.coveThumbs,
+    };
+  }
+
+  private renderCove(): void {
+    if (this.state === 'cove') this.coveScreen.render(this.coveData());
+  }
+
+  openCove(): void {
+    if (this.state !== 'title' && this.state !== 'results') return;
+    this.audio.play('whoosh');
+    const go = (): void => {
+      const d = this.save.data;
+      this.returnTo = 'title';
+      this.state = 'cove';
+      this.ui.home.hide();
+      // the very first visit: Shelly is waiting on the beach
+      moveIn(d.friends, comfort(d.cove), this.metrics());
+      this.checkTrophies();
+      this.view.cove.setPlots(d.cove.plots);
+      this.view.cove.setFriends(d.friends.moved);
+      this.coveScreen.open(this.coveData());
+      this.ui.showExtra(this.coveScreen.el);
+      if (Object.keys(this.coveThumbs).length === 0) {
+        void this.view
+          .renderDecorThumbs(DECOR.map((x) => x.id))
+          .then((t) => {
+            this.coveThumbs = t;
+            this.renderCove();
+          })
+          .catch(() => {});
+      }
+    };
+    if (this.state === 'results') this.ui.waveWipe(() => {
+      this.toTitle();
+      go();
+    });
+    else go();
+  }
+
+  private collectCoveGifts(): void {
+    const d = this.save.data;
+    const n = collectGifts(d.cove, this.now());
+    if (n <= 0) return;
+    d.shells += n;
+    d.stats.totalShells += n;
+    this.save.save();
+    this.audio.play('bigShell');
+    this.audio.play('claim');
+    this.haptics.play('success');
+    this.ui.toast(`+${fmt(n)} shells`, { kind: 'gold', sub: 'Tide Gifts collected', life: 2 });
+    this.checkTrophies();
+    this.renderCove();
+  }
+
+  /** per frame while the Cove is open: gift pile, plot buttons and friend bubbles follow the 3D scene */
+  private coveFrame(frameDt: number): void {
+    const d = this.save.data;
+    const gifts = pendingGifts(d.cove, this.now());
+    this.view.coveGifts = gifts;
+    this.view.cove.editing = this.coveScreen.editing;
+    const cam = this.view.renderer.camera;
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    const plots = d.cove.plots.map((_, i) => this.view.cove.projected(i, cam, w, h));
+    const m = this.metrics();
+    const friends = d.friends.moved.map((id) => {
+      const p = this.view.cove.friendWorld(id, this.vTmp);
+      if (!p) return { id, x: -99, y: -99, ready: false };
+      const v = p.project(cam);
+      return { id, x: (v.x * 0.5 + 0.5) * w, y: (-v.y * 0.5 + 0.5) * h, ready: v.z < 1 && questProgress(d.friends, id, m).done };
+    });
+    this.coveScreen.layout(plots, friends);
+    this.coveTick -= frameDt;
+    if (this.coveTick <= 0) {
+      this.coveTick = 1;
+      const cd = this.coveData();
+      this.coveScreen.updateGifts(cd);
+    }
   }
 
   // ------------------------------------------------------------------ Sunny Pass / Daily Tide
@@ -1015,6 +1258,7 @@ export class Game {
       this.reduceMotion,
     );
     this.audio.setRumble(0);
+    this.checkTrophies();
     if (success) {
       this.audio.play('win');
       this.haptics.play('success');
@@ -1255,7 +1499,7 @@ export class Game {
       return;
     }
     if (s === 'stats' && a === 'back') return this.closeStats();
-    if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map' || s === 'pass' || s === 'daily') && a === 'back') this.closeOverlay();
+    if ((s === 'shop' || s === 'settings' || s === 'howto' || s === 'map' || s === 'pass' || s === 'daily' || s === 'cove') && a === 'back') this.closeOverlay();
     if (s === 'chest' && (a === 'back' || a === 'confirm' || alsoConfirm)) {
       this.chestScreen.hide();
       this.state = 'map';
@@ -1429,6 +1673,7 @@ export class Game {
       this.haptics.play('success');
     }
     for (const id of unlocked) this.ui.toast(`${this.skinOf(id).name} unlocked!`, { kind: 'gold', sub: 'Find them in the Wardrobe', life: 3 });
+    this.checkTrophies();
     if (daily?.firstToday) setTimeout(() => this.audio.play('streakFlame'), 900);
     if (daily?.usedSavers) this.ui.toast('Streak saved!', { kind: 'green', sub: `A streak saver kept your ${daily.streak}-day streak alive`, life: 3 });
     if (daily?.milestone === 7) this.ui.toast('Flower Crown unlocked!', { kind: 'gold', sub: '7-day Daily Tide streak', life: 3.2 });
@@ -1460,11 +1705,12 @@ export class Game {
     this.handleEvents(this.world.events);
     this.world.events.length = 0;
     const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily' || this.state === 'chest';
-    const mode: CamMode = this.state === 'map' || this.state === 'levelIntro' || this.state === 'chest' ? 'map' : menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
+    const mode: CamMode = this.state === 'cove' ? 'cove' : this.state === 'map' || this.state === 'levelIntro' || this.state === 'chest' ? 'map' : menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
     if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
     this.view.frame(this.world, alpha, dt, mode, this.introT);
     if (this.qm.sample(frameDt * 1000, this.state === 'running')) this.view.renderer.setDprScale(this.qm.dprScale);
+    if (this.state === 'cove') this.coveFrame(frameDt);
     if (this.state === 'running' || this.state === 'intro' || this.state === 'crashing' || this.state === 'countdown' || this.state === 'paused' || this.state === 'finishing') {
       const w = this.world;
       const pk = w.power.kind;
@@ -1642,6 +1888,9 @@ export class Game {
         } else if (name === 'map') {
           g.toTitle();
           g.openMap();
+        } else if (name === 'cove') {
+          g.toTitle();
+          g.openCove();
         } else if (name === 'pass') {
           g.toTitle();
           g.openPass();

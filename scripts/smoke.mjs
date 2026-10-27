@@ -202,6 +202,28 @@ try {
   check(rush.state === 'levelEnd' && rush.rush === true && rush.crowns.includes('shore-1'), 'a clean Tide Rush finish earns a crown');
   await page.evaluate(() => { window.__crab.game.flags.autopilot = false; window.__crab.level('shore-2', { rush: false }); window.__crab.setState('title'); });
 
+  // ---------------- Crab Cove: gifts, decorations, friends
+  await page.evaluate(() => { window.__crab.setState('title'); window.__crab.setDate('2026-05-01T10:00:00'); });
+  await page.click('#home .mode-card.cove');
+  await fr(3);
+  check((await st()).state === 'cove' && (await page.isVisible('#cove .cove-gift')), 'Crab Cove opens from its Home card');
+  check((await page.evaluate(() => window.__crab.game.save.data.friends.moved)).includes('shelly'), 'Shelly moves into the Cove on the first visit');
+  await page.evaluate(() => { window.__crab.game.save.data.cove.lastGift = new Date('2026-05-01T07:00:00').getTime(); window.__crab.game.save.data.cove.banked = 0; });
+  await fr(70);
+  const sh0 = await page.evaluate(() => window.__crab.game.save.data.shells);
+  await page.click('#cove .cove-gift');
+  const sh1 = await page.evaluate(() => window.__crab.game.save.data.shells);
+  check(sh1 - sh0 === 120, `three hours of Tide Gifts pay 120 shells (${sh1 - sh0})`);
+  await page.evaluate(() => { window.__crab.grant(5000); });
+  await page.click('#cove [data-decor="tiki"]');
+  const cv = await page.evaluate(() => ({ owned: window.__crab.game.save.data.cove.owned, plots: window.__crab.game.save.data.cove.plots }));
+  check(cv.owned.includes('tiki') && cv.plots.includes('tiki'), 'buying a decoration places it on the island');
+  check((await page.evaluate(() => window.__crab.game.save.data.friends.moved.length)) >= 1, 'comfort brings friends');
+  await page.keyboard.press('Escape');
+  await fr(2);
+  check((await st()).state === 'title', 'Escape leaves the Cove');
+  await page.evaluate(() => window.__crab.setDate(null));
+
   // ---------------- Sunny Pass: claim
   await page.evaluate(() => { window.__crab.xp(400); window.__crab.setState('pass'); });
   await fr(3);
