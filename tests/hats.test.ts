@@ -2,8 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { HAT_KINDS, buildHat } from '../src/render/models/hats';
 
-/** eyeballs in crab model space (see buildCrab: centre and radius) */
-export const EYES = [-1, 1].map((s) => ({ c: new THREE.Vector3(s * 0.26, 0.9, 0.35), r: 0.17 }));
+import { EYES } from './crabGeom';
 
 /** Sample points of a hat in crab model space: vertices and triangle centroids. */
 export function hatPoints(kind: (typeof HAT_KINDS)[number]): THREE.Vector3[] {

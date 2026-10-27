@@ -433,6 +433,10 @@ export class GameView {
     this.crab.celebrate();
   }
   private celebrating = false;
+  /** crab yaw: 0 faces the camera (menus, celebrations), π faces down the beach on the run */
+  private facing = 0;
+  /** -1 while the crab faces away: the model's left/right are the screen's right/left */
+  private faceSign = 1;
 
   shake(amp: number, t: number): void {
     if (this.reduceMotion) return;
@@ -474,7 +478,7 @@ export class GameView {
           }
           break;
         case 'laneChange':
-          this.crab.lane(ev.dir);
+          this.crab.lane(ev.dir * this.faceSign);
           this.puff(p.x - ev.dir * 0.5, w.dist, 4, 0.35);
           break;
         case 'hop':
@@ -510,7 +514,7 @@ export class GameView {
           break;
         case 'closeShave':
           // the obstacle was in the lane just left behind
-          this.crab.flinch(Math.sign(p.prevLane - p.lane));
+          this.crab.flinch(Math.sign(p.prevLane - p.lane) * this.faceSign);
           for (let i = 0; i < 8; i++) this.sparks.spawn(p.x + (Math.random() - 0.5), 0.4 + Math.random() * 0.8, w.dist, 0, 0, 6 + Math.random() * 4, 0.25, 0.18, 0xffffff, 0, 2);
           break;
         case 'powerup':
@@ -642,7 +646,12 @@ export class GameView {
     dv.running = running && mode === 'run' && w.mode !== 'idle' && w.mode !== 'finished';
     dv.grounded = !running || p.grounded;
     dv.vy = running ? p.vy : 0;
-    dv.vx = running ? p.vx : 0;
+    // on the run the crab scuttles away from the camera; it turns back to face us for menus and dances
+    const away = running && (mode === 'run' || mode === 'intro') && !this.celebrating;
+    this.faceSign = away ? -1 : 1;
+    this.facing += ((away ? Math.PI : 0) - this.facing) * (1 - Math.exp(-dt * 9));
+    if (Math.abs(this.facing - (away ? Math.PI : 0)) < 1e-3) this.facing = away ? Math.PI : 0;
+    dv.vx = running ? p.vx * this.faceSign : 0;
     dv.speed = speed;
     dv.crashT = this.celebrating ? -1 : crashT;
     if (this.celebrating) dv.running = false;
@@ -654,7 +663,9 @@ export class GameView {
     this.homeSet.position.set(0, 0, dist);
     const onMound = Math.max(0, 1 - dist / 1.4);
     this.crab.root.position.set(px, py + onMound * onMound * 0.22, 0);
-    this.crab.root.rotation.y = mode === 'shop' ? this.shopSpin : 0;
+    this.crab.root.rotation.y = mode === 'shop' ? this.shopSpin : this.facing;
+    // a little hop while it turns round
+    if (mode !== 'shop') this.crab.root.position.y += Math.sin(this.facing) * 0.18;
     if (this.cineT >= 0) {
       // the crab waits under the sand, then bursts out spinning and lands
       const b = Math.max(0, Math.min(1, (this.cineT - CINE_CRAB) / 0.55));

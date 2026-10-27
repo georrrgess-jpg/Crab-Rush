@@ -4,6 +4,7 @@ import { Spring } from '../anim/spring';
 import { GeoBuilder } from '../geo';
 import type { Materials } from '../materials';
 import { makeOutline } from '../shaders/toy';
+import { CLAW_R, clawSamples, hatSpheres } from './clawGuard';
 import { type HatKind, buildHat, dyeHat } from './hats';
 
 export type { HatKind } from './hats';
@@ -234,6 +235,16 @@ export class CrabModel {
   private hatSpin = 0;
   private readonly dizzy: THREE.Mesh;
   private dizzyT = 0;
+  // claw guard (clawGuard.ts): claw samples per side [elbow, jaw], hat spheres, obstacles this frame
+  private clawPts: Float32Array[][] = [[], []];
+  private hatSph: Float32Array<ArrayBufferLike> = new Float32Array(0);
+  private obst = new Float32Array(0);
+  private obstN = 0;
+  /** per side and bone [elbow, jaw]: bounding sphere of the samples in the bone frame (x, y, z, r) */
+  private clawBound: Float32Array[] = [new Float32Array(8), new Float32Array(8)];
+  /** obstacle indices near the claw this evaluation (broad phase) */
+  private near = new Int32Array(0);
+  private readonly guardC = [new Float32Array(3), new Float32Array(3)];
   /** fired when an emote wants particles (Dazzle's sparkle burst) */
   onSparkle: ((x: number, y: number) => void) | null = null;
 
@@ -332,6 +343,28 @@ export class CrabModel {
     swap(this.glossMesh, gloss);
     swap(this.lineMesh, line);
     this.lineMesh.visible = this.detail;
+    for (let s = 0; s < 2; s++) {
+      const pts = clawSamples([this.clayMesh.geometry, this.glossMesh.geometry], [B_EL[s] as number, B_JAW[s] as number], absRest, 16);
+      this.clawPts[s] = pts;
+      const bd = this.clawBound[s] as Float32Array;
+      pts.forEach((p, b) => {
+        let cx = 0;
+        let cy = 0;
+        let cz = 0;
+        const n = Math.max(1, p.length / 3);
+        for (let i = 0; i < p.length; i += 3) {
+          cx += p[i]!;
+          cy += p[i + 1]!;
+          cz += p[i + 2]!;
+        }
+        cx /= n;
+        cy /= n;
+        cz /= n;
+        let r = 0;
+        for (let i = 0; i < p.length; i += 3) r = Math.max(r, Math.hypot(p[i]! - cx, p[i + 1]! - cy, p[i + 2]! - cz));
+        bd.set([cx, cy, cz, r + CLAW_R], b * 4);
+      });
+    }
     this.setHat(hat);
   }
 
@@ -345,6 +378,9 @@ export class CrabModel {
     const r = restPos(B_HAT);
     this.hatAnchor.set(h.pos[0] - r[0], h.pos[1] - r[1], h.pos[2] - r[2]);
     this.hatRx = h.rx;
+    this.hatSph = hatSpheres(h.geo, h.spinner);
+    this.obst = new Float32Array(this.hatSph.length + 16);
+    this.near = new Int32Array(this.obst.length / 4);
     this.spinner.geometry.dispose();
     if (h.spinner) {
       this.spinner.geometry = h.spinner.geo;
@@ -440,8 +476,10 @@ export class CrabModel {
       this.root.updateMatrixWorld(true);
       this.root.attach(this.hatMesh);
       this.hatFlying = true;
-      // forward (away from the chase camera) and up, never at the lens
-      this.hatVel.set((Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.4), 4.6, -2.4);
+      // forward (away from the chase camera) and up, never at the lens; the hat flies in the root's
+      // frame, so its world -z is local +z while the crab faces down the beach
+      const away = Math.cos(this.root.rotation.y) < 0 ? -1 : 1;
+      this.hatVel.set((Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.4), 4.6, -2.4 * away);
       this.hatSpin = 7;
     }
   }
@@ -1040,6 +1078,128 @@ export class CrabModel {
   }
 
   /** write the final pose into the bones */
+  private setClaw(s: number, raise: number, swing: number, elbow: number, jaw: number): void {
+    const sg = s === 0 ? -1 : 1;
+    (this.bones[B_SH[s] as number] as THREE.Bone).rotation.set(-raise * 0.55, swing, sg * raise * 0.6);
+    (this.bones[B_EL[s] as number] as THREE.Bone).rotation.set(-elbow * 0.6, -sg * elbow * 0.5, 0);
+    (this.bones[B_JAW[s] as number] as THREE.Bone).rotation.set(clamp(jaw, 0, 1) * 0.75, 0, 0);
+  }
+
+  /** eyeballs, eye stalks and hat spheres in the body frame for this frame (x, y, z, r) */
+  private gatherObstacles(): void {
+    const ob = this.obst;
+    let n = 0;
+    for (let s = 0; s < 2; s++) {
+      const sg = s === 0 ? -1 : 1;
+      const e = this.bones[B_EYE[s] as number] as THREE.Bone;
+      e.updateMatrix();
+      for (const [x, y, z, r] of EYE_SPHERES) {
+        _gv.set(x * sg, y, z).applyMatrix4(e.matrix);
+        ob[n++] = _gv.x;
+        ob[n++] = _gv.y;
+        ob[n++] = _gv.z;
+        ob[n++] = r;
+      }
+    }
+    if (this.hatMesh.visible && !this.hatFlying && this.hatSph.length) {
+      const hb = this.bones[B_HAT] as THREE.Bone;
+      hb.updateMatrix();
+      this.hatMesh.updateMatrix();
+      _gm.multiplyMatrices(hb.matrix, this.hatMesh.matrix);
+      const hs = this.hatSph;
+      for (let i = 0; i < hs.length; i += 4) {
+        _gv.set(hs[i] as number, hs[i + 1] as number, hs[i + 2] as number).applyMatrix4(_gm);
+        ob[n++] = _gv.x;
+        ob[n++] = _gv.y;
+        ob[n++] = _gv.z;
+        ob[n++] = hs[i + 3] as number;
+      }
+    }
+    this.obstN = n;
+  }
+
+  /** how far side s's claw samples sit inside the obstacles (root of summed squared depths), 0 = clear */
+  private clawPen(s: number, raise: number, swing: number, elbow: number, jaw: number): number {
+    this.setClaw(s, raise, swing, elbow, jaw);
+    const sh = this.bones[B_SH[s] as number] as THREE.Bone;
+    const el = this.bones[B_EL[s] as number] as THREE.Bone;
+    const jw = this.bones[B_JAW[s] as number] as THREE.Bone;
+    sh.updateMatrix();
+    el.updateMatrix();
+    jw.updateMatrix();
+    _gEl.multiplyMatrices(sh.matrix, el.matrix);
+    _gJaw.multiplyMatrices(_gEl, jw.matrix);
+    const ob = this.obst;
+    const n = this.obstN;
+    const near = this.near;
+    const bd = this.clawBound[s] as Float32Array;
+    let sum = 0;
+    const pts = this.clawPts[s] as Float32Array[];
+    for (let b = 0; b < 2; b++) {
+      const m = (b === 0 ? _gEl : _gJaw).elements;
+      const p = pts[b];
+      if (!p) continue;
+      // broad phase: obstacles touching this bone's bounding sphere
+      const bx = bd[b * 4]!;
+      const by = bd[b * 4 + 1]!;
+      const bz = bd[b * 4 + 2]!;
+      const cx = m[0]! * bx + m[4]! * by + m[8]! * bz + m[12]!;
+      const cy = m[1]! * bx + m[5]! * by + m[9]! * bz + m[13]!;
+      const cz = m[2]! * bx + m[6]! * by + m[10]! * bz + m[14]!;
+      let nn = 0;
+      for (let k = 0; k < n; k += 4) {
+        const dx = cx - ob[k]!;
+        const dy = cy - ob[k + 1]!;
+        const dz = cz - ob[k + 2]!;
+        const rr = ob[k + 3]! + bd[b * 4 + 3]!;
+        if (dx * dx + dy * dy + dz * dz < rr * rr) near[nn++] = k;
+      }
+      if (nn === 0) continue;
+      for (let i = 0; i < p.length; i += 3) {
+        const lx = p[i] as number;
+        const ly = p[i + 1] as number;
+        const lz = p[i + 2] as number;
+        const x = m[0]! * lx + m[4]! * ly + m[8]! * lz + m[12]!;
+        const y = m[1]! * lx + m[5]! * ly + m[9]! * lz + m[13]!;
+        const z = m[2]! * lx + m[6]! * ly + m[10]! * lz + m[14]!;
+        for (let j = 0; j < nn; j++) {
+          const k = near[j]!;
+          const dx = x - ob[k]!;
+          const dy = y - ob[k + 1]!;
+          const dz = z - ob[k + 2]!;
+          const rr = ob[k + 3]! + CLAW_R;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 >= rr * rr) continue;
+          const pen = rr - Math.sqrt(d2);
+          sum += pen * pen;
+        }
+      }
+    }
+    return Math.sqrt(sum);
+  }
+
+  /** Nudge the claw's raise / swing / elbow correction `c` until it clears the eyes and hat. */
+  private solveClaw(s: number, raise: number, swing: number, elbow: number, jaw: number, c: Float32Array): void {
+    let f = this.clawPen(s, raise + c[0]!, swing + c[1]!, elbow + c[2]!, jaw);
+    for (let it = 0; it < 6 && f > 1e-4; it++) {
+      const h = 0.04;
+      const g0 = (this.clawPen(s, raise + c[0]! + h, swing + c[1]!, elbow + c[2]!, jaw) - f) / h;
+      const g1 = (this.clawPen(s, raise + c[0]!, swing + c[1]! + h, elbow + c[2]!, jaw) - f) / h;
+      const g2 = (this.clawPen(s, raise + c[0]!, swing + c[1]!, elbow + c[2]! + h, jaw) - f) / h;
+      const gg = g0 * g0 + g1 * g1 + g2 * g2;
+      if (gg < 1e-6) {
+        // flat spot (deep inside): swing outward
+        c[1] = c[1]! + (s === 0 ? -1 : 1) * 0.15;
+      } else {
+        const k = Math.min(1.2, f / gg);
+        c[0] = clamp(c[0]! - clamp(g0 * k, -0.3, 0.3), -1.4, 1.4);
+        c[1] = clamp(c[1]! - clamp(g1 * k, -0.3, 0.3), -1.4, 1.4);
+        c[2] = clamp(c[2]! - clamp(g2 * k, -0.3, 0.3), -1.4, 1.4);
+      }
+      f = this.clawPen(s, raise + c[0]!, swing + c[1]!, elbow + c[2]!, jaw);
+    }
+  }
+
   private writeRig(dt: number, d: CrabDrive): void {
     const o = this.out;
     const bone = (i: number): THREE.Bone => this.bones[i] as THREE.Bone;
@@ -1103,16 +1263,24 @@ export class CrabModel {
       const v = m === this.mouth ? 1 : 1e-4;
       bone(B_MOUTH[m] as number).scale.set(v, v, v);
     }
-    // claws
+    // hat: wobble springs plus pose offsets (tips, tosses, slides)
+    const hb = bone(B_HAT);
+    hb.position.set(0, 0.93 - 0.45 + (o[P_HAT_Y] as number), -0.04);
+    hb.rotation.set(this.hatX.value * 0.12 + (o[P_HAT_RX] as number), 0, this.hatZ.value * 0.1 + (o[P_HAT_RZ] as number));
+    // claws, kept out of the eyes and the hat by the claw guard
+    this.gatherObstacles();
+    const decay = Math.exp(-dt * 5);
     for (let s = 0; s < 2; s++) {
-      const sg = s === 0 ? -1 : 1;
       const raise = o[P_CLAW + s * 4] as number;
       const swing = o[P_CLAW + s * 4 + 1] as number;
       const elbow = o[P_CLAW + s * 4 + 2] as number;
       const jaw = o[P_CLAW + s * 4 + 3] as number;
-      bone(B_SH[s] as number).rotation.set(-raise * 0.55, swing, sg * raise * 0.6);
-      bone(B_EL[s] as number).rotation.set(-elbow * 0.6, -sg * elbow * 0.5, 0);
-      bone(B_JAW[s] as number).rotation.set(clamp(jaw, 0, 1) * 0.75, 0, 0);
+      const c = this.guardC[s] as Float32Array;
+      c[0] = (c[0] as number) * decay;
+      c[1] = (c[1] as number) * decay;
+      c[2] = (c[2] as number) * decay;
+      this.solveClaw(s, raise, swing, elbow, jaw, c);
+      this.setClaw(s, raise + (c[0] as number), swing + (c[1] as number), elbow + (c[2] as number), jaw);
     }
     // legs: hip swings forward/back and raises; knee and foot fold
     for (let l = 0; l < 6; l++) {
@@ -1125,10 +1293,6 @@ export class CrabModel {
       bone(B_KNEE(l)).rotation.set(0, 0, sg * knee);
       bone(B_FOOT(l)).rotation.set(0, 0, sg * foot);
     }
-    // hat: wobble springs plus pose offsets (tips, tosses, slides)
-    const hb = bone(B_HAT);
-    hb.position.set(0, 0.93 - 0.45 + (o[P_HAT_Y] as number), -0.04);
-    hb.rotation.set(this.hatX.value * 0.12 + (o[P_HAT_RX] as number), 0, this.hatZ.value * 0.1 + (o[P_HAT_RZ] as number));
     if (this.spinner.visible) this.spinner.rotation.y += dt * (d.running ? 10 + d.speed * 0.6 : 5);
 
     // flying hat after a crash
@@ -1148,6 +1312,13 @@ export class CrabModel {
     }
   }
 }
+
+/** eyeball and stalk spheres in the eye bone's frame (x mirrored per side), see buildCrab */
+const EYE_SPHERES: [number, number, number, number][] = [[0.06, 0.28, 0.07, 0.17], [0.03, 0.13, 0.035, 0.07]];
+const _gv = new THREE.Vector3();
+const _gm = new THREE.Matrix4();
+const _gEl = new THREE.Matrix4();
+const _gJaw = new THREE.Matrix4();
 
 const _abs = new Map<number, V3>();
 function absRest(i: number): V3 {

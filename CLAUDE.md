@@ -29,6 +29,8 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - Island Hop+: `src/meta/chests.ts` (star chests, crowns, bonus levels); bonus levels and coconut/ring pieces in `src/sim/levelData.ts` / `levels.ts`.
 - Home v3 + boot cinematic: `src/ui/home.ts`, `src/render/anim/timeline.ts`, `view.startCinematic`; the one-time "What's new" sheet is `src/ui/whatsnew.ts`.
 - Crab model v3: `src/render/models/crab.ts` (shell sculpt, poses); hats and dyes in `hats.ts`. Guarded by `tests/pose.test.ts` and `tests/hats.test.ts`.
+- Claw guard: `src/render/models/clawGuard.ts` keeps the claws out of the eyes and any hat at runtime (sphere proxies + a small solver in `CrabModel.solveClaw`). `tests/clip.test.ts` checks skinned claw vertices against the real hat mesh, shell and eyes; `CLIP=1 npx vitest run tests/clip.test.ts` prints the full motion × hat table.
+- On the run the crab faces down the beach (yaw π, set in `GameView.frame`); lane/flinch/lean inputs are mirrored by `faceSign`. It turns back to the camera for menus and celebrations.
 - Save format is v3 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
 
 ## Rules
