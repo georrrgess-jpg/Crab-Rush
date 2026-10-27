@@ -221,7 +221,7 @@ A personal island you build and decorate. It gives players a reason to come back
 
 ### 6.2 Economy
 - **Pearls** are rarer than shells. They come from achievements, quests, island chests and the post-40 pass loop, and buy exclusive decorations, dyes and the Pearl body.
-- Comfort sets the gift rate: about 40 shells per hour at the start, rising to about 300 per hour with a full Cove, capped at 8 hours.
+- Comfort sets the gift rate: about 40 shells per hour at the start, rising to 160 per hour with a full Cove, capped at 8 hours. (Tuned down from 300 in Phase G: at 300 a full Cove out-earned 15 minutes of play; at 160 two daily collects pay about three quarters of that.)
 - Nothing is time-gated except the gift cap. There are no energy systems.
 
 ### 6.3 Screen

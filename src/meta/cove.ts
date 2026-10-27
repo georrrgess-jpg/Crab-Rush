@@ -47,7 +47,7 @@ export const PLOTS = 12;
 export const BASE_COMFORT = 10;
 /** Tide Gifts: shells per hour at the base comfort, the most per hour, and how long they bank */
 export const GIFT_MIN = 40;
-export const GIFT_MAX = 300;
+export const GIFT_MAX = 160;
 export const GIFT_CAP_HOURS = 8;
 const HOUR = 3600_000;
 

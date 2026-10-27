@@ -191,6 +191,11 @@ export class UI {
     }
   }
 
+  /** a floating layer above every screen (not part of the screen stack) */
+  mountOverlay(node: HTMLElement): void {
+    this.root.insertBefore(node, this.toasts);
+  }
+
   addScreen(node: HTMLElement): void {
     node.classList.add('hidden');
     this.extraScreens.push(node);

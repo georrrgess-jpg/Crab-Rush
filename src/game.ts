@@ -20,7 +20,8 @@ import { DANCE_SVG, GIFT_SVG } from './ui/icons';
 import type { HomeData } from './ui/home';
 import { ChestScreen, LevelEnd, LevelIntro, MapScreen, type MapData, type MapLevel } from './ui/islands';
 import { ALL_CROWNS, CHEST_STARS, awardCrown, bonusUnlocked, chestsReady, openChest, rushUnlocked } from './meta/chests';
-import { PEARL } from './ui/home';
+import { COVE_ICON, PEARL } from './ui/home';
+import { WhatsNewSheet } from './ui/whatsnew';
 import { CoveScreen, type CoveData } from './ui/cove';
 import { DECOR, DECOR_BY_ID, MAX_COMFORT, buyDecor, collectGifts, comfort, giftCap, giftRate, pendingGifts, place, store } from './meta/cove';
 import { FRIEND_BY_ID, claimQuest, moveIn, questProgress } from './meta/friends';
@@ -51,6 +52,7 @@ type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | '
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
+const WHATS_NEW_KEY = 'crabdash.new.u3';
 
 export class Game {
   state: State = 'boot';
@@ -102,6 +104,9 @@ export class Game {
   private freshClear: string | null = null;
   private chestScreen: ChestScreen;
   private coveScreen: CoveScreen;
+  private whatsNew: WhatsNewSheet;
+  private whatsNewPending = false;
+  private coveThumbsJob: Promise<void> | null = null;
   private coveThumbs: Record<string, string> = {};
   private coveTick = 0;
   private readonly vTmp = new THREE.Vector3();
@@ -408,6 +413,8 @@ export class Game {
       tab: () => this.audio.play('tap'),
     });
     this.ui.addScreen(this.coveScreen.el);
+    this.whatsNew = new WhatsNewSheet({ visit: () => this.openCove() });
+    this.ui.mountOverlay(this.whatsNew.el);
     this.ui.addScreen(this.passScreen.el);
     this.ui.addScreen(this.dailyScreen.el);
     this.input.attachSurface(this.touchLayer);
@@ -501,6 +508,7 @@ export class Game {
     this.view.smoothMenuCam = !this.flags.shots;
     this.toTitle();
     this.maybeCinematic();
+    this.maybeWhatsNew();
     this.loop.manual = this.flags.shots;
     this.loop.start();
     this.loop.tick(1 / 60);
@@ -530,6 +538,36 @@ export class Game {
     this.playCinematic();
   }
 
+  /** Update 3's "What's new" sheet: once, for players who already played before the update. */
+  private maybeWhatsNew(): void {
+    if (this.flags.shots || this.flags.autopilot) return;
+    try {
+      if (localStorage.getItem(WHATS_NEW_KEY)) return;
+      localStorage.setItem(WHATS_NEW_KEY, '1');
+    } catch {
+      return;
+    }
+    if (this.save.data.stats.runs < 1) return; // brand-new players meet everything through the tutorial and Home
+    if (this.view.cinematicPlaying) this.whatsNewPending = true;
+    else this.showWhatsNew();
+  }
+
+  showWhatsNew(): void {
+    this.whatsNewPending = false;
+    if (this.state !== 'title') return;
+    this.whatsNew.show(
+      [
+        { icon: COVE_ICON, title: 'Crab Cove', text: 'Build your own island, collect Tide Gifts and welcome six crab friends.' },
+        { icon: ICON.trophy, title: 'Trophies & titles', text: '36 achievements that pay pearls and unlock titles for your profile.' },
+        { icon: ICON.island, title: 'Island Hop+', text: 'Tide Rush crowns, star chests, bonus levels, coconuts and rings.' },
+        { icon: ICON.hanger, title: 'Wardrobe', text: 'Three new crabs, saved outfits and pearl hat dyes.' },
+        { icon: ICON.calendar, title: 'Daily Tide & Sunny Pass', text: 'A 30-day calendar, the tide almanac and endless bonus chests.' },
+        { icon: ICON.sparkle, title: 'A fresh coat of paint', text: 'A new Home, a more detailed crab and smoother animations.' },
+      ],
+      COVE_ICON,
+    );
+  }
+
   playCinematic(): void {
     const home = this.ui.home;
     home.setCinematic(true);
@@ -557,6 +595,7 @@ export class Game {
       window.removeEventListener('keydown', skip, true);
       home.el.classList.remove('logo-in');
       home.setCinematic(false);
+      if (this.whatsNewPending) setTimeout(() => this.showWhatsNew(), 400);
     };
     window.addEventListener('pointerdown', skip, true);
     window.addEventListener('keydown', skip, true);
@@ -806,15 +845,7 @@ export class Game {
       this.view.cove.setFriends(d.friends.moved);
       this.coveScreen.open(this.coveData());
       this.ui.showExtra(this.coveScreen.el);
-      if (Object.keys(this.coveThumbs).length === 0) {
-        void this.view
-          .renderDecorThumbs(DECOR.map((x) => x.id))
-          .then((t) => {
-            this.coveThumbs = t;
-            this.renderCove();
-          })
-          .catch(() => {});
-      }
+      this.loadCoveThumbs();
     };
     if (this.state === 'results') this.ui.waveWipe(() => {
       this.toTitle();
@@ -891,7 +922,10 @@ export class Game {
     const d = this.save.data;
     const out: { label: string; name: string; have: number; need: number; unit: 'shells' | 'XP' }[] = [];
     const crab = nextUnlock(d, Object.fromEntries(CRAB_SKINS.map((k) => [k.id, k.name])));
-    if (crab) out.push({ label: 'Next crab', ...crab, unit: 'shells' });
+    if (crab) {
+      const ready = crab.have >= crab.need;
+      out.push({ label: ready ? 'Ready to buy' : crab.kind === 'crab' ? 'Next crab' : 'Next upgrade', name: crab.name, have: crab.have, need: crab.need, unit: 'shells' });
+    }
     const tier = tierFromXp(d.xp).tier;
     const i = PASS_REWARDS.findIndex((r, k) => k + 1 > tier && r.kind === 'item');
     if (i >= 0) {
@@ -1434,8 +1468,23 @@ export class Game {
         this.shop.thumbs = t;
         if (this.state === 'shop') this.shop.render(this.save.data);
         if (this.state === 'title') this.ui.setHome(this.homeData());
+        // then the Cove's decorations, so they are ready before the first visit
+        this.loadCoveThumbs();
       })
       .catch(() => (this.thumbsReady = false));
+  }
+
+  /** Crab Cove decoration portraits, rendered once (shared by the boot prewarm and the first visit). */
+  private loadCoveThumbs(): void {
+    if (this.coveThumbsJob || Object.keys(this.coveThumbs).length) return;
+    this.coveThumbsJob = this.view
+      .renderDecorThumbs(DECOR.map((x) => x.id))
+      .then((t) => {
+        this.coveThumbs = t;
+        if (this.state === 'cove') this.renderCove();
+      })
+      .catch(() => {})
+      .finally(() => (this.coveThumbsJob = null));
   }
 
   private openSettings(): void {
@@ -1957,7 +2006,13 @@ export class Game {
         }
         g.startRun(false);
       },
+      /** open the Update 3 "What's new" sheet (normally once, for returning players) */
+      whatsNew() {
+        g.toTitle();
+        g.showWhatsNew();
+      },
       setState(name: string) {
+        g.whatsNew.close(true);
         if (name === 'title') g.toTitle();
         else if (name === 'shop') {
           g.toTitle();

@@ -36,9 +36,12 @@ You can change lanes in mid-air. Hitting something head-on ends the run; clippin
   - meet the level's own challenge.
 
   Stars open the next island. Four levels are chases where the Great Wave is right behind you.
-- **Daily Tide:** one course a day that is the same for everyone, with a rotating twist (Low Tide, Gull Day, Big Waves, Mirror Beach, Magnet Madness, Night Run, Ball Storm). Keep a daily streak going for bonus XP, a Flower Crown at 7 days and the Moonscuttle dance at 30. Streak savers cover a missed day.
-- **Sunny Pass:** a free 40-tier reward track. Every mode earns XP. Rewards include hats, trails, crab colours, dances, shells and Golden Shells (2× shells for one run).
-- **Wardrobe:** mix and match any body, 19 hats, 6 trails and 6 victory dances, and upgrade your power-ups.
+- **Daily Tide:** a 30-day score calendar and a week-ahead tide almanac with your best per twist. One course a day that is the same for everyone, with a rotating twist (Low Tide, Gull Day, Big Waves, Mirror Beach, Magnet Madness, Night Run, Ball Storm). Keep a daily streak going for bonus XP, a Flower Crown at 7 days and the Moonscuttle dance at 30. Streak savers cover a missed day.
+- **Sunny Pass:** a free 40-tier reward track. Every mode earns XP. Rewards include hats, trails, crab colours, dances, shells and Golden Shells (2× shells for one run). After tier 40, every 1,000 XP opens a bonus pearl chest.
+- **Wardrobe:** mix and match any body, 19 hats, 6 trails and 6 victory dances, and upgrade your power-ups. Save three outfits, let Surprise Me pick one, and recolour hats with pearl dyes.
+- **Crab Cove:** your own little island. Spend shells and pearls on 24 decorations across 12 plots; Comfort raises the shells your Cove's Tide Gifts pay while you are away (up to 8 hours). Six crab friends move in as Comfort grows, each with a three-step quest chain.
+- **Trophies:** 36 achievements in 12 families that pay pearls and unlock titles for your profile card.
+- **Island Hop+:** star chests on every island, Tide Rush crowns (a faster replay with no power-ups), four bonus levels, coconut-dropping gulls and shell rings.
 - **Obstacles:**
   - Tall ones (sandcastles, crates, boulders, gulls): dodge them.
   - Low ones (logs, deck chairs, urchins, beach balls): hop or dodge.
@@ -71,7 +74,8 @@ npm test                 # unit tests: fairness solver, patterns, autopilot fair
 npm run build            # production build into dist/
 npm run shots -- <label> # real screenshots via Playwright into docs/screenshots/
 node scripts/smoke.mjs   # end-to-end smoke test in Chromium (controls, tutorial, wardrobe, pass, daily, island hop, settings, pause, results, music)
-node scripts/perf.mjs    # draw-call / triangle budgets per quality tier and zone
+node scripts/perf.mjs    # draw-call / triangle budgets per quality tier, zone, Home and a full Cove
+node scripts/ui-audit.mjs  # every screen at five viewports: overlaps, text overflow, small targets, scroll
 BALANCE=1 npx vitest run tests/balance.test.ts   # run length, shell income and Island Hop attempts for simulated novice, average and skilled players
 ```
 
@@ -93,20 +97,21 @@ BALANCE=1 npx vitest run tests/balance.test.ts   # run length, shell income and 
 - **`src/sim/`** is the pure simulation and never imports three.js. It covers player physics, collisions, the spawner, Island Hop levels and objectives, and the goals and economy logic.
   - The **pattern library** has 33 handcrafted obstacle patterns.
   - A **fairness solver** checks every pattern against human reaction-time rules, and again at runtime before it is placed. Autopilot tests drive the real simulation for hundreds of kilometres, across every level and Daily Tide modifier, without an unavoidable crash.
-- **`src/meta/`** is pure progression logic: XP and the Sunny Pass, the Wardrobe catalogue, Daily Tide dates and streaks, and island gates.
+- **`src/meta/`** is pure progression logic: XP and the Sunny Pass, the Wardrobe catalogue, Daily Tide dates and streaks, island gates and chests, and the Crab Cove (decor, gifts, friends, achievements).
 - **`src/render/`** draws the game:
   - A "toy" shader family with outlines, shadow maps on High, and wind.
-  - A 37-bone rigged crab with springs, emotes and dances.
+  - A 37-bone rigged crab with a sculpted shell, springs, squash and stretch, emotes and dances.
+  - A timeline-driven boot cinematic and a 3D Crab Cove island scene.
   - Scenery tiles merged into a few draw calls, plus instanced shells, shadows and particles; models switch to low detail past 50 m.
   - Sky and ocean shaders, and a day-to-night cycle.
   - Auto quality that scales resolution, and between runs the graphics tier.
-- **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v2, with v1 migration), synthesised audio and quality code.
-- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2).
+- **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v3, with v1 and v2 migration), synthesised audio and quality code.
+- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2) and **[`UPDATE3_PLAN.md`](UPDATE3_PLAN.md)** (Update 3, "Shell Shock").
 
 ### Performance budgets (measured at the busiest moments)
 
 | Tier | Draw calls | Triangles | Budget |
 |---|---|---|---|
-| High | ≤ 71 | ≤ 113k | 100 / 150k |
-| Medium | ≤ 63 | ≤ 93k | 80 / 100k |
-| Low | ≤ 39 | ≤ 49k | 60 / 60k |
+| High | ≤ 71 | ≤ 118k | 100 / 150k |
+| Medium | ≤ 63 | ≤ 96k | 80 / 100k |
+| Low | ≤ 50 | ≤ 50k | 60 / 60k |

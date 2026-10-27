@@ -34,6 +34,7 @@ const SCREENS = {
   cove: { open: "window.__crab.setState('cove')", root: '#cove' },
   covefriends: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"friends\"]').click()", root: '#cove' },
   covetrophies: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"trophies\"]').click()", root: '#cove' },
+  whatsnew: { open: "window.__crab.whatsNew()", root: '#whatsnew' },
   stats: { open: "window.__crab.setState('stats')", root: '#stats' },
   settings: { open: "window.__crab.setState('settings')", root: '#settings' },
   howto: { open: "window.__crab.setState('howto')", root: '#howto' },

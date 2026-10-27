@@ -172,6 +172,10 @@ const SCENES = {
     await p.evaluate(() => document.querySelector('#daily .dt-almanac')?.scrollIntoView({ block: 'end' }));
     await p.waitForTimeout(300);
   },
+  whatsnew: async (p) => {
+    await p.evaluate(() => { window.__crab.whatsNew(); window.__crab.frames(10); });
+    await p.waitForTimeout(1500);
+  },
   daily: async (p) => {
     await p.evaluate(() => {
       window.__crab.setDate('2026-10-26T15:00:00');
@@ -261,8 +265,10 @@ const SCENES = {
       window.__crab.setState('cove');
       window.__crab.frames(40);
     });
-    await p.waitForTimeout(3500);
+    // decoration portraits render asynchronously (slow on software GL)
+    await p.waitForFunction(() => Object.keys(window.__crab.game.coveThumbs).length > 0, null, { timeout: 30000 }).catch(() => {});
     await p.evaluate(() => window.__crab.frames(30));
+    await p.waitForTimeout(300);
   },
   covefriends: async (p) => {
     await p.evaluate(() => { document.querySelector('#cove .wtabs [data-tab="friends"]').click(); window.__crab.frames(4); });

@@ -1057,3 +1057,43 @@
 .al-col b { font-family: var(--font-display); font-weight: 400; color: var(--navy); }
 .al-col small, .al-when small { font-size: 12px; color: var(--teal); }
 .al-when { display: flex; flex-direction: column; align-items: flex-end; font-family: var(--font-display); color: var(--navy); font-size: 14px; white-space: nowrap; }
+/* "What's new" sheet (Update 3) */
+.whatsnew { position: absolute; inset: 0; z-index: 18; display: flex; align-items: center; justify-content: center; padding: calc(var(--s-3) + var(--safe-t)) calc(var(--s-3) + var(--safe-r)) calc(var(--s-3) + var(--safe-b)) calc(var(--s-3) + var(--safe-l)); pointer-events: auto; }
+.whatsnew.hidden { display: none; }
+.wn-dim { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(15, 46, 77, 0.35), rgba(15, 46, 77, 0.78)); }
+.wn-card { position: relative; display: flex; flex-direction: column; gap: var(--s-3); width: min(100%, 460px); max-height: 100%; overflow-y: auto; overflow-x: hidden; padding: var(--s-4); border-radius: var(--r-lg); background: var(--c-sand-50); border: 4px solid #fff; box-shadow: var(--e-3); }
+.wn-burst { position: absolute; left: 50%; top: -120px; width: 320px; height: 320px; margin-left: -160px; border-radius: 50%; background: repeating-conic-gradient(rgba(255, 196, 60, 0.28) 0 10deg, transparent 10deg 26deg); mask: radial-gradient(circle, #000 25%, transparent 68%); -webkit-mask: radial-gradient(circle, #000 25%, transparent 68%); pointer-events: none; animation: spin-slow 14s linear infinite; }
+.wn-head { position: relative; text-align: center; }
+.wn-head h2 { margin: 2px 0 0; font-family: var(--font-display); font-weight: 400; font-size: var(--t-xl); color: var(--c-navy-800); }
+.wn-head p { margin: 2px 0 0; color: #2a6a9a; font-weight: 700; }
+.wn-tag { display: inline-block; padding: 2px 12px; border-radius: 999px; background: linear-gradient(180deg, #ffc35c, var(--c-orange-500)); color: #fff; font-family: var(--font-display); font-size: 14px; box-shadow: var(--e-1); }
+.wn-list { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.wn-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 8px; border-radius: 16px; background: #fff; box-shadow: var(--e-1); }
+.wn-ico { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(180deg, #2a86cf, #1e5e8c); padding: 9px; }
+.wn-ico svg { width: 100%; height: 100%; }
+.wn-txt { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.wn-txt b { font-family: var(--font-display); font-weight: 400; font-size: 17px; color: var(--c-navy-800); }
+.wn-txt small { font-size: 13px; color: #3c5a78; }
+.wn-acts { display: flex; gap: var(--s-2); justify-content: center; flex-wrap: wrap; }
+.wn-acts .btn { flex: 1 1 150px; }
+.wn-bi { display: inline-grid; width: 24px; height: 24px; }
+.wn-bi svg { width: 100%; height: 100%; }
+.whatsnew.in .wn-dim { animation: rt-in var(--d-med) var(--ease-out) both; }
+.whatsnew.in .wn-card { animation: wnpop 0.55s var(--ease-back) both; }
+.whatsnew.in .wn-row { animation: risein 0.4s calc(0.25s + var(--i) * 0.07s) var(--ease-back) both; }
+.whatsnew.in .wn-acts { animation: risein 0.4s 0.75s var(--ease-back) both; }
+.whatsnew.out { pointer-events: none; }
+.whatsnew.out .wn-card { animation: wnout 0.25s ease-in both; }
+.whatsnew.out .wn-dim { animation: wnfade 0.25s ease-in both; }
+@keyframes wnpop { from { opacity: 0; transform: translateY(30px) scale(0.85); } }
+@keyframes wnout { to { opacity: 0; transform: translateY(20px) scale(0.92); } }
+@keyframes wnfade { to { opacity: 0; } }
+@media (max-height: 520px) {
+  .wn-card { width: min(100%, 720px); padding: var(--s-3); gap: var(--s-2); }
+  .wn-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .wn-row { padding: 6px 10px 6px 6px; }
+  .wn-ico { width: 40px; height: 40px; padding: 8px; }
+  .wn-txt small { font-size: 12px; }
+  .wn-burst { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .wn-burst { animation: none; } }

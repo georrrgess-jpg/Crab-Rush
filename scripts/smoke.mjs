@@ -202,6 +202,19 @@ try {
   check(rush.state === 'levelEnd' && rush.rush === true && rush.crowns.includes('shore-1'), 'a clean Tide Rush finish earns a crown');
   await page.evaluate(() => { window.__crab.game.flags.autopilot = false; window.__crab.level('shore-2', { rush: false }); window.__crab.setState('title'); });
 
+  // ---------------- What's new sheet
+  await page.evaluate(() => window.__crab.whatsNew());
+  await fr(2);
+  check(await page.isVisible('#whatsnew .wn-row'), "the What's new sheet opens");
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('whatsnew').classList.contains('hidden'), null, { timeout: 3000 }).catch(() => {});
+  check((await st()).state === 'title' && !(await page.isVisible('#whatsnew .wn-row')), 'Escape closes it and leaves Home in place');
+  await page.evaluate(() => window.__crab.whatsNew());
+  await fr(2);
+  await page.click('#whatsnew .btn.blue', { force: true });
+  await fr(3);
+  check((await st()).state === 'cove', "its Visit the Cove button opens Crab Cove");
+
   // ---------------- Crab Cove: gifts, decorations, friends
   await page.evaluate(() => { window.__crab.setState('title'); window.__crab.setDate('2026-05-01T10:00:00'); });
   await page.click('#home .mode-card.cove');

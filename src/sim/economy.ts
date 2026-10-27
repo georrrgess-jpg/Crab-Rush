@@ -71,20 +71,20 @@ export function powerDuration(kind: PowerKind, level: number): number {
 }
 
 /** The cheapest thing still to buy, for the results-screen progress bar. */
-export function nextUnlock(save: SaveData, names: Record<string, string>): { name: string; have: number; need: number } | null {
+export function nextUnlock(save: SaveData, names: Record<string, string>): { name: string; have: number; need: number; kind: 'crab' | 'upgrade' } | null {
   const crabs = CRAB_ORDER.filter((id) => !ownsCrab(save, id) && !SKILL_UNLOCKS[id] && crabPrice(id) > 0).sort((a, b) => crabPrice(a) - crabPrice(b));
   const ups = (['magnet', 'shield', 'rider'] as PowerKind[])
     .map((k) => ({ k, cost: upgradeCost(save.upgrades[k]) }))
     .filter((u): u is { k: PowerKind; cost: number } => u.cost !== null);
-  const options: { name: string; need: number }[] = [];
+  const options: { name: string; need: number; kind: 'crab' | 'upgrade' }[] = [];
   const c = crabs[0];
-  if (c) options.push({ name: names[c] ?? c, need: crabPrice(c) });
+  if (c) options.push({ name: names[c] ?? c, need: crabPrice(c), kind: 'crab' });
   const label: Record<PowerKind, string> = { magnet: 'Shell Magnet', shield: 'Bubble Shield', rider: 'Wave Rider' };
-  for (const u of ups) options.push({ name: `${label[u.k]} Lv ${save.upgrades[u.k] + 1}`, need: u.cost });
+  for (const u of ups) options.push({ name: `${label[u.k]} Lv ${save.upgrades[u.k] + 1}`, need: u.cost, kind: 'upgrade' });
   if (options.length === 0) return null;
   // prefer the next crab unless an upgrade is clearly cheaper and not yet affordable
   options.sort((a, b) => a.need - b.need);
   const affordableCrab = c && save.shells < crabPrice(c);
-  const pick = affordableCrab ? (options.find((o) => o.name === (names[c] ?? c)) as { name: string; need: number }) : (options.find((o) => o.need > save.shells) ?? options[0]!);
-  return { name: pick.name, have: save.shells, need: pick.need };
+  const pick = affordableCrab ? (options.find((o) => o.kind === 'crab') as (typeof options)[number]) : (options.find((o) => o.need > save.shells) ?? options[0]!);
+  return { name: pick.name, have: save.shells, need: pick.need, kind: pick.kind };
 }

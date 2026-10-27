@@ -48,6 +48,25 @@ try {
       peakT = Math.max(peakT, t);
       rows.push(`${name}: ${c} calls / ${(t / 1000).toFixed(0)}k tris`);
     }
+    // menu scenes: Home (beach + carousel crab) and a fully decorated Crab Cove
+    const MENUS = [
+      ['Home', "window.__crab.setState('title')"],
+      ['Cove', "const d = window.__crab.game.save.data; const ids = ['tiki', 'bonfire', 'flamingo', 'palms', 'lighthouse', 'chest', 'statue', 'flowers', 'surfboards', 'hammock', 'fountain', 'lanterns']; d.cove.owned = ids.slice(); ids.forEach((id, i) => { d.cove.plots[i] = id; }); for (const f of ['shelly', 'barnacle', 'coco', 'pip']) if (!d.friends.moved.includes(f)) d.friends.moved.push(f); window.__crab.setState('cove')"],
+    ];
+    for (const [name, code] of MENUS) {
+      await page.evaluate((c) => new Function(c)(), code);
+      let c = 0;
+      let t = 0;
+      for (let i = 0; i < 4; i++) {
+        await page.evaluate(() => window.__crab.frames(6));
+        const s = await page.evaluate(() => window.__crab.game.view.renderer.stats);
+        c = Math.max(c, s.calls);
+        t = Math.max(t, s.triangles);
+      }
+      peakC = Math.max(peakC, c);
+      peakT = Math.max(peakT, t);
+      rows.push(`${name}: ${c} calls / ${(t / 1000).toFixed(0)}k tris`);
+    }
     const ok = peakC <= budget.drawCalls && peakT <= budget.triangles;
     if (!ok) failed = true;
     console.log(`${ok ? 'PASS' : 'FAIL'}  ${tier.padEnd(6)} peak ${peakC}/${budget.drawCalls} calls, ${(peakT / 1000).toFixed(0)}k/${budget.triangles / 1000}k tris  (${rows.join(' | ')})`);
