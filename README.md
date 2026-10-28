@@ -8,6 +8,8 @@ A three-lane beach runner for iPhone, Chromebook and PC browsers. Scuttle down t
 
 **Update 4, "Race Day"**, adds the Crab Cup race mode, a tougher Beach Run, a cleaner phone layout and more detailed models.
 
+**Update 5, "Treasure Tide"**, replaces Crab Cove with Treasure Dig, adds Shell Fever, Second Chance and the Sand Slam, smooths the controls, fixes the crab's eyes, brightens the whole look and adds detail to every beach.
+
 Everything you see and hear is generated in code: the models, textures, sound effects and music. The whole game downloads in about 300 KB.
 
 ![Gameplay](docs/screenshots/m3-pier-desktop.png)
@@ -29,12 +31,15 @@ On an **iPhone**, open that link in Safari, tap Share, then **Add to Home Screen
 | Drop fast (while airborne) | Swipe down | ↓ or S | — |
 | Pause | Pause button | Esc or P | Pause button |
 
-You can change lanes in mid-air. Hitting something head-on ends the run; clipping it from the side only bumps you back.
+You can change lanes in mid-air. Swipe down in the air for a **Sand Slam**: a shockwave that pulls nearby shells to you. Hitting something head-on ends the run; clipping it from the side only bumps you back.
 
 ### What's in the game
 
 - **Beach Run:** an endless run through four areas. Sunny Shore leads to Boardwalk Pier at 700 m, Tide Pool Cove at 1,600 m, and the endless Sunset Lagoon from 2,800 m. Night falls past 4,000 m. The run speeds up all the way, gaps tighten in the later areas, Riptide patterns appear past 4,000 m, and Scuttlers dash sideways into your lane after a warning.
 - **Crab Cup:** race three rival crabs (Shelly, Capt. Barnacle, Pip and Coco) through three cups of three races each. Bumps make you stumble instead of ending the race, and every 25 shells fire a Shell Dash that smashes through anything. Places score 10/6/3/1 points; a top-three cup finish unlocks the next cup and pays shells, pearls, a title or the Race Helmet. Win every race of a cup for its gold trophy.
+- **Treasure Dig:** every run, race and level earns spades. Dig a 6×5 sand site for shells, pearls, bonus spades and dynamite; empty holes glow hot, warm or cold depending on how close a buried relic is. Find all three relics to open the site chest and move on; fill the 36-relic Museum. The Pearl crab waits at site 5.
+- **Shell Fever:** shells and close shaves fill a meter; a full meter gives 6 seconds of double shells with a short-range pull.
+- **Second Chance:** once per run, carry on after a crash (free once a day, then pearls).
 - **Island Hop:** 24 handcrafted levels on four islands, each with three stars:
   - reach the flag;
   - grab all three golden sand dollars;
@@ -44,7 +49,6 @@ You can change lanes in mid-air. Hitting something head-on ends the run; clippin
 - **Daily Tide:** a 30-day score calendar and a week-ahead tide almanac with your best per twist. One course a day that is the same for everyone, with a rotating twist (Low Tide, Gull Day, Big Waves, Mirror Beach, Magnet Madness, Night Run, Ball Storm). Keep a daily streak going for bonus XP, a Flower Crown at 7 days and the Moonscuttle dance at 30. Streak savers cover a missed day.
 - **Sunny Pass:** a free 40-tier reward track. Every mode earns XP. Rewards include hats, trails, crab colours, dances, shells and Golden Shells (2× shells for one run). After tier 40, every 1,000 XP opens a bonus pearl chest.
 - **Wardrobe:** mix and match any body, 19 hats, 6 trails and 6 victory dances, and upgrade your power-ups. Save three outfits, let Surprise Me pick one, and recolour hats with pearl dyes.
-- **Crab Cove:** your own little island. Spend shells and pearls on 24 decorations across 12 plots; Comfort raises the shells your Cove's Tide Gifts pay while you are away (up to 8 hours). Six crab friends move in as Comfort grows, each with a three-step quest chain.
 - **Trophies:** 36 achievements in 12 families that pay pearls and unlock titles for your profile card.
 - **Island Hop+:** star chests on every island, Tide Rush crowns (a faster replay with no power-ups), four bonus levels, coconut-dropping gulls and shell rings.
 - **Obstacles:**
@@ -105,21 +109,21 @@ BALANCE=1 npx vitest run tests/balance.test.ts   # run length, shell income and 
 - **`src/sim/`** is the pure simulation and never imports three.js. It covers player physics, collisions, the spawner, Island Hop levels and objectives, and the goals and economy logic.
   - The **pattern library** has 33 handcrafted obstacle patterns.
   - A **fairness solver** checks every pattern against human reaction-time rules, and again at runtime before it is placed. Autopilot tests drive the real simulation for hundreds of kilometres, across every level and Daily Tide modifier, without an unavoidable crash.
-- **`src/meta/`** is pure progression logic: XP and the Sunny Pass, the Wardrobe catalogue, Daily Tide dates and streaks, island gates and chests, and the Crab Cove (decor, gifts, friends, achievements).
+- **`src/meta/`** is pure progression logic: XP and the Sunny Pass, the Wardrobe catalogue, Daily Tide dates and streaks, island gates and chests, Treasure Dig and the achievements.
 - **`src/render/`** draws the game:
   - A "toy" shader family with outlines, shadow maps on High, and wind.
   - A 37-bone rigged crab with a sculpted shell, springs, squash and stretch, emotes and dances.
-  - A timeline-driven boot cinematic and a 3D Crab Cove island scene.
+  - A timeline-driven boot cinematic.
   - Scenery tiles merged into a few draw calls, plus instanced shells, shadows and particles; models switch to low detail past 50 m.
   - Sky and ocean shaders, and a day-to-night cycle.
   - Auto quality that scales resolution, and between runs the graphics tier.
-- **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v4, with v1–v3 migration), synthesised audio and quality code.
-- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2) and **[`UPDATE3_PLAN.md`](UPDATE3_PLAN.md)** (Update 3, "Shell Shock") and **[`UPDATE4_PLAN.md`](UPDATE4_PLAN.md)** (Update 4, "Race Day").
+- **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v5, with v1–v4 migration), synthesised audio and quality code.
+- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2) and **[`UPDATE3_PLAN.md`](UPDATE3_PLAN.md)** (Update 3, "Shell Shock") and **[`UPDATE4_PLAN.md`](UPDATE4_PLAN.md)** (Update 4, "Race Day") and **[`UPDATE5_PLAN.md`](UPDATE5_PLAN.md)** (Update 5, "Treasure Tide").
 
 ### Performance budgets (measured at the busiest moments)
 
 | Tier | Draw calls | Triangles | Budget |
 |---|---|---|---|
-| High | ≤ 81 | ≤ 128k | 100 / 150k |
-| Medium | ≤ 69 | ≤ 91k | 80 / 100k |
-| Low | ≤ 49 | ≤ 58k | 60 / 60k |
+| High | ≤ 80 | ≤ 122k | 100 / 150k |
+| Medium | ≤ 70 | ≤ 94k | 80 / 100k |
+| Low | ≤ 44 | ≤ 58k | 60 / 60k |

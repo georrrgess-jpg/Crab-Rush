@@ -226,7 +226,7 @@ export class UI {
     void node.offsetWidth;
     node.classList.add('rt-enter');
     // content rises in after the card
-    const body = node.querySelector<HTMLElement>('.page-body, .shop-body, .cove-body');
+    const body = node.querySelector<HTMLElement>('.page-body, .shop-body');
     if (body) requestAnimationFrame(() => staggerIn(body.querySelector('.crab-grid, .stat-grid, .map-body, .daily-body > .dt-col-a') ?? body));
   }
 

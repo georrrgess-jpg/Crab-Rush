@@ -222,7 +222,7 @@ try {
   await fr(2);
   await page.click('#whatsnew .btn.blue', { force: true });
   await fr(3);
-  check((await st()).state === 'cup', "its Try Crab Cup button opens Crab Cup");
+  check((await st()).state === 'dig', "its Start digging button opens Treasure Dig");
 
   // ---------------- Treasure Dig (Update 5): spades, prizes, relics, a cleared site
   await page.evaluate(() => { window.__crab.setState('title'); });

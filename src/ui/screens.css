@@ -778,7 +778,7 @@
 .home.enter .mode-card.big { animation: risein 0.5s calc(0.3s + 0.08s * var(--k, 0)) var(--ease-back) both; }
 .home.enter .mode-card.big.islands { --k: 1; }
 .home.enter .mode-card.big.daily { --k: 2; }
-.home.enter .mode-card.big.cove { --k: 3; }
+.home.enter .mode-card.big.dig { --k: 3; }
 .home.enter .profile { animation: dropbar 0.45s var(--ease-back) both; }
 
 /* the boot cinematic hides the chrome until the crab has popped out of the sand */
@@ -916,67 +916,7 @@
 .lv-hud .rush-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px 2px 4px; border-radius: var(--r-pill); background: linear-gradient(180deg, #ff8a5a, #e8403a); color: #fff; font-family: var(--font-display); font-size: 14px; }
 .lv-hud .rush-badge svg { width: 20px; height: 20px; }
 
-/* =================================================================== Crab Cove (UPDATE3_PLAN.md §6.3) */
-#cove { flex-direction: column; padding: calc(10px + var(--safe-t)) calc(10px + var(--safe-r)) calc(10px + var(--safe-b)) calc(10px + var(--safe-l)); gap: 8px; pointer-events: none; }
-#cove > * { pointer-events: auto; }
-.cove-top { display: flex; align-items: center; gap: 8px; position: relative; z-index: 3; }
-.cove-stats { flex: 1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.cove-comfort { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px 4px 4px; border-radius: var(--r-pill); background: rgba(255, 250, 240, 0.95); border: 3px solid #fff; box-shadow: var(--e-1); min-width: 150px; flex: 1; max-width: 260px; }
-.cove-comfort > svg { width: 34px; height: 34px; flex: none; animation: heartbeat 1.6s ease-in-out infinite; }
-@keyframes heartbeat { 0%, 60%, 100% { transform: none; } 70% { transform: scale(1.15); } 80% { transform: scale(0.95); } }
-.cc-col { flex: 1; display: flex; flex-direction: column; gap: 3px; }
-.cc-lbl { font-family: var(--font-display); color: var(--navy); font-size: 14px; }
-.cc-lbl b { color: #e8306a; font-weight: 400; }
-.cove-comfort .bar { height: 8px; background: rgba(232, 48, 106, 0.15); }
-.cove-comfort .bar i { background: linear-gradient(90deg, #ff9ab8, #e8306a); }
-.cove-top .pill { display: inline-flex; align-items: center; gap: 4px; }
-.cove-top .pill svg { width: 26px; height: 26px; }
-.cove-gift { position: relative; z-index: 3; align-self: center; display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 16px 6px 6px; border: 3px solid #fff; border-radius: var(--r-pill); background: linear-gradient(180deg, #2a86cf, #1e5e8c); color: #fff; box-shadow: var(--e-2); cursor: pointer; text-align: left; }
-.cove-gift:disabled { cursor: default; opacity: 0.92; }
-.cove-gift .cg-ico { width: 40px; height: 40px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); display: grid; place-items: center; }
-.cove-gift .cg-ico svg { width: 75%; height: 75%; }
-.cove-gift .cg-col { display: flex; flex-direction: column; line-height: 1.1; }
-.cove-gift b { font-family: var(--font-display); font-weight: 400; font-size: 18px; }
-.cove-gift small { font-size: 12px; opacity: 0.85; }
-.cove-gift.ready { background: linear-gradient(180deg, #ffc35c, var(--c-orange-500)); animation: giftpulse 1.4s ease-in-out infinite; }
-.cove-gift.full::after { content: 'Full!'; position: absolute; top: -10px; right: -6px; padding: 1px 8px; border-radius: 999px; background: #e8306a; font-family: var(--font-display); font-size: 12px; }
-@keyframes giftpulse { 50% { transform: scale(1.05); box-shadow: var(--e-2), 0 0 22px 4px rgba(255, 210, 80, 0.8); } }
-.cove-plots { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
-.cove-plot { position: absolute; left: 0; top: 0; min-width: 44px; height: 44px; padding: 0 8px; border-radius: 22px; border: 3px dashed rgba(255, 255, 255, 0.9); background: rgba(30, 94, 140, 0.35); color: #fff; font-family: var(--font-display); cursor: pointer; pointer-events: auto; display: none; align-items: center; justify-content: center; }
-#cove.editing .cove-plot { display: inline-flex; }
-.cove-plot .cp-plus { font-size: 26px; line-height: 1; }
-.cove-plot.filled { border-style: solid; background: rgba(255, 255, 255, 0.82); color: var(--navy); border-color: #fff; opacity: 0.8; font-size: 12px; height: 32px; min-height: 32px; transform-origin: center; margin-top: 30px; }
-.cove-plot.filled .cp-name { white-space: nowrap; }
-.cove-plot.sel { background: #ffd23a; opacity: 1; box-shadow: 0 0 0 4px rgba(255, 210, 60, 0.5); }
-.cove-plot.target:not(.filled) { background: rgba(63, 191, 85, 0.6); animation: plotpulse 1s ease-in-out infinite; }
-@keyframes plotpulse { 50% { box-shadow: 0 0 0 6px rgba(63, 191, 85, 0.35); } }
-.fr-bubble { position: absolute; left: 0; top: 0; margin: -34px 0 0 -15px; width: 30px; height: 30px; border-radius: 50%; background: #ffd23a; border: 3px solid #fff; color: #8a4a00; font-family: var(--font-display); font-size: 20px; display: grid; place-items: center; box-shadow: var(--e-1); animation: youbob 0.8s ease-in-out infinite alternate; }
-.cove-drawer { position: relative; z-index: 2; margin-top: auto; align-self: center; width: min(100%, 640px); max-height: 46%; display: flex; flex-direction: column; }
-.cove-body { overflow-y: auto; }
-.cove-hint { font-size: 14px; color: var(--teal); margin-bottom: 8px; }
-.cove-hint b { color: var(--navy); }
-.cove-hint .link { border: 0; background: none; color: #e8306a; font: inherit; text-decoration: underline; cursor: pointer; padding: 0; min-height: 0; }
-.cove-hint.flash { animation: hintflash 0.6s; }
-@keyframes hintflash { 50% { color: #e8306a; } }
-.cove-grid { grid-template-columns: repeat(4, 1fr); }
-.cove-grid .tile .cmf { position: absolute; top: 5px; left: 5px; display: inline-flex; align-items: center; gap: 1px; font-family: var(--font-display); font-size: 11px; color: #e8306a; background: rgba(255, 255, 255, 0.85); border-radius: 8px; padding: 0 5px 0 2px; }
-.cove-grid .tile .cmf svg { width: 13px; height: 13px; }
-.cove-grid .tile .badge.poor { background: rgba(120, 130, 140, 0.85); }
-.friend-list { display: grid; gap: 8px; }
-.friend { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-md); background: #fff; box-shadow: var(--e-1); }
-.friend.away { opacity: 0.7; }
-.friend.ready { box-shadow: 0 0 0 3px #3fbf55, var(--e-1); }
-.fr-ava { width: 52px; height: 52px; flex: none; border-radius: 50%; background: radial-gradient(circle at 50% 35%, var(--b), var(--d)); display: grid; place-items: center; border: 3px solid #fff; box-shadow: var(--e-1); }
-.fr-ava svg { width: 70%; height: 70%; }
-.friend.away .fr-ava { filter: grayscale(0.8); }
-.fr-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.fr-name { font-family: var(--font-display); color: var(--navy); font-size: 17px; }
-.fr-line { font-size: 12px; color: var(--teal); font-style: italic; }
-.fr-q { font-size: 13px; color: var(--navy); }
-.fr-rw { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #6a4ab0; }
-.fr-rw svg, .fr-away svg, .fr-done svg { width: 16px; height: 16px; vertical-align: -3px; }
-.fr-away, .fr-done { font-size: 13px; color: var(--teal); }
-.friend .bar { height: 7px; background: rgba(30, 94, 140, 0.15); }
+/* =================================================================== Trophy Shelf, titles */
 .title-pick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
 .title-pick .tp-lbl { font-family: var(--font-display); color: var(--navy); margin-right: 4px; }
 .chip { min-height: 40px; padding: 0 12px; border-radius: var(--r-pill); border: 2px solid rgba(30, 94, 140, 0.3); background: #fff; color: var(--navy); font-family: var(--font-display); font-size: 14px; cursor: pointer; }
@@ -994,28 +934,6 @@
 .tr-name { font-family: var(--font-display); color: var(--navy); font-size: 15px; }
 .tr-txt { font-size: 12px; color: var(--teal); }
 .trophy .bar { height: 6px; background: rgba(30, 94, 140, 0.15); }
-@media (orientation: landscape) {
-  #cove { display: grid; grid-template-columns: 1fr minmax(320px, 440px); grid-template-rows: auto auto 1fr; }
-  .cove-top { grid-column: 1 / 3; }
-  .cove-gift { grid-column: 1; justify-self: center; }
-  .cove-drawer { grid-column: 2; grid-row: 2 / 4; max-height: 100%; width: 100%; align-self: stretch; }
-  .cove-grid { grid-template-columns: repeat(3, 1fr); }
-}
-@media (orientation: landscape) and (max-height: 480px) {
-  .cove-gift { min-height: 44px; }
-  .cove-gift small { display: none; }
-}
-@media (prefers-reduced-motion: reduce) { .cove-gift.ready, .cove-comfort > svg, .fr-bubble, .cove-plot.target { animation: none; } }
-@media (max-width: 520px) { .cove-grid { grid-template-columns: repeat(3, 1fr); } }
-.cove-grid .tile .badge { font-size: 12px; }
-.cove-grid .tile .art svg * { fill: #9fb3c4; }
-@media (max-width: 400px), (max-height: 420px) { .cove-plot:not(.filled) { min-width: 42px; height: 42px; } }
-/* filled plots: a quiet tap target over the decoration; the name only shows when it's picked up */
-.cove-plot.filled { width: 46px; min-width: 46px; height: 46px; min-height: 46px; margin-top: 0; padding: 0; border: 2px solid rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.08); opacity: 1; border-radius: 50%; }
-.cove-plot.filled .cp-name { display: none; position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 2px 8px; border-radius: 999px; background: #fff; color: var(--navy); font-size: 12px; box-shadow: var(--e-1); }
-.cove-plot.filled.sel { background: rgba(255, 210, 60, 0.35); border-color: #ffd23a; }
-.cove-plot.filled.sel .cp-name { display: block; }
-.cove-plot.filled.target { border-style: dashed; border-color: #3fbf55; }
 
 /* wardrobe outfits and dyes (UPDATE3_PLAN.md §5.2) */
 .outfits { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }

@@ -10,7 +10,7 @@ export function reduced(): boolean {
   return matchMedia('(prefers-reduced-motion: reduce)').matches || !!document.getElementById('app')?.classList.contains('reduce-motion');
 }
 
-const PRESSABLE = '.btn, .mode-card, .tile, .sheet-item, .tab, .lv-node, .pt, .dt-stat, .cove-gift, .boost-chip, .goals-chip, .of-wear';
+const PRESSABLE = '.btn, .mode-card, .tile, .sheet-item, .tab, .lv-node, .pt, .dt-stat, .dt, .boost-chip, .goals-chip, .of-wear';
 
 /** Spring press on every pressable control: squash on down, overshoot on release; cards tilt toward the finger. */
 export function installPress(root: HTMLElement): void {

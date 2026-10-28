@@ -22,7 +22,7 @@ import { ChestScreen, LevelEnd, LevelIntro, MapScreen, type MapData, type MapLev
 import { ALL_CROWNS, CHEST_STARS, awardCrown, bonusUnlocked, chestsReady, openChest, rushUnlocked } from './meta/chests';
 import { PEARL } from './ui/home';
 import { WhatsNewSheet } from './ui/whatsnew';
-import { DigScreen, relicName } from './ui/dig';
+import { DIG_ICON, DigScreen, relicName } from './ui/dig';
 import { TrophyScreen, type TrophyData } from './ui/trophies';
 import { RELIC_TOTAL, dig, generateSite, spadesFor, type DigResult } from './meta/dig';
 import { FAMILIES, TIER_NAMES, evaluate, pearlsFor, titlesFor, type Metrics } from './meta/achievements';
@@ -35,7 +35,7 @@ import { HAT_KINDS, type HatKind } from './render/models/hats';
 import type { TrailKind } from './render/materials';
 import { CUPS, CUP_BY_ID, cupTitles, cupUnlocked, nextRace, pointsFor, recordRace, type RaceDef } from './meta/cup';
 import { RIVALS, Race } from './sim/race';
-import { CUP_ICON, CupScreen, RaceEndScreen, type CupData } from './ui/cup';
+import { CupScreen, RaceEndScreen, type CupData } from './ui/cup';
 import { RaceHud } from './ui/raceHud';
 import { ReviveCard } from './ui/revive';
 
@@ -57,7 +57,7 @@ type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | '
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
-const WHATS_NEW_KEY = 'crabdash.new.u4';
+const WHATS_NEW_KEY = 'crabdash.new.u5';
 
 export class Game {
   state: State = 'boot';
@@ -394,7 +394,7 @@ export class Game {
       },
     });
     this.ui.addScreen(this.trophyScreen.el);
-    this.whatsNew = new WhatsNewSheet({ visit: () => this.openCup() });
+    this.whatsNew = new WhatsNewSheet({ visit: () => this.openDig() });
     this.ui.mountOverlay(this.whatsNew.el);
     this.ui.addScreen(this.passScreen.el);
     this.ui.addScreen(this.dailyScreen.el);
@@ -546,13 +546,13 @@ export class Game {
     if (this.state !== 'title') return;
     this.whatsNew.show(
       [
-        { icon: CUP_ICON, title: 'Crab Cup', text: 'A brand-new mode: race three rival crabs through three cups. Bumps slow you down, 25 shells fire a Shell Dash.' },
-        { icon: ICON.flame, title: 'A tougher Beach Run', text: 'Faster top speed, tighter gaps, Riptide patterns and Scuttlers that dash across lanes.' },
-        { icon: ICON.sparkle, title: 'A cleaner phone layout', text: 'Bigger buttons, less clutter, actions that stay in reach, and sheets instead of crowded pages.' },
-        { icon: ICON.island, title: 'More detailed world', text: 'Rebuilt huts, kiosks, boulders, shells and beach balls, with smoother menu animations.' },
-        { icon: ICON.hanger, title: 'Race Helmet', text: 'Clear the Tidal Cup to wear it. Cup titles show on your profile.' },
+        { icon: DIG_ICON, title: 'Treasure Dig', text: 'Every run earns spades. Dig sand sites for shells, pearls and relics — holes glow hotter near treasure.' },
+        { icon: ICON.flame, title: 'Shell Fever & Second Chance', text: 'Fill the Fever meter for 2× shells, and keep a great run going once a day for free.' },
+        { icon: ICON.sparkle, title: 'Sand Slam', text: 'Hop, then swipe down: a shockwave pulls nearby shells straight to you.' },
+        { icon: ICON.crab, title: 'Smoother crab', text: 'Cleaner eyes, softer lane changes and a juicier shell pickup.' },
+        { icon: ICON.island, title: 'A brighter beach', text: 'A vibrant new look, more detail on every beach and a roomier Wardrobe on phones.' },
       ],
-      { tag: 'Update 4', tagline: 'Race Day is here!', visitIcon: CUP_ICON, visitLabel: 'Try Crab Cup' },
+      { tag: 'Update 5', tagline: 'Treasure Tide is here!', visitIcon: DIG_ICON, visitLabel: 'Start digging' },
     );
   }
 
