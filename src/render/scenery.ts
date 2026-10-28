@@ -168,6 +168,17 @@ class PropKit {
   rocks = [0, 1, 2].map((i) => P.rock(30 + i, 0.7 + i * 0.35));
   starfish = P.starfish();
   starfishPurple = P.starfish(0xb06ad6);
+  // Update 5 map detail
+  grass = [0, 1, 2].map((i) => P.duneGrass(400 + i));
+  volleyNet = P.volleyNet();
+  kayaks = [0xff5a3a, 0x22c8f0].map((c) => P.kayak(c));
+  windsock = P.windsock();
+  barrels = P.barrels();
+  lifeRing = P.lifeRing();
+  planters = [0, 1].map((i) => P.planter(410 + i));
+  anemones = [0, 1].map((i) => P.anemones(420 + i));
+  flowerBushes = [0xff4a6a, 0xffb020, 0xff6ad0].map((c, i) => P.flowerBush(430 + i, c));
+  sailboats = [0xff5a3a, 0xffd23a, 0x22c8f0].map((c) => P.sailboat(c));
   bush = [0, 1].map((i) => P.bush(50 + i));
   hut = P.hut();
   log = P.rock(1, 0.1); // placeholder replaced below
@@ -208,7 +219,7 @@ class PropKit {
     this.log = b.build();
     this.palms.forEach((g, i) => this.farMap.set(g, this.palmsFar[i] as THREE.BufferGeometry));
     this.palmsDusk.forEach((g, i) => this.farMap.set(g, this.palmsDuskFar[i] as THREE.BufferGeometry));
-    for (const g of [this.starfish, this.starfishPurple, this.pinkShell, this.tinyCrab, this.seaweed, this.towelA, this.towelB, this.miniCastle, ...this.buckets, ...this.burrows, ...this.starClusters, ...this.corals, this.urchins, this.postGull, this.net, this.bench, this.buoy]) this.farMap.set(g, null);
+    for (const g of [this.starfish, this.starfishPurple, this.pinkShell, this.tinyCrab, this.seaweed, this.towelA, this.towelB, this.miniCastle, ...this.buckets, ...this.burrows, ...this.starClusters, ...this.corals, this.urchins, this.postGull, this.net, this.bench, this.buoy, ...this.grass, this.lifeRing, ...this.planters, ...this.anemones, this.barrels, this.windsock, ...this.flowerBushes, ...this.kayaks, ...this.sailboats]) this.farMap.set(g, null);
   }
 }
 
@@ -273,6 +284,8 @@ export class Scenery {
     const L = TILE_LEN;
     const rz = (a = 0, b = L): number => -(a + r() * (b - a));
     let ground: THREE.BufferGeometry;
+    /** Update 5 detail props: High and Medium tiers (Low keeps its triangle headroom) */
+    const extras = density >= 0.7;
 
     if (zone === 1) {
       ground = deckGround();
@@ -325,6 +338,13 @@ export class Scenery {
       if (v !== 2) pl.add(K.bench, -(hw + 0.6), -20, Math.PI / 2, 1, 0, true);
       pl.add(K.postGull, (r() < 0.5 ? -1 : 1) * (hw + 1.4), rz(), r() * 6, 1, -0.3);
       pl.add(K.buoy, -7 - r() * 4, rz(), 0, 1, -0.05);
+      // Update 5: barrels, life rings on the rails, planters on the side platform, sails offshore
+      if (extras) {
+        if (v % 2 === 1) pl.add(K.barrels, -hw - 1.3, -8 - r() * 8, r() * 6);
+        pl.add(K.lifeRing, (v % 2 === 0 ? 1 : -1) * (hw + 0.2), -11, v % 2 === 0 ? -Math.PI / 2 : Math.PI / 2);
+        if (v % 2 === 0) pl.add(K.planters[v % 2] as THREE.BufferGeometry, -hw - 1.2, -16, Math.PI / 2);
+        pl.add(K.sailboats[v % 3] as THREE.BufferGeometry, 26 + r() * 14, rz(), r() * 6, 1.4);
+      }
       // bunting between lamps
       if (v % 2 === 1) {
         const bb = new GeoBuilder();
@@ -383,6 +403,16 @@ export class Scenery {
         if (r() < 0.55) pl.add(K.buckets[Math.floor(r() * 3)] as THREE.BufferGeometry, -4.9 - r() * 2.5, rz(), r() * 6);
         if (r() < 0.5) pl.add(K.surfboards, -6.5 - r() * 3, rz(), 0.3 + r() * 0.6);
         if (!dusk && v === 2) pl.add(K.lifeguard, -9.5, -14, 0.3, 1, 0, true);
+        // Update 5: dune grass on the back of the beach, kayaks and a volleyball court by day,
+        // flowering bushes at dusk, sails on the horizon
+        if (extras) {
+          for (let i = 0; i < 3; i++) pl.add(K.grass[Math.floor(r() * 3)] as THREE.BufferGeometry, -7.5 - r() * 7, rz(), r() * 6, 0.9 + r() * 0.5);
+          if (!dusk && v === 0) pl.add(K.volleyNet, -11.5, -9, Math.PI / 2, 1, 0, true);
+          if (!dusk && r() < 0.5) pl.add(K.kayaks[Math.floor(r() * 2)] as THREE.BufferGeometry, 6.4 + r(), rz(), 0.3 + r() * 0.5);
+          if (!dusk && v === 3) pl.add(K.windsock, -8.5, -6, 0, 1, 0, true);
+          if (dusk) for (let i = 0; i < 2; i++) pl.add(K.flowerBushes[Math.floor(r() * 3)] as THREE.BufferGeometry, -6.2 - r() * 4, rz(), r() * 6, 0.9 + r() * 0.4);
+          if (r() < 0.45) pl.add(K.sailboats[Math.floor(r() * 3)] as THREE.BufferGeometry, 28 + r() * 16, rz(), r() * 6, 1.4);
+        }
         if (dusk && (v === 0 || v === 3)) pl.add(K.hammock, -10.5, rz(4, 20), 0.2 + r() * 0.4, 1, 0, true);
         if (dusk && v === 1) {
           pl.add(K.bonfire, -7.4, -10, r() * 6, 1, 0, true);
@@ -413,6 +443,8 @@ export class Scenery {
         pl.add(K.seaweed, 6.4, rz(), r() * 6);
         for (let i = 0; i < 2; i++) pl.add(K.burrows[Math.floor(r() * 2)] as THREE.BufferGeometry, (r() < 0.6 ? -1 : 1) * (4.7 + r() * 2.2), rz(), r() * 6);
         if (r() < 0.6) pl.add(K.starClusters[Math.floor(r() * 2)] as THREE.BufferGeometry, -5.5 - r() * 3, rz(), r() * 6);
+        // Update 5: anemones in the shallows
+        if (extras) for (let i = 0; i < 2; i++) pl.add(K.anemones[Math.floor(r() * 2)] as THREE.BufferGeometry, (r() < 0.6 ? -1 : 1) * (4.9 + r() * 2), rz(), r() * 6);
       }
     }
 

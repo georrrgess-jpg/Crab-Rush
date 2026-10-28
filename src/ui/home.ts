@@ -134,7 +134,7 @@ export class HomeScreen {
 
     // ---- logo + goals
     const brand = el('div', 'home-brand');
-    brand.innerHTML = `<h1 class="logo intro" aria-label="Crab Dash"><span class="w w1" data-t="Crab">${HAT_SVG}${split('Crab')}</span><span class="gap-shell">${ICON.shell}</span><span class="w w2" data-t="Dash">${split('Dash')}</span></h1><div class="home-tag"><span class="tagline">Shell Shock</span></div>`;
+    brand.innerHTML = `<h1 class="logo intro" aria-label="Crab Dash"><span class="w w1" data-t="Crab">${HAT_SVG}${split('Crab')}</span><span class="gap-shell">${ICON.shell}</span><span class="w w2" data-t="Dash">${split('Dash')}</span></h1><div class="home-tag"><span class="tagline">Treasure Tide</span></div>`;
     this.goalsChip = el('button', 'goals-chip') as HTMLButtonElement;
     this.goalsChip.type = 'button';
     this.goalsChip.addEventListener('click', (e) => {

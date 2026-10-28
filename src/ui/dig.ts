@@ -109,7 +109,7 @@ export class DigScreen {
     this.grid.classList.toggle('out', st.spades === 0);
     // actions: the museum, and a way to earn spades
     this.actions.innerHTML = '';
-    const museum = btn(`${ICON.trophy}<span>Museum ${st.relics.length}/${RELIC_TOTAL}</span>`, 'blue dig-museum', () => this.openMuseum());
+    const museum = btn(`${ICON.trophy}<span class="dm-col">Museum<small>${st.relics.length}/${RELIC_TOTAL}</small></span>`, 'blue dig-museum', () => this.openMuseum(), `Relic Museum: ${st.relics.length} of ${RELIC_TOTAL}`);
     const play = btn(`${ICON.play}<span>${st.spades === 0 ? 'Play for spades' : 'Play'}</span>`, `big dig-play${st.spades === 0 ? ' glow' : ''}`, () => this.h.play());
     this.actions.append(museum, play);
   }

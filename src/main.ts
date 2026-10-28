@@ -6,6 +6,7 @@ import './ui/screens.css';
 import './ui/v4.css';
 import './ui/cup.css';
 import './ui/u5.css';
+import './ui/theme5.css';
 import { installSizeClass } from './ui/kit';
 import { Game } from './game';
 

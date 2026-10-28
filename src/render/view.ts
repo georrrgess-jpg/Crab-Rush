@@ -816,9 +816,12 @@ export class GameView {
       look = this.vTitleLook.set(16, 0.5, -26);
     } else if (mode === 'shop') {
       const portrait = cam.aspect < 1;
-      pos = this.vTitlePos.set(0, portrait ? 2.0 : 1.9, portrait ? 4.6 : 5.4);
-      // landscape phones: the panel takes half the screen, so the crab moves further left
-      look = this.vTitleLook.set(portrait ? 0 : window.innerHeight < 480 ? 2.9 : 1.5, portrait ? -0.25 : 0.75, 0);
+      // portrait: the Wardrobe panel fills the lower ~60%, so the crab is framed in the top band
+      // (looking below it lifts it up the screen); landscape phones: the panel takes half the
+      // screen, so the crab moves further left
+      const phone = portrait && cam.aspect < 0.7;
+      pos = this.vTitlePos.set(0, portrait ? (phone ? 2.3 : 2.0) : 1.9, portrait ? (phone ? 5.2 : 4.6) : 5.4);
+      look = this.vTitleLook.set(portrait ? 0 : window.innerHeight < 480 ? 2.9 : 1.5, portrait ? (phone ? -1.35 : -0.25) : 0.75, 0);
     } else {
       pos = runPos;
       look = runLook;

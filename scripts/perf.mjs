@@ -30,6 +30,9 @@ try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     await page.goto(`${base}?shots&reset&god&quality=${tier}`);
     await page.waitForFunction(() => window.__crab?.ready);
+    // the Wardrobe portraits render in the background shortly after boot: let them finish so their
+    // offscreen draws are not counted in a measured frame
+    await page.waitForFunction(() => Object.keys(window.__crab.game.shop.thumbs?.hats ?? {}).length > 0, null, { timeout: 60000 }).catch(() => {});
     const budget = await page.evaluate((t) => window.__crab.budgets()[t], tier);
     const rows = [];
     let peakC = 0;

@@ -162,5 +162,9 @@ html[data-size='short'] .dig-chest { padding: 4px 8px; }
 .mc-art .a-chest { animation: aisle 2.6s ease-in-out infinite; }
 html[data-size='compact'] .dig .kit-wallet { display: none; }
 html[data-size='short'] .dig-grid { width: min(100%, calc((100vh - 200px) * 1.2)); }
-.dig-museum span { white-space: nowrap; }
+.dig-museum .dm-col { display: flex; flex-direction: column; align-items: flex-start; line-height: 1; }
+.dig-museum .dm-col small { font-size: 13px; opacity: 0.9; margin-top: 2px; }
+.dig .page-actions .dig-museum { font-size: 18px; padding-left: 0.6em; padding-right: 0.7em; }
 .dig-legend small { font-size: 12px; }
+.dig .page-actions .dig-museum { flex: 0 0 auto; }
+.race-end .res-buttons .btn.big { padding-left: 0.6em; padding-right: 0.6em; font-size: clamp(22px, 3.6vmin, 32px); }

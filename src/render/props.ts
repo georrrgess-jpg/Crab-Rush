@@ -680,3 +680,124 @@ export function bonfireFlame(): THREE.BufferGeometry {
   b.cone(0xffe14a, 0.15, 0.45, [-0.02, 0.45, 0.04], [0, 1.0, 0], 5);
   return addWind(b.build(), (x, y) => -Math.max(0, y - 0.3) * 0.22);
 }
+
+// --------------------------------------------------------------- Update 5 map detail (UPDATE5_PLAN.md §1)
+/** a tuft of dune grass: thin blades that sway */
+export function duneGrass(seed: number): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + r();
+    const h = 0.45 + r() * 0.4;
+    b.cone(i % 3 === 0 ? 0xb8c46a : 0x8fb04e, 0.035, h, [Math.cos(a) * 0.12, h / 2, Math.sin(a) * 0.12], [Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35], 3);
+  }
+  b.sphere(0xe9c37e, 0.2, [0, 0, 0], [1.4, 0.35, 1.2], 6);
+  return addWind(b.build(), (x, y) => Math.max(0, y) * 0.16);
+}
+
+/** a beach volleyball net between two posts, with a ball in the sand */
+export function volleyNet(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  for (const z of [-2.2, 2.2]) {
+    b.cyl(0xf2f2ee, 0.06, 0.07, 2.4, [0, 1.2, z], [0, 0, 0], 6);
+    b.sphere(0xe53935, 0.08, [0, 2.42, z], [1, 1, 1], 6);
+  }
+  b.box(0xf8f8f2, 0.03, 0.06, 4.4, [0, 2.3, 0]);
+  b.box(0x3a4a5a, 0.015, 0.6, 4.3, [0, 1.95, 0]).paint((x, y, z, c) => {
+    if ((Math.floor((y - 1.65) * 14) + Math.floor((z + 2.2) * 10)) % 2 === 0) c.multiplyScalar(1.6);
+  });
+  b.box(0xf8f8f2, 0.03, 0.05, 4.4, [0, 1.65, 0]);
+  b.sphere(0xffd23a, 0.2, [0.8, 0.2, 1.1], [1, 1, 1], 10).paint((x, y, z, c) => {
+    if (Math.abs(Math.atan2(z - 1.1, x - 0.8)) % 1.05 < 0.35) c.set(0x2f6fd6);
+  });
+  return b.build();
+}
+
+/** a kayak pulled up on the shore, paddle across it */
+export function kayak(col: number): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.sphere(col, 0.5, [0, 0.2, 0], [0.62, 0.42, 3.4], 12);
+  b.sphere(0x2a2a30, 0.22, [0, 0.36, 0.1], [0.9, 0.3, 1.6], 8);
+  b.box(new THREE.Color(col).multiplyScalar(0.75).getHex(), 0.66, 0.04, 0.1, [0, 0.33, 1.1]);
+  b.cyl(0xe8e8e0, 0.025, 0.025, 2.2, [0, 0.45, 0.2], [0, 0, Math.PI / 2 - 0.2], 5);
+  for (const s of [-1, 1]) b.sphere(0xffd23a, 0.12, [s * 1.05, 0.45 + s * 0.2, 0.2], [1, 0.25, 1.6], 6, [0, 0, -0.2]);
+  return b.build();
+}
+
+/** a striped windsock on a pole */
+export function windsock(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0xe8e8e0, 0.05, 0.06, 3.2, [0, 1.6, 0], [0, 0, 0], 6);
+  for (let i = 0; i < 4; i++) b.cyl(i % 2 ? 0xffffff : 0xff5a3a, 0.2 - i * 0.03, 0.17 - i * 0.03, 0.3, [0.32 + i * 0.3, 3.0 - i * 0.04, 0], [0, 0, Math.PI / 2 + 0.1], 8);
+  return addWind(b.build(), (x) => Math.max(0, x) * 0.2);
+}
+
+/** a stack of barrels for the pier */
+export function barrels(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const at: V3[] = [[0, 0.45, 0], [0.75, 0.45, 0.1], [0.38, 1.33, 0.05]];
+  for (const p of at) {
+    b.lathe(0x8a5a2b, [[0.3, -0.42], [0.36, -0.2], [0.38, 0], [0.36, 0.2], [0.3, 0.42], [0, 0.42]], 10, p);
+    for (const dy of [-0.26, 0.26]) b.torus(0x4a4a50, 0.355, 0.02, [p[0], p[1] + dy, p[2]], [Math.PI / 2, 0, 0], 10);
+  }
+  return b.build();
+}
+
+/** a life ring hung on a post */
+export function lifeRing(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0x8a5a2b, 0.08, 0.09, 1.6, [0, 0.8, 0], [0, 0, 0], 6);
+  b.torus(0xff4a3a, 0.3, 0.08, [0, 1.15, 0.12], [0, 0, 0], 12).paint((x, y, z, c) => {
+    const a = Math.atan2(y - 1.15, x);
+    if (Math.floor((a + Math.PI) / (Math.PI / 4)) % 2 === 0) c.set(0xffffff);
+  });
+  return b.build();
+}
+
+/** a flower planter for the boardwalk */
+export function planter(seed: number): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  b.box(0x9a6a3a, 1.2, 0.5, 0.5, [0, 0.25, 0]);
+  b.box(0x5a8a3a, 1.1, 0.12, 0.4, [0, 0.52, 0]);
+  const cols = [0xff5a8a, 0xffd23a, 0xff8a2a, 0xffffff, 0xb06ad6];
+  for (let i = 0; i < 7; i++) b.sphere(cols[Math.floor(r() * cols.length)] as number, 0.09, [-0.45 + i * 0.15, 0.62 + r() * 0.12, (r() - 0.5) * 0.25], [1, 0.8, 1], 6);
+  return b.build();
+}
+
+/** a cluster of sea anemones for the tide pools */
+export function anemones(seed: number): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  for (let k = 0; k < 3; k++) {
+    const x = (r() - 0.5) * 0.7;
+    const z = (r() - 0.5) * 0.7;
+    const col = [0xff6ab0, 0x9a6aff, 0x3fd6c0][k] as number;
+    b.cyl(new THREE.Color(col).multiplyScalar(0.7).getHex(), 0.1, 0.12, 0.18, [x, 0.09, z], [0, 0, 0], 7);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      b.cone(col, 0.025, 0.22, [x + Math.cos(a) * 0.07, 0.27, z + Math.sin(a) * 0.07], [Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5], 3);
+    }
+  }
+  return addWind(b.build(), (x, y) => Math.max(0, y - 0.18) * 0.25);
+}
+
+/** a hibiscus bush with flowers (sunset beach) */
+export function flowerBush(seed: number, col: number): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  for (let i = 0; i < 3; i++) b.sphere(i % 2 ? 0x2f8a42 : 0x3fa34e, 0.44 - i * 0.04, [(r() - 0.5) * 0.8, 0.35 + r() * 0.3, (r() - 0.5) * 0.6], [1, 0.85, 1], 6);
+  for (let i = 0; i < 5; i++) b.sphere(i % 3 ? col : 0xffffff, 0.1, [(r() - 0.5) * 0.9, 0.55 + r() * 0.45, 0.25 + r() * 0.15], [1, 0.6, 1], 4);
+  return addWind(b.build(), (x, y) => Math.max(0, y - 0.4) * 0.04);
+}
+
+/** a sailing boat far offshore */
+export function sailboat(col: number): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.sphere(0xf8f8f2, 0.6, [0, 0, 0], [0.5, 0.3, 2.2], 7);
+  b.cyl(0x8a5a2b, 0.04, 0.04, 3.2, [0, 1.6, 0], [0, 0, 0], 5);
+  b.cone(col, 1.0, 2.6, [0, 1.6, -0.45], [0, 0, 0], 3, [0.05, 1, 1]);
+  b.cone(0xffffff, 0.7, 1.9, [0, 1.3, 0.55], [0, 0, 0], 3, [0.05, 1, 1]);
+  return b.build();
+}
