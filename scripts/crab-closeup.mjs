@@ -25,7 +25,9 @@ const body = opt('body', 'sandy');
 const hat = opt('hat', 'straw');
 await page.evaluate(([b, h]) => { window.__crab.setState('title'); window.__crab.wear('bodies', b); window.__crab.wear('hats', h); window.__crab.frames(10); }, [body, hat]);
 const files = [];
-const views = [[0, 1.25, 2.6], [1.8, 1.4, 1.9], [2.6, 1.1, 0], [0.4, 1.5, -2.6]];
+// --eyes: tight shots of the eyes (front, three-quarter, side, a blink)
+const eyes = args.includes('--eyes');
+const views = eyes ? [[0, 1.35, 1.25], [0.8, 1.4, 1.0], [1.25, 1.3, 0.35], [-0.5, 1.55, 1.1]] : [[0, 1.25, 2.6], [1.8, 1.4, 1.9], [2.6, 1.1, 0], [0.4, 1.5, -2.6]];
 for (let i = 0; i < views.length; i++) {
   const [x, y, z] = views[i];
   await page.evaluate(([x, y, z]) => { window.__crab.cam(x, y, z); window.__crab.frames(3); }, [x, y, z]);
@@ -33,7 +35,7 @@ for (let i = 0; i < views.length; i++) {
   await page.screenshot({ path: f, clip: { x: 400, y: 0, width: 800, height: 450 } });
   files.push(f);
 }
-const out = path.resolve(`docs/screenshots/${label}-closeup-${body}.png`);
+const out = path.resolve(`docs/screenshots/${label}-${eyes ? 'eyes' : 'closeup'}-${body}.png`);
 execSync(`convert ${files.map((f) => `"${f}"`).join(' ')} -resize 600x +append "${out}" && rm ${files.map((f) => `"${f}"`).join(' ')}`);
 console.log('saved', path.relative(process.cwd(), out));
 await browser.close();
