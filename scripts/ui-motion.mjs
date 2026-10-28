@@ -46,12 +46,16 @@ async function strip(name, start, times) {
 await strip('morph', () => document.querySelector('#home .mode-card.daily').click(), [0, 90, 180, 280, 380, 520]);
 await page.evaluate(() => window.__crab.setState('title'));
 await strip('sheet', () => { window.__crab.setState('title'); document.querySelector('#home .tab:last-child').click(); }, [0, 80, 160, 240, 360]);
-await strip('gifts', () => {
-  const d = window.__crab.game.save.data;
-  d.cove.lastGift = Date.now() - 4 * 3600_000;
-  window.__crab.setState('cove');
+await strip('dig', () => {
+  window.__crab.game.save.data.dig.spades = 10;
+  window.__crab.setState('dig');
   window.__crab.frames(10);
-  document.querySelector('#cove .cove-gift').click();
-}, [0, 150, 300, 450, 600, 800]);
+  const g = window.__crab.game;
+  const site = g.save.data.dig;
+  void site;
+  // the dynamite tile blasts its neighbours: the busiest dig
+  const i = [...Array(30).keys()].find((k) => document.querySelector(`#dig .dt[data-i="${k}"]`) && window.__crab.digKind?.(k) === 'dynamite') ?? g.digScreen.pick(true);
+  document.querySelector(`#dig .dt[data-i="${i}"]`).click();
+}, [0, 120, 240, 380, 520, 700]);
 await browser.close();
 server.kill();

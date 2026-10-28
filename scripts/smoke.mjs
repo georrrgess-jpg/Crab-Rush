@@ -224,29 +224,37 @@ try {
   await fr(3);
   check((await st()).state === 'cup', "its Try Crab Cup button opens Crab Cup");
 
-  // ---------------- Crab Cove: gifts, decorations, friends
-  await page.evaluate(() => { window.__crab.setState('title'); window.__crab.setDate('2026-05-01T10:00:00'); });
-  await page.click('#home .mode-card.cove');
+  // ---------------- Treasure Dig (Update 5): spades, prizes, relics, a cleared site
+  await page.evaluate(() => { window.__crab.setState('title'); });
+  await page.click('#home .mode-card.dig');
   await fr(3);
-  check((await st()).state === 'cove' && (await page.isVisible('#cove .cove-gift')), 'Crab Cove opens from its Home card');
-  check((await page.evaluate(() => window.__crab.game.save.data.friends.moved)).includes('shelly'), 'Shelly moves into the Cove on the first visit');
-  await page.evaluate(() => { window.__crab.game.save.data.cove.lastGift = new Date('2026-05-01T07:00:00').getTime(); window.__crab.game.save.data.cove.banked = 0; });
-  await fr(70);
-  const sh0 = await page.evaluate(() => window.__crab.game.save.data.shells);
-  // the ready button pulses forever, so it never counts as "stable": wait for it, then click
-  await page.waitForSelector('#cove .cove-gift.ready:not([disabled])');
-  await page.click('#cove .cove-gift', { force: true });
-  const sh1 = await page.evaluate(() => window.__crab.game.save.data.shells);
-  check(sh1 - sh0 === 120, `three hours of Tide Gifts pay 120 shells (${sh1 - sh0})`);
-  await page.evaluate(() => { window.__crab.grant(5000); });
-  await page.click('#cove [data-decor="tiki"]');
-  const cv = await page.evaluate(() => ({ owned: window.__crab.game.save.data.cove.owned, plots: window.__crab.game.save.data.cove.plots }));
-  check(cv.owned.includes('tiki') && cv.plots.includes('tiki'), 'buying a decoration places it on the island');
-  check((await page.evaluate(() => window.__crab.game.save.data.friends.moved.length)) >= 1, 'comfort brings friends');
+  check((await st()).state === 'dig' && (await page.locator('#dig .dig-grid .dt').count()) === 30, 'Treasure Dig opens from its Home card with a 6 × 5 site');
+  const sp0 = await page.evaluate(() => window.__crab.game.save.data.dig.spades);
+  await page.evaluate(() => document.querySelector(`#dig .dt[data-i="${window.__crab.game.digScreen.pick(false)}"]`).click());
+  await page.waitForTimeout(700);
+  const dg1 = await page.evaluate(() => window.__crab.game.save.data.dig);
+  check(dg1.dug.length >= 1 && (dg1.spades === sp0 - 1 || dg1.spades >= sp0), 'digging a tile spends a spade and opens it');
+  await page.evaluate(() => { window.__crab.game.save.data.dig.spades = 40; });
+  for (let k = 0; k < 9; k++) {
+    const i = await page.evaluate(() => window.__crab.game.digScreen.pick(true));
+    if (i < 0 || (await page.isVisible('.dig-clear'))) break;
+    await page.evaluate((n) => document.querySelector(`#dig .dt[data-i="${n}"]`).click(), i);
+    await page.waitForTimeout(450);
+  }
+  await page.waitForSelector('.dig-clear', { timeout: 4000 }).catch(() => {});
+  const dg2 = await page.evaluate(() => window.__crab.game.save.data.dig);
+  check(dg2.cleared === 1 && dg2.site === 2 && dg2.relics.length === 3 && (await page.isVisible('.dig-clear')), 'finding all three relics clears the site and opens its chest');
+  await page.click('.dig-clear .btn.big');
+  await fr(2);
+  check(!(await page.isVisible('.dig-clear')) && (await page.locator('#dig .dt.dug').count()) === 0, 'Next site starts a fresh dig');
   await page.keyboard.press('Escape');
   await fr(2);
-  check((await st()).state === 'title', 'Escape leaves the Cove');
-  await page.evaluate(() => window.__crab.setDate(null));
+  check((await st()).state === 'title', 'Escape leaves Treasure Dig');
+  await page.evaluate(() => window.__crab.setState('trophies'));
+  await fr(2);
+  check((await st()).state === 'trophies' && (await page.locator('#trophies .trophy').count()) === 12, 'the Trophy Shelf has its own page');
+  await page.keyboard.press('Escape');
+  await fr(2);
 
   // ---------------- Sunny Pass: claim
   await page.evaluate(() => { window.__crab.xp(400); window.__crab.setState('pass'); });

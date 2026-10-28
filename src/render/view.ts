@@ -20,14 +20,12 @@ import { NIGHT_PALETTE, ZONE_PALETTES, clonePalette, lerpPalette } from './palet
 import { Renderer } from './renderer';
 import { Scenery } from './scenery';
 import { ShellRenderer } from './shells';
-import { CoveScene } from './cove';
-import { decorGeometry } from './models/decor';
 import { Sky } from './sky';
 import { ToyLighting, toyVariants } from './shaders/toy';
 import { sandTexture } from './textures';
 import { Rivals } from './rivals';
 
-export type CamMode = 'title' | 'intro' | 'run' | 'shop' | 'map' | 'cove';
+export type CamMode = 'title' | 'intro' | 'run' | 'shop' | 'map';
 
 const POWER_COLORS: Record<PowerKind, number> = { magnet: 0xff5a4a, shield: 0x6fd0ff, rider: 0x3fd6d0 };
 
@@ -64,10 +62,6 @@ export class GameView {
   private cineT = -1;
   private cineCue: ((name: string) => void) | null = null;
   private readonly cineV = [0, 0, 0, 0, 0, 0];
-  /** Crab Cove (UPDATE3_PLAN.md §6.3): built on first visit */
-  private coveScene: CoveScene | null = null;
-  /** shells waiting in the Cove gift pile (drives the pile's size) */
-  coveGifts = 0;
   /** smoothed menu camera (screens glide instead of cutting) */
   private menuCamInit = false;
   /** Home sky follows the local clock: golden hour (0..1) and night (0..1) blends on menus */
@@ -286,13 +280,6 @@ export class GameView {
     this.parY = y;
   }
 
-  get cove(): CoveScene {
-    if (!this.coveScene) {
-      this.coveScene = new CoveScene(this.mats);
-      this.renderer.scene.add(this.coveScene.group);
-    }
-    return this.coveScene;
-  }
 
   setDance(id: string): void {
     this.crab.dance = id;
@@ -641,8 +628,7 @@ export class GameView {
    */
   frame(w: World, alpha: number, dt: number, mode: CamMode, introT = 1): void {
     this.time += dt;
-    this.menuLook = mode === 'title' || mode === 'shop' || mode === 'map' || mode === 'cove';
-    if (this.coveScene) this.coveScene.group.visible = mode === 'cove';
+    this.menuLook = mode === 'title' || mode === 'shop' || mode === 'map';
     if (this.cineT >= 0) {
       const prev = this.cineT;
       this.cineT += dt;
@@ -662,7 +648,7 @@ export class GameView {
         this.cineCue?.('done');
       }
     }
-    const running = w.mode !== 'idle' && mode !== 'title' && mode !== 'shop' && mode !== 'map' && mode !== 'cove';
+    const running = w.mode !== 'idle' && mode !== 'title' && mode !== 'shop' && mode !== 'map';
     const dist = running ? w.prevDist + (w.dist - w.prevDist) * alpha : w.dist;
     const p = w.player;
     const px = running ? p.prevX + (p.x - p.prevX) * alpha : 0;
@@ -824,20 +810,6 @@ export class GameView {
         pos = titlePos.lerp(runPos, e);
         look = titleLook.lerp(runLook, e);
       }
-    } else if (mode === 'cove') {
-      // fly out to the Cove island in the bay
-      // portrait: steep and high so the island sits above the drawer and the plots don't crowd;
-      // landscape: shifted so the island sits left of the side drawer
-      const c = this.cove.center;
-      const portrait = cam.aspect < 1;
-      if (portrait) {
-        pos = this.vTitlePos.set(c.x, c.y + 24, c.z + 12);
-        look = this.vTitleLook.set(c.x, c.y, c.z + 4.6);
-      } else {
-        const sx = 4.2 * Math.min(1.4, cam.aspect / 1.6);
-        pos = this.vTitlePos.set(c.x + sx, c.y + 15, c.z + 11.5);
-        look = this.vTitleLook.set(c.x + sx, c.y, c.z + 0.6);
-      }
     } else if (mode === 'map') {
       // Island Hop: the camera rises and looks out over the ocean toward the islands
       pos = this.vTitlePos.set(3.5, 6.5, 8);
@@ -860,7 +832,7 @@ export class GameView {
       this.camPos.set(v[0] as number, v[1] as number, v[2] as number).lerp(pos, e);
       this.camLook.set(v[3] as number, v[4] as number, v[5] as number).lerp(look, e);
       this.menuCamInit = true;
-    } else if ((mode === 'title' || mode === 'shop' || mode === 'map' || mode === 'cove') && this.menuCamInit && !this.reduceMotion && this.smoothMenuCam) {
+    } else if ((mode === 'title' || mode === 'shop' || mode === 'map') && this.menuCamInit && !this.reduceMotion && this.smoothMenuCam) {
       // menu screens glide between their cameras instead of cutting
       const f = Math.min(1, dt * 5);
       this.camPos.lerp(pos, f);
@@ -868,7 +840,7 @@ export class GameView {
     } else {
       this.camPos.copy(pos);
       this.camLook.copy(look);
-      this.menuCamInit = mode === 'title' || mode === 'shop' || mode === 'map' || mode === 'cove';
+      this.menuCamInit = mode === 'title' || mode === 'shop' || mode === 'map';
     }
     if (this.trauma > 0) {
       // smooth noise-like shake (sums of sines) scaled by trauma²
@@ -898,7 +870,6 @@ export class GameView {
     if (this.feet.mesh.visible) this.feet.update(dt, dist);
     this.life.update(dt, this.time, dist, zone, this.night);
     this.updateChase(w, dt);
-    if (mode === 'cove') this.coveScene?.update(dt, this.coveGifts, cam.quaternion);
     this.dust.update(dt, dist, cam.quaternion);
     this.sparks.update(dt, dist, cam.quaternion);
     if (this.trail.mesh.visible) this.trail.update(dt, dist, cam.quaternion);
@@ -979,10 +950,6 @@ export class GameView {
     };
   }
 
-  /** Crab Cove decoration portraits (framed on each model's bounding box). */
-  async renderDecorThumbs(ids: readonly string[], size = 128): Promise<Record<string, string>> {
-    return this.renderGeoThumbs(ids.map((id) => ({ id, geo: () => decorGeometry(id) })), size);
-  }
 
   /** Portraits of arbitrary geometries (model review: scripts/models.mjs), framed on their bounding box. */
   async renderGeoThumbs(items: { id: string; geo: () => THREE.BufferGeometry; mat?: THREE.Material; yaw?: number }[], size = 128): Promise<Record<string, string>> {

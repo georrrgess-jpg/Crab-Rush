@@ -48,3 +48,119 @@ html[data-size='short'] .rv-ring { margin-top: 0; width: 76px; height: 76px; }
 html[data-size='short'] .rv-num { font-size: 34px; }
 html[data-size='short'] .rv-go { width: auto; flex: 1 1 60%; }
 html[data-size='short'] .rv-no { width: auto; flex: 1 1 30%; }
+
+/* ---- Treasure Dig */
+.dig .page-card { max-height: 100%; }
+.spade-chip { display: inline-flex; align-items: center; gap: 4px; height: 40px; padding: 0 12px 0 6px; border-radius: var(--r-pill); background: linear-gradient(180deg, #ffe27a, #ffb020); border: 3px solid #fff; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18); color: #6a3a00; font-family: var(--font-display); font-size: 20px; }
+.spade-chip svg { width: 28px; height: 28px; }
+.spade-chip b { font-weight: 400; }
+.spade-chip.empty { filter: saturate(0.3); }
+.dig-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; }
+.dig-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; }
+.dig-site { display: flex; flex-direction: column; min-width: 0; }
+.ds-n { font-family: var(--font-display); font-size: 24px; line-height: 1; color: var(--c-navy-800); }
+.ds-theme { font-size: 13px; color: var(--c-teal-700); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dig-relics { display: flex; gap: 6px; }
+.rl { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 46px; padding: 4px 2px 3px; border-radius: 12px; background: rgba(233, 195, 126, 0.35); border: 2px dashed rgba(154, 106, 42, 0.45); }
+.rl .rl-art { width: 30px; height: 30px; display: inline-flex; opacity: 0.55; }
+.rl .rl-art svg { width: 100%; height: 100%; }
+.rl-pips { display: flex; gap: 2px; }
+.rl-pips i { width: 6px; height: 6px; border-radius: 3px; background: rgba(154, 106, 42, 0.35); }
+.rl-pips i.on { background: #ff8a1f; }
+.rl.got { background: linear-gradient(180deg, #fff6c8, #ffd96a); border: 2px solid #fff; box-shadow: 0 0 12px rgba(255, 200, 60, 0.7); animation: relicpop 0.5s var(--ease-back); }
+.rl.got .rl-art { opacity: 1; }
+@keyframes relicpop { 40% { transform: scale(1.25) rotate(-6deg); } }
+.dig-chest { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 14px; background: linear-gradient(90deg, rgba(255, 210, 58, 0.28), rgba(255, 138, 31, 0.12)); color: var(--c-navy-800); }
+.dig-chest .dc-ico { width: 34px; height: 34px; flex: none; display: inline-flex; animation: acal 3s ease-in-out infinite; }
+.dig-chest .dc-ico svg { width: 100%; height: 100%; }
+.dig-chest .dc-col { display: flex; flex-direction: column; min-width: 0; }
+.dig-chest b { font-family: var(--font-display); font-weight: 400; font-size: 16px; }
+.dig-chest small { display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; font-size: 13px; color: var(--c-teal-700); }
+.dig-chest small svg { width: 16px; height: 16px; }
+.dig-chest em { font-style: normal; color: #c23656; font-weight: 600; }
+.dig-legend { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--c-teal-700); }
+.dig-legend .hl { padding: 1px 8px; border-radius: var(--r-pill); color: #fff; font-family: var(--font-display); font-size: 12px; }
+.hl.hot { background: #ff4a3a; }
+.hl.warm { background: #ffa020; }
+.hl.cold { background: #4a9ad8; }
+.dig-field { padding: 10px; border-radius: 20px; background: linear-gradient(180deg, #e9c37e, #d6a85c); box-shadow: inset 0 4px 10px rgba(120, 70, 20, 0.35), 0 2px 0 #fff; }
+.dig-grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 6px; width: min(100%, 460px); margin: 0 auto; }
+.dig-grid.shake { animation: digshake 0.4s; }
+@keyframes digshake { 20% { transform: translate(-4px, 2px); } 40% { transform: translate(4px, -2px); } 60% { transform: translate(-3px, 1px); } 80% { transform: translate(2px, 0); } }
+.dt { position: relative; aspect-ratio: 1; min-height: 40px; padding: 0; border: 0; border-radius: 12px; cursor: pointer; background: radial-gradient(circle at 40% 30%, #fff1c8, #f6dda6 45%, #e2b86e); box-shadow: inset 0 -4px 0 rgba(150, 100, 40, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.7), 0 3px 0 rgba(120, 70, 20, 0.35); overflow: hidden; animation: dtin 0.35s calc(var(--d, 0) * 1s) var(--ease-back) both; transition: transform var(--d-fast) var(--ease-out); }
+.dt:not(.dug):hover { transform: translateY(-2px); }
+.dt:not(.dug):active { transform: scale(0.92); }
+@keyframes dtin { from { transform: scale(0.6); opacity: 0; } }
+.dt .dt-sand { position: absolute; inset: 0; background: radial-gradient(circle at 70% 70%, rgba(255, 255, 255, 0.35) 0 2px, transparent 3px), radial-gradient(circle at 25% 60%, rgba(160, 110, 50, 0.3) 0 2px, transparent 3px), radial-gradient(circle at 60% 25%, rgba(160, 110, 50, 0.25) 0 1.5px, transparent 2.5px); }
+.dt.dug { cursor: default; background: radial-gradient(circle at 50% 55%, #7a5228, #a8743f 60%, #c99a5a); box-shadow: inset 0 5px 10px rgba(50, 25, 5, 0.6); }
+.dt.dug .dt-hole { position: absolute; inset: 5px; border-radius: 50%; box-shadow: 0 0 0 3px var(--heat, transparent), 0 0 12px 2px var(--heat, transparent); opacity: 0.9; }
+.dt.h-hot { --heat: #ff4a3a; }
+.dt.h-warm { --heat: #ffa020; }
+.dt.h-cold { --heat: #4a9ad8; }
+.dt.h-relic { --heat: #ffe27a; background: radial-gradient(circle at 50% 50%, #fff3a0, #ffc93a 55%, #d8902a); }
+.dt .dt-ico { position: absolute; inset: 18% 18% 26%; display: grid; place-items: center; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.35)); }
+.dt .dt-ico svg { width: 100%; height: 100%; }
+.dt .dt-ico.relic { inset: 12%; }
+.dt b { position: absolute; left: 0; right: 0; bottom: 2px; text-align: center; font-family: var(--font-display); font-weight: 400; font-size: 13px; color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6); }
+.dt.fresh .dt-ico { animation: dtpop 0.45s var(--ease-back); }
+.dt.fresh.k-relic { animation: dtrelic 0.6s var(--ease-back); }
+@keyframes dtpop { from { transform: scale(0) translateY(10px); } 60% { transform: scale(1.3) translateY(-6px); } }
+@keyframes dtrelic { 40% { transform: scale(1.18); box-shadow: 0 0 22px 8px rgba(255, 220, 80, 0.9); } }
+.dig-grid.out .dt:not(.dug) { filter: saturate(0.6) brightness(0.96); }
+.sand-grain { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #e2b86e; box-shadow: 0 0 0 1px rgba(150, 100, 40, 0.3); pointer-events: none; z-index: 30; }
+.dig-play.glow { animation: playglow 1.6s ease-in-out infinite; }
+.dig .page-actions .dig-museum { flex: 0 1 auto; }
+.dig .page-actions .dig-play { flex: 1 1 auto; }
+/* the site chest celebration */
+.dig-clear { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: radial-gradient(ellipse at 50% 45%, rgba(255, 200, 80, 0.35), rgba(40, 15, 60, 0.7)); animation: rt-in 0.3s both; }
+.dcl-card { position: relative; width: min(100%, 360px); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 18px 16px; border-radius: 28px; background: linear-gradient(180deg, #fffaf0, #fff0d0); border: 4px solid #fff; box-shadow: 0 20px 40px rgba(60, 20, 0, 0.4); overflow: hidden; animation: rvin 0.45s var(--ease-back) both; }
+.dcl-rays { position: absolute; left: 50%; top: 60px; width: 420px; height: 420px; margin: -210px 0 0 -210px; background: repeating-conic-gradient(rgba(255, 210, 58, 0.25) 0 12deg, transparent 12deg 24deg); animation: arays 8s linear infinite; pointer-events: none; }
+.dcl-relics { position: relative; display: flex; gap: 10px; }
+.dcl-relics span { width: 64px; height: 64px; display: inline-flex; filter: drop-shadow(0 4px 4px rgba(120, 60, 0, 0.35)); animation: dclrel 0.6s calc(0.2s + var(--i) * 0.15s) var(--ease-back) both; }
+.dcl-relics svg { width: 100%; height: 100%; }
+@keyframes dclrel { from { transform: translateY(40px) scale(0.3) rotate(-30deg); opacity: 0; } }
+.dcl-card h3 { position: relative; margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 30px; color: #ff6a2a; text-shadow: 0 2px 0 #fff; }
+.dcl-card p { position: relative; margin: -4px 0 4px; color: var(--c-teal-700); font-size: 14px; }
+.dcl-rw { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.dcl-rw span { display: inline-flex; align-items: center; gap: 3px; padding: 4px 12px; border-radius: var(--r-pill); background: #fff; box-shadow: var(--e-1); font-family: var(--font-display); font-size: 17px; color: #c46a0a; animation: risein 0.4s calc(0.6s + var(--i) * 0.12s) var(--ease-back) both; }
+.dcl-rw svg { width: 22px; height: 22px; }
+.dcl-card .btn.big { position: relative; width: 100%; margin-top: 6px; }
+/* the museum sheet */
+.mu-count { font-size: 14px; color: var(--c-teal-700); margin-bottom: 6px; }
+.mu-count b { font-family: var(--font-display); font-size: 20px; color: #ff8a1f; font-weight: 400; }
+.mu-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 8px; }
+.mu-set { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 14px; background: #fff; box-shadow: var(--e-1); }
+.mu-name { font-family: var(--font-display); color: var(--c-navy-800); font-size: 15px; }
+.mu-items { display: flex; gap: 6px; }
+.mu-r { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.mu-r .mu-art { width: 40px; height: 40px; display: inline-flex; opacity: 0.4; }
+.mu-r.got .mu-art { opacity: 1; }
+.mu-r .mu-art svg { width: 100%; height: 100%; }
+.mu-r small { font-size: 12px; color: var(--c-teal-700); line-height: 1.1; }
+/* layouts */
+html[data-size='compact'] .dig-grid { gap: 5px; }
+html[data-size='compact'] .dig-field { padding: 8px; }
+html[data-size='compact'] .dig-legend small { display: none; }
+html[data-size='short'] .dig-card, html[data-size='regular'][data-orient='land'] .dig-card { width: min(100%, 920px); }
+html[data-size='short'] .dig-body, html[data-size='regular'][data-orient='land'] .dig-body { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: start; }
+html[data-size='short'] .dig-info, html[data-size='regular'][data-orient='land'] .dig-info { grid-template-columns: minmax(0, 1fr); }
+html[data-size='short'] .dig-legend small { display: none; }
+html[data-size='short'] .dig-chest { padding: 4px 8px; }
+/* trophies page */
+.tr-body { gap: 10px; }
+.tp-none { font-size: 13px; color: var(--c-teal-700); }
+/* Home: the Treasure Dig card */
+.mode-card.dig { background: linear-gradient(180deg, #ffcf4a, #ff9a2a 65%, #f07a1a); box-shadow: inset 0 -5px 0 #b8540a, inset 0 2px 0 rgba(255, 255, 255, 0.45), 0 4px 0 rgba(0, 0, 0, 0.16); }
+.mode-card.dig .mc-badge svg { width: 18px; height: 18px; }
+.home.enter .mode-card.dig { animation: risein 0.45s 0.48s var(--ease-back) both; }
+.mc-art .a-shovel { animation: ashovel 1.6s ease-in-out infinite; transform-origin: 70px 40px; }
+@keyframes ashovel { 0%, 100% { transform: rotate(0); } 40% { transform: rotate(-14deg); } 55% { transform: rotate(6deg); } }
+.mc-art .a-sandpuff circle { animation: asmoke 1.6s ease-out infinite; }
+.mc-art .a-spark { animation: aspark 1.8s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.mc-art .a-spark.s2 { animation-delay: 0.9s; }
+@keyframes aspark { 0%, 100% { transform: scale(0.4); opacity: 0.3; } 50% { transform: scale(1.1) rotate(45deg); opacity: 1; } }
+.mc-art .a-chest { animation: aisle 2.6s ease-in-out infinite; }
+html[data-size='compact'] .dig .kit-wallet { display: none; }
+html[data-size='short'] .dig-grid { width: min(100%, calc((100vh - 200px) * 1.2)); }
+.dig-museum span { white-space: nowrap; }
+.dig-legend small { font-size: 12px; }

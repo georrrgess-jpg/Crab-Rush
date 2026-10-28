@@ -309,37 +309,33 @@ const SCENES = {
     await p.evaluate(() => { window.__crab.unlockAll(3); window.__crab.level('pier-4', { intro: true, rush: true }); window.__crab.frames(10); });
     await p.waitForTimeout(500);
   },
-  // ---- Update 3 Phase E: Crab Cove
-  cove: async (p) => {
-    await p.evaluate(() => { window.__crab.setState('cove'); window.__crab.frames(40); });
-    await p.waitForTimeout(3500);
-    await p.evaluate(() => window.__crab.frames(4));
-  },
-  covefull: async (p) => {
+  // ---- Update 5: Treasure Dig, Trophies
+  dig: async (p) => {
     await p.evaluate(() => {
-      const g = window.__crab.game;
-      const d = g.save.data;
-      d.shells = 9000; d.pearls = 140;
-      d.stats.totalShells = 12000; d.stats.totalDistance = 64000; d.stats.runs = 60; d.best = 3400; d.stats.totalHops = 700;
-      const ids = ['tiki', 'bonfire', 'flamingo', 'palms', 'lighthouse', 'chest', 'statue', 'flowers', 'surfboards', 'hammock', 'fountain', 'lanterns'];
-      d.cove.owned = ids.slice();
-      ids.forEach((id, i) => { d.cove.plots[i] = id; });
-      d.cove.lastGift = Date.now() - 3 * 3600_000;
-      window.__crab.setState('cove');
-      window.__crab.frames(40);
+      const d = window.__crab.game.save.data;
+      d.dig.spades = 14; d.dig.relics = ['0:0', '0:1', '0:2', '1:0', '2:1'];
+      window.__crab.setState('dig');
     });
-    // decoration portraits render asynchronously (slow on software GL)
-    await p.waitForFunction(() => Object.keys(window.__crab.game.coveThumbs).length > 0, null, { timeout: 30000 }).catch(() => {});
-    await p.evaluate(() => window.__crab.frames(30));
-    await p.waitForTimeout(300);
+    // dig a few tiles, including a relic piece
+    for (const relic of [false, false, true, false, false, true]) {
+      await p.evaluate((r) => { const i = window.__crab.game.digScreen.pick(r); document.querySelector(`#dig .dt[data-i="${i}"]`).click(); }, relic);
+      await p.waitForTimeout(500);
+    }
+    await p.evaluate(() => window.__crab.frames(10));
+    await p.waitForTimeout(900);
   },
-  covefriends: async (p) => {
-    await p.evaluate(() => { document.querySelector('#cove .wtabs [data-tab="friends"]').click(); window.__crab.frames(4); });
-    await p.waitForTimeout(300);
+  digclear: async (p) => {
+    await p.evaluate(() => { window.__crab.game.save.data.dig.spades = 30; window.__crab.setState('dig'); });
+    for (let k = 0; k < 9; k++) {
+      const done = await p.evaluate(() => { if (document.querySelector('.dig-clear')) return true; const i = window.__crab.game.digScreen.pick(true); if (i < 0) return true; document.querySelector(`#dig .dt[data-i="${i}"]`).click(); return false; });
+      if (done) break;
+      await p.waitForTimeout(450);
+    }
+    await p.waitForTimeout(1600);
   },
-  covetrophies: async (p) => {
-    await p.evaluate(() => { document.querySelector('#cove .wtabs [data-tab="trophies"]').click(); window.__crab.frames(4); });
-    await p.waitForTimeout(300);
+  trophies: async (p) => {
+    await p.evaluate(() => { const d = window.__crab.game.save.data; d.achievements = ['dist:0', 'dist:1', 'best:0', 'shells:0', 'runs:0', 'runs:1', 'runs:2', 'hops:0']; window.__crab.setState('trophies'); window.__crab.frames(4); });
+    await p.waitForTimeout(600);
   },
   stats: async (p) => {
     await p.evaluate(() => window.__crab.setState('stats'));

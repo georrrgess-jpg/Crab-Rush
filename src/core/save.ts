@@ -2,10 +2,10 @@
  * v2 (UPDATE2_PLAN.md §8.2) adds XP/Sunny Pass, the Wardrobe, Island Hop level records, Daily Tide and
  * boosts; v1 blobs migrate transparently. */
 import { defaultDaily, type DailyState } from '../meta/daily';
-import { DECOR_BY_ID, PLOTS, defaultCove, type CoveState } from '../meta/cove';
-import { FRIEND_BY_ID, defaultFriends, type FriendsState } from '../meta/friends';
+import { type DigState, defaultDig, sanitizeDig } from '../meta/dig';
 import { ACHIEVEMENTS } from '../meta/achievements';
 import { PASS_TIERS } from '../meta/xp';
+import { CFG } from '../config';
 import { ITEM_BY_ID, V1_CRAB_HATS, defaultWardrobe, exists, syncFromCrabs, type Slot, type WardrobeState } from '../meta/wardrobe';
 import { type CupState, defaultCupState, sanitizeCup } from '../meta/cup';
 
@@ -45,10 +45,10 @@ export interface LifetimeStats {
   longestRun: number;
 }
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export interface SaveData {
-  v: 4;
+  v: 5;
   shells: number;
   best: number;
   stats: LifetimeStats;
@@ -73,9 +73,8 @@ export interface SaveData {
   chests: number[][];
   /** level ids with a Tide Rush crown */
   crowns: string[];
-  /** Crab Cove: plots, decorations, gifts */
-  cove: CoveState;
-  friends: FriendsState;
+  /** Treasure Dig (Update 5, save v5; replaced Crab Cove) */
+  dig: DigState;
   /** earned trophy keys ("family:tier") */
   achievements: string[];
   /** the title shown on the profile card ('' = automatic) */
@@ -104,7 +103,7 @@ export const SAVE_KEY = 'crabdash.save';
 
 export function defaultSave(): SaveData {
   return {
-    v: 4,
+    v: 5,
     shells: 0,
     best: 0,
     stats: { runs: 0, totalShells: 0, totalDistance: 0, totalHops: 0, totalWaves: 0, totalPowerups: 0, totalCloseShaves: 0, runsByCrab: {}, longestRun: 0 },
@@ -124,8 +123,7 @@ export function defaultSave(): SaveData {
     pearls: 0,
     chests: [[], [], [], []],
     crowns: [],
-    cove: defaultCove(Date.now()),
-    friends: defaultFriends(),
+    dig: defaultDig(),
     achievements: [],
     title: '',
     cup: defaultCupState(),
@@ -219,9 +217,12 @@ export function sanitize(raw: unknown): SaveData {
   const claimed = Array.isArray(r.passClaimed)
     ? [...new Set(r.passClaimed.filter((t): t is number => typeof t === 'number' && Number.isInteger(t) && t >= 1 && t <= PASS_TIERS))]
     : [];
+  // v4 → v5: Crab Cove is gone. Owned decorations are refunded at half price, plus a starter
+  // pile of spades for Treasure Dig.
+  const refund = legacyCoveRefund(r);
   return {
-    v: 4,
-    shells: Math.floor(num(r.shells, 0)),
+    v: 5,
+    shells: Math.floor(num(r.shells, 0)) + refund.shells,
     best: num(r.best, 0),
     stats: {
       runs: num(st.runs, 0),
@@ -258,14 +259,17 @@ export function sanitize(raw: unknown): SaveData {
     daily: sanitizeDaily(r.daily),
     // older saves had no NEW tracking: everything already owned counts as seen
     seen: Array.isArray(r.seen) ? [...new Set(strArr(r.seen).filter((k) => ITEM_BY_ID.has(k)))] : ownedKeys(wardrobe),
-    pearls: Math.floor(num(r.pearls, 0)),
+    pearls: Math.floor(num(r.pearls, 0)) + refund.pearls,
     chests: [0, 1, 2, 3].map((i) => {
       const c = Array.isArray(r.chests) ? (r.chests as unknown[])[i] : null;
       return Array.isArray(c) ? [...new Set(c.filter((k): k is number => k === 0 || k === 1 || k === 2))].sort() : [];
     }),
     crowns: [...new Set(strArr(r.crowns))],
-    cove: sanitizeCove(r.cove),
-    friends: sanitizeFriends(r.friends),
+    dig: (() => {
+      const dg = sanitizeDig(r.dig);
+      if (refund.spades) dg.spades = Math.min(CFG.dig.maxSpades, dg.spades + refund.spades);
+      return dg;
+    })(),
     achievements: [...new Set(strArr(r.achievements).filter((k) => ACHIEVEMENTS.some((a) => a.key === k)))],
     title: typeof r.title === 'string' ? r.title.slice(0, 40) : '',
     cup: sanitizeCup(r.cup),
@@ -303,34 +307,22 @@ function sanitizeDyes(raw: unknown, w: WardrobeState): Record<string, number[]> 
   return out;
 }
 
-function sanitizeCove(raw: unknown): CoveState {
-  const now = Date.now();
-  const c = defaultCove(now);
-  if (!raw || typeof raw !== 'object') return c;
-  const r = raw as Record<string, unknown>;
-  c.owned = [...new Set(strArr(r.owned).filter((id) => DECOR_BY_ID.has(id)))];
-  const plots = Array.isArray(r.plots) ? r.plots : [];
-  for (let i = 0; i < PLOTS; i++) {
-    const id = plots[i];
-    c.plots[i] = typeof id === 'string' && c.owned.includes(id) && !c.plots.includes(id) ? id : null;
-  }
-  // a clock in the future (changed device time) must not freeze the gifts
-  c.lastGift = Math.min(now, num(r.lastGift, now));
-  c.banked = num(r.banked, 0, 0, 1e6);
-  return c;
-}
+/** Crab Cove decoration prices (v4 saves): [cost, 1 = pearls] */
+const LEGACY_DECOR: Record<string, [number, number]> = { starfish: [150, 0], bucket: [150, 0], flowers: [250, 0], chair: [300, 0], ball: [300, 0], bench: [450, 0], torches: [500, 0], surfboards: [650, 0], castle: [800, 0], net: [700, 0], hammock: [1000, 0], bonfire: [1200, 0], rockpool: [1100, 0], lifeguard: [1600, 0], flamingo: [15, 1], palms: [1300, 0], chest: [25, 1], statue: [40, 1], lighthouse: [2600, 0], tiki: [3000, 0], arch: [60, 1], lanterns: [900, 0], fountain: [90, 1], rainbow: [75, 1] };
 
-function sanitizeFriends(raw: unknown): FriendsState {
-  const f = defaultFriends();
-  if (!raw || typeof raw !== 'object') return f;
-  const r = raw as Record<string, unknown>;
-  f.moved = [...new Set(strArr(r.moved).filter((id) => FRIEND_BY_ID.has(id)))];
-  const qs = (r.quests && typeof r.quests === 'object' ? r.quests : {}) as Record<string, unknown>;
-  for (const id of f.moved) {
-    const q = (qs[id] && typeof qs[id] === 'object' ? qs[id] : {}) as Record<string, unknown>;
-    f.quests[id] = { idx: Math.floor(num(q.idx, 0, 0, 3)), base: num(q.base, 0) };
+/** what a v4 save with a Crab Cove gets back on migrating to v5 */
+export function legacyCoveRefund(r: Record<string, unknown>): { shells: number; pearls: number; spades: number } {
+  const cove = r.cove as { owned?: unknown } | undefined;
+  if (!cove || typeof cove !== 'object' || 'dig' in r) return { shells: 0, pearls: 0, spades: 0 };
+  let shells = 0;
+  let pearls = 0;
+  for (const id of new Set(strArr(cove.owned))) {
+    const p = LEGACY_DECOR[id];
+    if (!p) continue;
+    if (p[1]) pearls += Math.floor(p[0] / 2);
+    else shells += Math.floor(p[0] / 2);
   }
-  return f;
+  return { shells, pearls, spades: CFG.dig.legacySpades };
 }
 
 /** string → non-negative integer counts */

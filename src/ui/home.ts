@@ -4,6 +4,7 @@ import type { GoalView } from './ui';
 import { Sheet, Wallet, onSizeClass } from './kit';
 import { morphFrom } from './motion';
 import { CUP_ICON } from './cup';
+import { DIG_ICON } from './dig';
 
 /** Everything the Home screen shows (UPDATE3_PLAN.md §2). */
 export interface HomeData {
@@ -31,8 +32,8 @@ export interface HomeData {
   /** profile card: a portrait of the equipped crab (data URL) and the player's title */
   avatar?: string | null;
   title?: string;
-  /** Crab Cove: gifts waiting, finished quests (null until the Cove opens) */
-  cove?: { gifts: number; ready: boolean; comfort: number } | null;
+  /** Treasure Dig: spades in hand, relics found, current site */
+  dig?: { spades: number; relics: number; total: number; site: number } | null;
   pearls?: number;
   /** Crab Cup: cups cleared, the cup in progress */
   cup?: { cleared: number; total: number; current: string | null; wins: number } | null;
@@ -42,7 +43,8 @@ export interface HomeHandlers {
   play(): void;
   islands(): void;
   daily(): void;
-  cove?(): void;
+  dig?(): void;
+  trophies?(): void;
   cup?(): void;
   wardrobe(): void;
   pass(): void;
@@ -67,12 +69,12 @@ const ART = {
   beach: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ab-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb347"/><stop offset=".55" stop-color="#ff8a3a"/><stop offset="1" stop-color="#ff6a2a"/></linearGradient></defs><rect width="320" height="160" fill="url(#ab-sky)"/><circle class="a-sun" cx="250" cy="52" r="26" fill="#fff3b0" opacity=".9"/><g class="a-waves" fill="rgba(255,255,255,.28)"><path d="M0 112q20-10 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0v60H0z"/></g><path d="M0 130c60-14 140-18 320-6v36H0z" fill="#ffd27a"/><g class="a-palm"><path d="M44 132c2-26 6-46 14-64" stroke="#8a4a1e" stroke-width="6" fill="none" stroke-linecap="round"/><path d="M58 68c-18-10-34-6-42 2 14-2 26 0 42 6zm0 0c14-14 32-14 40-6-14-2-26 0-40 10zm0 0c4-18-4-30-14-34 8 10 10 22 8 34z" fill="#2f9e4a"/></g><g class="a-crab"><ellipse cx="0" cy="0" rx="12" ry="8" fill="#e8402f"/><circle cx="-5" cy="-9" r="3.4" fill="#fff"/><circle cx="5" cy="-9" r="3.4" fill="#fff"/><circle cx="-5" cy="-9" r="1.6" fill="#222"/><circle cx="5" cy="-9" r="1.6" fill="#222"/><path d="M-12-2l-8-6M12-2l8-6" stroke="#e8402f" stroke-width="3.5" stroke-linecap="round"/></g></svg>`,
   islands: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ai-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fc4f0"/><stop offset="1" stop-color="#1f74b8"/></linearGradient></defs><rect width="320" height="160" fill="url(#ai-sea)"/><g class="a-waves" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="3" stroke-linecap="round"><path d="M10 40q10-6 20 0t20 0M200 24q10-6 20 0t20 0M120 140q10-6 20 0t20 0"/></g><g class="a-isle"><ellipse cx="230" cy="112" rx="70" ry="22" fill="#f6dda6"/><path d="M232 104c2-20 6-34 12-46" stroke="#8a4a1e" stroke-width="5" fill="none"/><path d="M244 58c-14-8-26-4-32 2 10-2 20 0 32 4zm0 0c10-10 24-10 30-4-10-2-20 0-30 8z" fill="#2f9e4a"/><path class="a-flag" d="M200 100V74l18 6-18 6" fill="#ff5a4a" stroke="#fff" stroke-width="2"/></g><path d="M40 120q40-30 80-20t80-4" stroke="#fff" stroke-width="3" stroke-dasharray="6 7" fill="none" opacity=".8"/><circle cx="40" cy="120" r="7" fill="#ffd23a" stroke="#fff" stroke-width="2"/><circle cx="120" cy="100" r="7" fill="#ffd23a" stroke="#fff" stroke-width="2"/></svg>`,
   daily: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ad-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5fd0c0"/><stop offset="1" stop-color="#1d8c84"/></linearGradient></defs><rect width="320" height="160" fill="url(#ad-sky)"/><g class="a-waves" fill="rgba(255,255,255,.22)"><path d="M0 120q20-10 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0v60H0z"/></g><g class="a-cal"><rect x="208" y="34" width="76" height="76" rx="12" fill="#fff"/><rect x="208" y="34" width="76" height="22" rx="10" fill="#ff5a4a"/><rect class="a-page" x="216" y="62" width="60" height="40" rx="6" fill="#eef7fb"/><path d="M232 82l9 9 17-19" stroke="#3fbf55" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g><path class="a-flame" d="M60 118c2-10 12-14 12-28 6 8 4 14 8 18 2-4 2-8 2-10 6 6 8 12 8 20a15 15 0 0 1-30 0z" fill="#ffb020"/></svg>`,
-  cove: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ac-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b07ae0"/><stop offset="1" stop-color="#6a3fb0"/></linearGradient></defs><rect width="320" height="160" fill="url(#ac-sky)"/><circle cx="60" cy="40" r="16" fill="#fff3c8" opacity=".8"/><path d="M0 124c80-20 200-24 320-6v42H0z" fill="#f2cf9a"/><g class="a-hut"><path d="M206 120V86h52v34z" fill="#c98a4a"/><path d="M196 90l36-28 36 28z" fill="#e8b45a" stroke="#8a5a2a" stroke-width="2"/><rect x="224" y="98" width="16" height="22" fill="#6a3a1a"/></g><g class="a-smoke" fill="rgba(255,255,255,.6)"><circle cx="150" cy="96" r="6"/><circle cx="154" cy="84" r="8"/><circle cx="148" cy="70" r="9"/></g><path d="M138 120l12-14 12 14z" fill="#ff8a2a"/></svg>`,
+  dig: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ag-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffcf4a"/><stop offset="1" stop-color="#ff8a2a"/></linearGradient></defs><rect width="320" height="160" fill="url(#ag-sky)"/><g class="a-rays" fill="rgba(255,255,255,.16)"><path d="M232 92L330 30v34zM232 92L330 120v34zM232 92L170 -10h50z"/></g><path d="M0 118c70-14 180-18 320-4v46H0z" fill="#f6dda6"/><path d="M0 132c90-10 200-10 320 0v28H0z" fill="#e9c37e"/><g class="a-chest"><rect x="200" y="84" width="64" height="38" rx="6" fill="#a8743f" stroke="#5a3a1a" stroke-width="3"/><path d="M198 88c0-18 68-18 68 0z" fill="#c98a4a" stroke="#5a3a1a" stroke-width="3"/><rect x="226" y="92" width="12" height="14" rx="3" fill="#ffd23a" stroke="#8a5a10" stroke-width="2"/><path d="M200 100h64" stroke="#5a3a1a" stroke-width="3"/><circle class="a-glint" cx="214" cy="78" r="5" fill="#fff"/></g><path d="M196 122c10-8 60-8 72 0z" fill="#e9c37e"/><g class="a-shovel"><path d="M70 40l40 66" stroke="#8a4a1e" stroke-width="7" stroke-linecap="round"/><path d="M98 96l26 14-8 18c-8 6-24-2-26-12z" fill="#cfd8e0" stroke="#5a6a7a" stroke-width="3"/></g><g fill="#fff"><path class="a-spark" d="M150 50l4 10 10 4-10 4-4 10-4-10-10-4 10-4z"/><path class="a-spark s2" d="M282 54l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></g><g class="a-sandpuff" fill="rgba(255,240,200,.85)"><circle cx="118" cy="118" r="7"/><circle cx="132" cy="112" r="5"/><circle cx="106" cy="110" r="4"/></g></svg>`,
   cup: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="au-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a8a"/><stop offset="1" stop-color="#d23a5a"/></linearGradient></defs><rect width="320" height="160" fill="url(#au-sky)"/><g class="a-rays" fill="rgba(255,255,255,.12)"><path d="M250 70L330 20v30zM250 70L330 100v30zM250 70L200 -10h40z"/></g><path d="M0 128h320v32H0z" fill="#f6dda6"/><g opacity=".9"><rect x="150" y="104" width="10" height="34" fill="#fff"/><rect x="150" y="104" width="5" height="5" fill="#222"/><rect x="155" y="109" width="5" height="5" fill="#222"/><rect x="150" y="114" width="5" height="5" fill="#222"/><rect x="155" y="119" width="5" height="5" fill="#222"/></g><g class="a-cup"><path d="M226 40h48v20a24 24 0 0 1-48 0z" fill="#ffd23a" stroke="#b07a10" stroke-width="3"/><path d="M226 46h-12c0 14 8 20 16 20M274 46h12c0 14-8 20-16 20" stroke="#ffd23a" stroke-width="6" fill="none"/><rect x="244" y="82" width="12" height="12" fill="#e9a820"/><rect x="232" y="94" width="36" height="10" rx="3" fill="#ffd23a" stroke="#b07a10" stroke-width="3"/><path d="M250 48l3 6 6 1-4 4 1 6-6-3-6 3 1-6-4-4 6-1z" fill="#fff" opacity=".8"/></g><g class="a-racers"><g class="a-r1"><ellipse cx="0" cy="0" rx="13" ry="9" fill="#ff5a4a"/><circle cx="-5" cy="-9" r="3" fill="#fff"/><circle cx="5" cy="-9" r="3" fill="#fff"/></g><g class="a-r2"><ellipse cx="0" cy="0" rx="13" ry="9" fill="#5ab0ff"/><circle cx="-5" cy="-9" r="3" fill="#fff"/><circle cx="5" cy="-9" r="3" fill="#fff"/></g></g><g stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".7"><path class="a-speed" d="M20 112h30M10 122h40M30 132h26"/></g></svg>`,
 };
 
 interface Card {
-  id: 'beach' | 'cup' | 'islands' | 'daily' | 'cove';
+  id: 'beach' | 'cup' | 'islands' | 'daily' | 'dig';
   el: HTMLButtonElement;
   sub: HTMLElement;
   badge: HTMLElement;
@@ -99,6 +101,7 @@ export class HomeScreen {
   private track: HTMLElement;
   private dots: HTMLElement;
   private cards: Card[] = [];
+  private digDot: HTMLElement | null = null;
   private navBubble: HTMLElement;
   private nav: HTMLElement;
   private focusIdx = 0;
@@ -173,7 +176,7 @@ export class HomeScreen {
     if (this.h.cup) this.cards.push(mk('cup', 'Crab Cup', CUP_ICON, () => this.h.cup?.()));
     this.cards.push(mk('islands', 'Island Hop', ICON.island, () => this.h.islands()));
     this.cards.push(mk('daily', 'Daily Tide', ICON.calendar, () => this.h.daily()));
-    if (this.h.cove) this.cards.push(mk('cove', 'Crab Cove', COVE_ICON, () => this.h.cove?.()));
+    if (this.h.dig) this.cards.push(mk('dig', 'Treasure Dig', DIG_ICON, () => this.h.dig?.()));
     for (const c of this.cards) this.track.appendChild(c.el);
     // the focused card follows the scroll position (swipes, wheel, arrows)
     let raf = 0;
@@ -247,7 +250,11 @@ export class HomeScreen {
     const wardrobe = tab(`${ICON.hanger}<i class="dot hidden"></i>`, 'Wardrobe', () => this.h.wardrobe());
     this.wardrobeDot = wardrobe.querySelector('.dot') as HTMLElement;
     const tabs = [tab(ICON.home, 'Home', () => {}, true), wardrobe, tab(ICON.sun, 'Pass', () => this.h.pass())];
-    if (this.h.cove) tabs.push(tab(COVE_ICON, 'Cove', () => this.h.cove?.()));
+    if (this.h.dig) {
+      const dg = tab(`${DIG_ICON}<i class="dot hidden"></i>`, 'Dig', () => this.h.dig?.());
+      this.digDot = dg.querySelector('.dot');
+      tabs.push(dg);
+    }
     // Stats, Settings and How to play share the More sheet: five tabs fit a 360 px phone
     tabs.push(tab(MORE_ICON, 'More', () => this.openMore()));
     this.nav.append(...tabs);
@@ -265,6 +272,7 @@ export class HomeScreen {
     };
     const list = el('div', 'sheet-list');
     list.append(
+      item(ICON.trophy, 'Trophies', 'Your trophy shelf and profile titles', () => this.h.trophies?.(), '#ffb020'),
       item(ICON.chart, 'Stats', 'Records, totals and your favourite crab', () => this.h.stats()),
       item(ICON.gear, 'Settings', 'Sound, controls, graphics and accessibility', () => this.h.settings(), '#5a7a9a'),
       item(ICON.help, 'How to play', 'Controls, obstacles and power-ups', () => this.h.howto(), '#3fbf55'),
@@ -386,12 +394,13 @@ export class HomeScreen {
         c.badge.classList.toggle('hidden', !cu?.current);
         c.badge.innerHTML = '!';
         c.el.classList.toggle('ready', !!cu?.current);
-      } else if (c.id === 'cove') {
-        const cv = d.cove;
-        c.sub.innerHTML = cv ? (cv.gifts > 0 ? `${ICON.shell}${fmt(cv.gifts)} gifts waiting` : `Comfort ${cv.comfort}`) : 'Build your island';
-        c.badge.classList.toggle('hidden', !cv?.ready);
-        c.badge.innerHTML = '!';
-        c.el.classList.toggle('ready', !!cv?.ready);
+      } else if (c.id === 'dig') {
+        this.digDot?.classList.toggle('hidden', !d.dig || d.dig.spades < 3);
+        const dg = d.dig;
+        c.sub.innerHTML = dg ? `Site ${dg.site} · ${dg.relics}/${dg.total} relics` : 'Dig up buried treasure';
+        c.badge.classList.toggle('hidden', !dg || dg.spades <= 0);
+        c.badge.innerHTML = dg ? `${DIG_ICON}${dg.spades}` : '';
+        c.el.classList.toggle('ready', !!dg && dg.spades >= 3);
       }
     }
 
@@ -461,4 +470,3 @@ function split(word: string): string {
 
 const MORE_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="10" cy="20" r="4" fill="#fff"/><circle cx="20" cy="20" r="4" fill="#fff"/><circle cx="30" cy="20" r="4" fill="#fff"/></svg>`;
 export const PEARL = `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="21" r="14" fill="#e8dcfa" stroke="#8a72c0" stroke-width="2"/><circle cx="23" cy="24" r="9" fill="#d4c2f4"/><circle cx="15" cy="15" r="4.5" fill="#fff"/></svg>`;
-export const COVE_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 33h28" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/><path d="M10 31V19h20v12" fill="#fff"/><path d="M6 20 20 8l14 12z" fill="#fff"/><rect x="17" y="23" width="6" height="8" fill="#6a3fb0"/></svg>`;

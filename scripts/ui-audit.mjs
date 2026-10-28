@@ -35,9 +35,8 @@ const SCREENS = {
   cup: { open: "window.__crab.setState('cup')", root: '#cup', primary: '#cup .cup-go' },
   raceend: { open: "window.__crab.race('sandy', { autopilot: true }); for (let i = 0; i < 600 && window.__crab.game.state !== 'raceEnd'; i++) window.__crab.skip(30); window.__crab.frames(30)", root: '#race-end', primary: '#race-end .btn.big' },
   chest: { open: "window.__crab.unlockAll(3); window.__crab.setState('map'); window.__crab.game.openIslandChest(0, 0)", root: '#chest', primary: '#chest .btn.big' },
-  cove: { open: "window.__crab.setState('cove')", root: '#cove' },
-  covefriends: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"friends\"]').click()", root: '#cove' },
-  covetrophies: { open: "window.__crab.setState('cove'); document.querySelector('#cove [data-tab=\"trophies\"]').click()", root: '#cove' },
+  dig: { open: "window.__crab.game.save.data.dig.spades = 12; window.__crab.setState('dig')", root: '#dig', primary: '#dig .dig-play' },
+  trophies: { open: "window.__crab.setState('trophies')", root: '#trophies' },
   whatsnew: { open: "window.__crab.whatsNew()", root: '#whatsnew', primary: '#whatsnew .btn.green' },
   stats: { open: "window.__crab.setState('stats')", root: '#stats' },
   settings: { open: "window.__crab.setState('settings')", root: '#settings' },
@@ -197,7 +196,7 @@ try {
         if (!t) return [];
         const tr = t.getBoundingClientRect();
         const out = [];
-        for (const n of document.querySelectorAll('.page-head, .home-top, .kit-wallet, .wallet, .page-actions, .cove-top, .cove-gift, #hud > .left, #hud > .right')) {
+        for (const n of document.querySelectorAll('.page-head, .home-top, .kit-wallet, .wallet, .page-actions, .spade-chip, #hud > .left, #hud > .right')) {
           const r = n.getBoundingClientRect();
           if (r.width < 1 || r.height < 1) continue;
           let hidden = false;

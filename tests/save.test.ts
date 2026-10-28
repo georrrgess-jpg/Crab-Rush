@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { CFG } from '../src/config';
+import { defaultDig } from '../src/meta/dig';
 import { SaveStore, defaultSave, sanitize, SAVE_KEY } from '../src/core/save';
 
 class MemStorage {
@@ -82,7 +84,7 @@ describe('save v1 → v2 migration', () => {
     const st = new MemStorage();
     st.setItem(SAVE_KEY, JSON.stringify(V1_BLOB));
     const d = new SaveStore(st).data;
-    expect(d.v).toBe(4);
+    expect(d.v).toBe(5);
     expect(d.shells).toBe(1234);
     expect(d.best).toBe(2875.4);
     expect(d.stats.runs).toBe(42);
@@ -148,7 +150,7 @@ describe('save v2 → v3 migration (UPDATE3_PLAN.md §6.4)', () => {
   it('keeps v2 progress and fills the v3 fields', () => {
     const v2 = { v: 2, shells: 900, xp: 4000, passClaimed: [1, 2], levels: { 'shore-1': { stars: [true, true, false], best: 40 } }, daily: { lastDate: '2026-10-01', streak: 3, savers: 0, bestToday: 0, bestDate: '', history: [] } };
     const d = sanitize(v2);
-    expect(d.v).toBe(4);
+    expect(d.v).toBe(5);
     expect(d.shells).toBe(900);
     expect(d.xp).toBe(4000);
     expect(d.levels['shore-1']!.stars).toEqual([true, true, false]);
@@ -164,21 +166,28 @@ describe('save v2 → v3 migration (UPDATE3_PLAN.md §6.4)', () => {
   });
 });
 
-describe('save v3: Crab Cove fields', () => {
-  it('fill defaults for older saves and sanitize garbage', () => {
-    const d = sanitize({ v: 2, shells: 5 });
-    expect(d.cove.plots.length).toBe(12);
-    expect(d.cove.owned).toEqual([]);
-    expect(d.friends).toEqual({ moved: [], quests: {} });
-    expect(d.achievements).toEqual([]);
-    const e = sanitize({ v: 3, cove: { owned: ['chair', 'nope', 'chair'], plots: ['chair', 'chair', 'bench', null], lastGift: 9e15, banked: -4 }, friends: { moved: ['shelly', 'ghost'], quests: { shelly: { idx: 7, base: 'x' } } }, achievements: ['dist:0', 'dist:9'] });
-    expect(e.cove.owned).toEqual(['chair']);
-    expect(e.cove.plots.slice(0, 3)).toEqual(['chair', null, null]);
-    expect(e.cove.lastGift).toBeLessThanOrEqual(Date.now());
-    expect(e.cove.banked).toBe(0);
-    expect(e.friends.moved).toEqual(['shelly']);
-    expect(e.friends.quests.shelly).toEqual({ idx: 3, base: 0 });
-    expect(e.achievements).toEqual(['dist:0']);
+describe('save v4 → v5: Crab Cove retired, Treasure Dig (UPDATE5_PLAN.md §3)', () => {
+  it('refunds half the price of owned decorations and adds spades', () => {
+    const d = sanitize({ v: 4, shells: 100, pearls: 2, cove: { owned: ['chair', 'nope', 'chair', 'flamingo'], plots: ['chair'] }, friends: { moved: ['shelly'] }, achievements: ['dist:0', 'cove:0'] });
+    expect(d.shells).toBe(100 + 150);
+    expect(d.pearls).toBe(2 + 7);
+    expect(d.dig.spades).toBe(CFG.dig.startSpades + CFG.dig.legacySpades);
+    expect(d.achievements).toEqual(['dist:0']);
+    expect('cove' in d).toBe(false);
+    expect('friends' in d).toBe(false);
+    expect(d.v).toBe(5);
+  });
+  it('new and v5 saves get no refund; dig state is sanitised', () => {
+    const fresh = sanitize({ v: 2, shells: 5 });
+    expect(fresh.shells).toBe(5);
+    expect(fresh.dig).toEqual(defaultDig());
+    const v5 = sanitize({ v: 5, shells: 5, dig: { spades: 3, site: 2, dug: [4, 4, 40], relics: ['0:0', '0:1', '0:2'], cleared: 1 } });
+    expect(v5.shells).toBe(5);
+    expect(v5.dig.spades).toBe(3);
+    expect(v5.dig.dug).toEqual([4]);
+    expect(v5.dig.relics.length).toBe(3);
+    // a re-sanitised v5 save never refunds twice
+    expect(sanitize(JSON.parse(JSON.stringify(v5))).shells).toBe(5);
   });
 });
 
@@ -186,8 +195,8 @@ describe('save v3 → v4 migration (UPDATE4_PLAN.md §5.5)', () => {
   it('keeps v3 progress and fills the Crab Cup fields', () => {
     const v3 = { v: 3, shells: 1200, pearls: 40, title: 'Cove Keeper', cove: { owned: ['tiki'], plots: ['tiki'] } };
     const d = sanitize(v3);
-    expect(d.v).toBe(4);
-    expect(d.shells).toBe(1200);
+    expect(d.v).toBe(5);
+    expect(d.shells).toBe(1200 + 1500); // the Tiki Hut is refunded at half price (Crab Cove retired in v5)
     expect(d.pearls).toBe(40);
     expect(d.cup).toEqual({ current: null, best: {}, cleared: [], golds: [], races: 0, wins: 0 });
   });

@@ -148,6 +148,25 @@ export const CFG = {
   /** Second Chance: clear obstacles this far ahead (m), blink for `invuln` s, restart at `speed` × pace;
    * pearl cost per use today after the daily free one */
   revive: { clear: 32, invuln: 2.2, speed: 0.6, costs: [5, 10, 20, 30], window: 5 },
+  /** Treasure Dig (UPDATE5_PLAN.md §3): spades held, site prizes, chests, spades earned */
+  dig: {
+    startSpades: 6,
+    /** spades given to players whose Crab Cove was retired (save v4 → v5) */
+    legacySpades: 10,
+    maxSpades: 50,
+    shellPiles: 6,
+    pileBase: 25,
+    pileGrow: 6,
+    pearlTiles: 2,
+    spadeTiles: 3,
+    chestShells: 300,
+    chestGrow: 120,
+    chestPearls: 10,
+    /** a Beach Run pays 1 spade + 1 per `perMetres`, up to `runCap`; Daily Tide adds `daily` */
+    runCap: 6,
+    perMetres: 400,
+    daily: 3,
+  },
   /** Update 5: no power-up within powerupGap m of another; no shell within powerupClear m of one */
   powerupGap: 12,
   powerupClear: 1.4,

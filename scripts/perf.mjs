@@ -66,7 +66,7 @@ try {
     // menu scenes: Home (beach + carousel crab) and a fully decorated Crab Cove
     const MENUS = [
       ['Home', "window.__crab.setState('title')"],
-      ['Cove', "const d = window.__crab.game.save.data; const ids = ['tiki', 'bonfire', 'flamingo', 'palms', 'lighthouse', 'chest', 'statue', 'flowers', 'surfboards', 'hammock', 'fountain', 'lanterns']; d.cove.owned = ids.slice(); ids.forEach((id, i) => { d.cove.plots[i] = id; }); for (const f of ['shelly', 'barnacle', 'coco', 'pip']) if (!d.friends.moved.includes(f)) d.friends.moved.push(f); window.__crab.setState('cove')"],
+      ['Dig', "window.__crab.setState('dig')"],
     ];
     for (const [name, code] of MENUS) {
       await page.evaluate((c) => new Function(c)(), code);

@@ -15,8 +15,9 @@ export interface Metrics {
   crowns: number;
   streak: number;
   items: number;
-  comfort: number;
-  friends: number;
+  /** Treasure Dig: sites cleared and relics in the museum */
+  sites: number;
+  relics: number;
   tier: number;
 }
 
@@ -48,7 +49,7 @@ export const FAMILIES: Family[] = [
   { id: 'crowns', name: 'Royalty', metric: 'crowns', targets: [3, 12, 28], text: (n) => `Earn ${n} Tide Rush crowns`, title: 'Crab Royalty' },
   { id: 'streak', name: 'Tide Keeper', metric: 'streak', targets: [3, 7, 30], text: (n) => `A ${n}-day Daily Tide streak`, title: 'Tide Keeper' },
   { id: 'style', name: 'Fashionista', metric: 'items', targets: [12, 25, 45], text: (n) => `Own ${n} wardrobe items`, title: 'Fashion Icon' },
-  { id: 'cove', name: 'Homemaker', metric: 'comfort', targets: [60, 150, 280], text: (n) => `Reach ${n} Cove Comfort`, title: 'Cove Keeper' },
+  { id: 'dig', name: 'Treasure Hunter', metric: 'sites', targets: [3, 10, 25], text: (n) => `Clear ${n} Treasure Dig sites`, title: 'Treasure Hunter' },
 ];
 
 export const ACHIEVEMENTS = FAMILIES.flatMap((f) => [0, 1, 2].map((t) => ({ key: `${f.id}:${t}`, family: f, tier: t as Tier, target: f.targets[t] as number })));
