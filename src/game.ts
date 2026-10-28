@@ -37,6 +37,7 @@ import { CUPS, CUP_BY_ID, cupTitles, cupUnlocked, nextRace, pointsFor, recordRac
 import { RIVALS, Race } from './sim/race';
 import { CUP_ICON, CupScreen, RaceEndScreen, type CupData } from './ui/cup';
 import { RaceHud } from './ui/raceHud';
+import { ReviveCard } from './ui/revive';
 
 const ITEM_NAMES: Record<string, string> = Object.fromEntries(ITEMS.filter((i) => i.slot === 'hats').map((i) => [i.id, i.name]));
 import { DYE_COST, ShopScreen } from './ui/shop';
@@ -52,7 +53,7 @@ import { ICON } from './ui/icons';
 import type { PowerKind } from './sim/events';
 
 type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | 'crashing' | 'results' | 'shop' | 'settings' | 'howto' | 'stats'
-  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily' | 'chest' | 'cove' | 'cup' | 'raceEnd';
+  | 'map' | 'levelIntro' | 'finishing' | 'levelEnd' | 'pass' | 'daily' | 'chest' | 'cove' | 'cup' | 'raceEnd' | 'revive';
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
@@ -136,6 +137,12 @@ export class Game {
   private raceCup: string | null = null;
   private raceDef: RaceDef | null = null;
   private raceHudT = 0;
+  // Second Chance (UPDATE5_PLAN.md §4)
+  private reviveCard: ReviveCard;
+  private reviveT = 0;
+  private reviveCost = 0;
+  /** screenshot / smoke builds skip the offer unless a test turns it on */
+  reviveOn = true;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.save = new SaveStore();
@@ -435,6 +442,9 @@ export class Game {
     this.ui.addScreen(this.cupScreen.el);
     this.ui.addScreen(this.raceEnd.el);
     this.ui.addHud(this.raceHud.el);
+    this.reviveCard = new ReviveCard({ go: () => this.acceptRevive(), no: () => this.declineRevive() });
+    this.ui.addScreen(this.reviveCard.el);
+    if (this.flags.shots) this.reviveOn = false;
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
@@ -1610,6 +1620,66 @@ export class Game {
     this.checkTrophies();
   }
 
+  // ------------------------------------------------------------------ Second Chance
+  /** pearl cost of the next Second Chance today (0 = the daily free one) */
+  private reviveCostToday(): number {
+    const r = this.save.data.revive;
+    const used = r.date === this.todayKey() ? r.used : 0;
+    if (used === 0) return 0;
+    const c = CFG.revive.costs;
+    return c[Math.min(used - 1, c.length - 1)] as number;
+  }
+
+  /** After a crash in a Beach Run or Daily Tide: offer one Second Chance per run. */
+  private offerRevive(): boolean {
+    const w = this.world;
+    if (!this.reviveOn || this.autopilot || (w.kind !== 'endless' && w.kind !== 'daily') || w.revives > 0 || w.tutorialActive || w.distance < 60) return false;
+    const cost = this.reviveCostToday();
+    const d = this.save.data;
+    if (cost > d.pearls) return false;
+    this.reviveCost = cost;
+    this.state = 'revive';
+    this.reviveT = CFG.revive.window;
+    this.input.setPointerEnabled(false);
+    this.ui.show('none');
+    this.ui.showExtra(this.reviveCard.el);
+    this.reviveCard.show({ cost, pearls: d.pearls, distance: w.distance, best: this.dailyRun ? 0 : d.best, window: CFG.revive.window });
+    this.audio.play('pop');
+    return true;
+  }
+
+  private acceptRevive(): void {
+    if (this.state !== 'revive') return;
+    const d = this.save.data;
+    if (this.reviveCost > d.pearls) return this.audio.play('deny');
+    d.pearls -= this.reviveCost;
+    const today = this.todayKey();
+    if (d.revive.date !== today) d.revive = { date: today, used: 0 };
+    d.revive.used++;
+    this.save.save();
+    this.reviveCard.hide();
+    this.ui.hideExtras();
+    this.world.revive();
+    this.audio.play('powerup');
+    this.haptics.play('success');
+    this.ui.show('hud');
+    this.input.setPointerEnabled(true);
+    this.touchLayer.classList.add('active');
+    this.state = 'countdown';
+    this.countdownT = COUNTDOWN_STEP * 3;
+    this.lastCount = 0;
+    this.ui.showCountdown(3);
+    this.ui.toast('Second Chance!', { kind: 'gold', sub: 'The way ahead is clear', life: 1.8 });
+  }
+
+  private declineRevive(): void {
+    if (this.state !== 'revive') return;
+    this.audio.play('tap');
+    this.reviveCard.hide();
+    this.ui.hideExtras();
+    this.endRun();
+  }
+
   goHome(): void {
     if (this.state === 'paused' || this.state === 'running' || this.state === 'countdown') this.save.save();
     this.audio.play('whoosh');
@@ -1843,6 +1913,11 @@ export class Game {
       return;
     }
     if (s === 'countdown') return;
+    if (s === 'revive') {
+      if (a === 'back') this.declineRevive();
+      else if ((a === 'confirm' || alsoConfirm) && this.reviveCard.canContinue) this.acceptRevive();
+      return;
+    }
     if (s === 'paused') {
       if (a === 'back' || a === 'pause' || a === 'confirm' || alsoConfirm) this.resume();
       return;
@@ -1935,10 +2010,15 @@ export class Game {
         if (this.crashClock >= CFG.crash.resultsDelay) {
           if (this.race) this.endRace();
           else if (this.world.kind === 'level') this.endLevel(false);
-          else this.endRun();
+          else if (!this.offerRevive()) this.endRun();
         }
         break;
       }
+      case 'revive':
+        this.reviveT -= dt;
+        this.reviveCard.tick(this.reviveT);
+        if (this.reviveT <= 0) this.declineRevive();
+        break;
       case 'finishing':
         // coast through the finish arch, then show the stars
         this.world.step(dt);
@@ -2087,6 +2167,7 @@ export class Game {
       const w = this.world;
       const pk = w.power.kind;
       this.ui.updateHUD(w.runShells, w.distance, pk, pk ? w.power.t / w.power.dur : 0, w.streak);
+      this.ui.updateFever(w.feverEnabled ? w.fever : -1, w.feverT > 0);
       if (this.race) {
         this.raceHudT -= frameDt;
         if (this.raceHudT <= 0) {
@@ -2212,6 +2293,12 @@ export class Game {
           break;
         case 'tidepool':
           this.audio.play('splash');
+          break;
+        case 'fever':
+          this.audio.play('streakFlame');
+          setTimeout(() => this.audio.play('powerup'), 120);
+          this.haptics.play('success');
+          this.ui.toast('SHELL FEVER!', { kind: 'gold', big: true, sub: '2× shells · shells fly to you', life: 2 });
           break;
         case 'stumble':
           this.audio.play('bump');
@@ -2380,6 +2467,14 @@ export class Game {
           g.openMap();
           g.openLevelHook(id);
         } else g.startLevelHook(id);
+      },
+      /** Second Chance: let screenshot / smoke builds offer it */
+      reviveOn(on = true) {
+        g.reviveOn = on;
+      },
+      /** Shell Fever: set the meter (0..1); 1 starts a Fever on the next shell */
+      fever(v: number) {
+        g.world.fever = Math.max(0, Math.min(0.999, v));
       },
       /** Crab Cup: start the next race of a cup (optionally autopiloted) */
       race(cupId = 'sandy', o: { autopilot?: boolean; intro?: boolean } = {}) {

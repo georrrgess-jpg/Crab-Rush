@@ -32,4 +32,8 @@ export type GameEvent =
   // Crab Cup (UPDATE4_PLAN.md §5)
   | { t: 'stumble'; kind: string }
   | { t: 'dash' }
-  | { t: 'dashEnd' };
+  | { t: 'dashEnd' }
+  // Update 5: Shell Fever, Second Chance
+  | { t: 'fever' }
+  | { t: 'feverEnd' }
+  | { t: 'revive' };

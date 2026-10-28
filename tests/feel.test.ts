@@ -90,3 +90,44 @@ describe('Update 5 feel (UPDATE5_PLAN.md §2)', () => {
     expect(w.shells.filter((s) => s.magnet).length).toBe(1);
   });
 });
+
+describe('Shell Fever and Second Chance (UPDATE5_PLAN.md §4)', () => {
+  it('a full meter starts a Fever that doubles shells, then ends', () => {
+    const w = new World();
+    w.start({ ...defaultRunOptions(), seed: 6, tutorial: null, god: true });
+    w.step(DT);
+    w.fever = 0.999;
+    w.shells.length = 0;
+    w.addShell(w.player.x, 0.6, w.dist + 0.3, false);
+    w.step(DT);
+    expect(w.feverT).toBeGreaterThan(0);
+    expect(w.stats.fevers).toBe(1);
+    const before = w.stats.shells;
+    w.addShell(w.player.x, 0.6, w.dist + 0.3, false);
+    w.step(DT);
+    expect(w.stats.shells - before).toBe(2);
+    for (let i = 0; i < 120 * (CFG.fever.time + 0.5); i++) w.step(DT);
+    expect(w.feverT).toBe(0);
+  });
+
+  it('no Fever in races or Island Hop levels', () => {
+    const w = new World();
+    w.start({ ...defaultRunOptions(), seed: 6, tutorial: null, god: true, race: { finishAt: 900 } });
+    expect(w.feverEnabled).toBe(false);
+  });
+
+  it('revive clears the way ahead and protects the crab', () => {
+    const w = new World();
+    w.start({ ...defaultRunOptions(), seed: 7, tutorial: null });
+    w.step(DT);
+    w.addEntity('block', w.player.lane, w.dist + 1, {});
+    for (let i = 0; i < 240 && w.mode === 'running'; i++) w.step(DT);
+    expect(w.mode).toBe('crashing');
+    expect(w.revive()).toBe(true);
+    expect(w.mode).toBe('running');
+    expect(w.player.invuln).toBeGreaterThan(1);
+    const blocking = w.entities.filter((e) => !e.dead && e.kind === 'block' && e.wz - w.dist > -3 && e.wz - w.dist < CFG.revive.clear);
+    expect(blocking.length).toBe(0);
+    expect(w.revive()).toBe(false);
+  });
+});

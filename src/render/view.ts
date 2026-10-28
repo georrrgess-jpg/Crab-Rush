@@ -730,8 +730,8 @@ export class GameView {
     this.crab.update(dt, dv);
     this.rivals?.update(dt, dist, px, this.renderer.camera, running && this.rivals.active);
     this.slamFx.update(dt, dist);
-    // Shell Dash: a golden trail
-    if (running && w.dashT > 0 && dt > 0 && Math.random() < 0.8) this.sparks.spawn(px + (Math.random() - 0.5) * 0.9, 0.25 + Math.random() * 0.6, dist - 0.4, 0, 0.6, 0, 0.35, 0.2, 0xffd23a, 1);
+    // Shell Dash and Shell Fever: a golden trail
+    if (running && (w.dashT > 0 || w.feverT > 0) && dt > 0 && Math.random() < 0.8) this.sparks.spawn(px + (Math.random() - 0.5) * 0.9, 0.25 + Math.random() * 0.6, dist - 0.4, 0, 0.6, 0, 0.35, 0.2, 0xffd23a, 1);
     // shadow under the crab shrinks as it rises
     const sh = 1 / (1 + py * 0.5);
     if (!this.shadowMap) this.shadows.add(px, 0, 0, 1.7 * sh, 1.3 * sh, py);

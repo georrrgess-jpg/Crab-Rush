@@ -89,6 +89,8 @@ export interface SaveData {
   hatDye: Record<string, number>;
   /** Sunny Pass bonus chests claimed after tier 40 */
   passBonus: number;
+  /** Second Chance (Update 5): uses on `date` (the first each day is free) */
+  revive: { date: string; used: number };
 }
 
 export interface Outfit {
@@ -131,6 +133,7 @@ export function defaultSave(): SaveData {
     dyes: {},
     hatDye: {},
     passBonus: 0,
+    revive: { date: '', used: 0 },
   };
 }
 
@@ -270,6 +273,10 @@ export function sanitize(raw: unknown): SaveData {
     dyes: sanitizeDyes(r.dyes, wardrobe),
     hatDye: Object.fromEntries(Object.entries(countMap(r.hatDye)).filter(([k, v]) => v >= 1 && v <= 3 && sanitizeDyes(r.dyes, wardrobe)[k]?.includes(v))),
     passBonus: Math.floor(num(r.passBonus, 0)),
+    revive: (() => {
+      const rv = (r.revive ?? {}) as Record<string, unknown>;
+      return { date: typeof rv.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rv.date) ? rv.date : '', used: Math.floor(num(rv.used, 0, 0, 99)) };
+    })(),
   };
 }
 

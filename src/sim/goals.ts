@@ -37,6 +37,7 @@ const M = {
   noHop: (r: RunSnapshot) => r.stats.maxDistNoHop,
   streak: (r: RunSnapshot) => r.stats.maxStreak,
   hopped: (r: RunSnapshot) => r.stats.obstaclesHopped,
+  fevers: (r: RunSnapshot) => r.stats.fevers ?? 0,
   zone: (r: RunSnapshot) => r.zone,
   runs: () => 1,
 };
@@ -58,6 +59,7 @@ export const GOAL_POOL: GoalDef[] = [
   g('pier', 2, 'Reach Boardwalk Pier', 1, '', M.zone),
   g('rider1', 2, 'Ride the Wave Rider', 1, '', M.riders),
   g('shave3', 2, 'Get 3 close shaves in one run', 3, '', M.shaves),
+  g('fever1', 2, 'Start a Shell Fever', 1, '', M.fevers),
   // tier 3
   g('run1500', 3, 'Run 1,500 m', 1500, 'm', M.dist),
   g('shells300', 3, 'Collect 300 shells in one run', 300, '', M.shells),
@@ -65,6 +67,7 @@ export const GOAL_POOL: GoalDef[] = [
   g('cove', 3, 'Reach Tide Pool Cove', 2, '', M.zone),
   g('streak30', 3, 'Get a shell streak of 30', 30, '', M.streak),
   g('power4', 3, 'Grab 4 power-ups in one run', 4, '', M.powerups),
+  g('fever3', 3, 'Start 3 Shell Fevers in one run', 3, '', M.fevers),
   // tier 4
   g('run2500', 4, 'Run 2,500 m', 2500, 'm', M.dist),
   g('sunset', 4, 'Reach Sunset Lagoon', 3, '', M.zone),

@@ -31,6 +31,9 @@ export interface RunOptions {
 
 export interface RunStats {
   shells: number; // value of shells picked up (big = 10)
+  /** Shell Fevers triggered, and the shell value picked up during them (counted once more in `shells`) */
+  fevers: number;
+  feverShells: number;
   bonus: number; // close shaves + zone discovery bonuses
   closeShaves: number;
   hops: number;
@@ -78,6 +81,8 @@ export function defaultRunOptions(): RunOptions {
 function freshStats(): RunStats {
   return {
     shells: 0,
+    fevers: 0,
+    feverShells: 0,
     bonus: 0,
     closeShaves: 0,
     hops: 0,
@@ -216,6 +221,9 @@ export class World {
     this.slowT = 0;
     this.finishT = 0;
     this.raceStumble = 0;
+    this.fever = 0;
+    this.feverT = 0;
+    this.revives = 0;
     this.dashMeter = 0;
     this.dashT = 0;
     this.raceTime = 0;
@@ -420,6 +428,7 @@ export class World {
     this.updateEntities(dt);
     this.spawner.update();
     this.updatePower(dt);
+    this.updateFever(dt);
     this.updateTutorial();
     this.collide();
     if (this.mode !== 'running') return;
@@ -769,12 +778,84 @@ export class World {
   }
 
   private crash(kind: string): void {
+    if (this.feverT > 0) {
+      this.feverT = 0;
+      this.fever = 0;
+      this.events.push({ t: 'feverEnd' });
+    }
     this.mode = 'crashing';
     this.crashT = 0;
     this.crashKind = kind;
     this.timeScale = 1;
     this.waitingStep = null;
     this.events.push({ t: 'crash', kind });
+  }
+
+  // ---------------------------------------------------------------- Shell Fever, Second Chance
+  /** Fever meter (0..1) and the time left in a Fever (s); Beach Run and Daily Tide only */
+  fever = 0;
+  feverT = 0;
+  /** Second Chances used this run */
+  revives = 0;
+
+  get feverEnabled(): boolean {
+    return this.kind === 'endless' || this.kind === 'daily';
+  }
+
+  private addFever(v: number): void {
+    if (!this.feverEnabled || this.feverT > 0 || this.mode !== 'running') return;
+    this.fever = Math.min(1, this.fever + v);
+    if (this.fever >= 1) {
+      this.feverT = CFG.fever.time;
+      this.stats.fevers++;
+      this.events.push({ t: 'fever' });
+    }
+  }
+
+  private updateFever(dt: number): void {
+    if (this.feverT > 0) {
+      this.feverT = Math.max(0, this.feverT - dt);
+      this.fever = this.feverT / CFG.fever.time;
+      // a short-range pull: shells close ahead in this lane and its neighbours fly in
+      const p = this.player;
+      for (const s of this.shells) {
+        if (s.magnet || s.dead) continue;
+        const rel = s.wz - this.dist;
+        if (rel > -0.5 && rel < CFG.fever.reach && Math.abs(s.x - p.x) < 2.5) this.pull(s);
+      }
+      if (this.feverT === 0) this.events.push({ t: 'feverEnd' });
+    } else if (this.fever > 0 && this.time - this.lastShellTime > CFG.fever.idle) {
+      this.fever = Math.max(0, this.fever - CFG.fever.decay * dt);
+    }
+  }
+
+  /**
+   * Second Chance: pick up after a crash. Obstacles just ahead are cleared, the crab blinks
+   * (invulnerable) for a moment and the run speeds back up from a jog.
+   */
+  revive(): boolean {
+    if (this.mode !== 'crashing') return false;
+    this.mode = 'running';
+    this.crashT = 0;
+    this.crashKind = '';
+    this.revives++;
+    const p = this.player;
+    p.y = 0;
+    p.vy = 0;
+    p.grounded = true;
+    p.invuln = CFG.revive.invuln;
+    this.slamming = false;
+    for (const e of this.entities) {
+      const rel = e.wz - this.dist;
+      if (e.dead || rel < -3 || rel > CFG.revive.clear) continue;
+      if (e.kind === 'block' || e.kind === 'low' || e.kind === 'sweep' || e.kind === 'roller' || e.kind === 'gull' || e.kind === 'scuttle') {
+        e.dead = true;
+        this.events.push({ t: 'knock', id: e.id });
+      }
+    }
+    this.speed = this.speedForDist(this.dist) * CFG.revive.speed;
+    this.events.push({ t: 'revive' });
+    return true;
   }
 
   private updatePlayerCrash(dt: number): void {
@@ -852,7 +933,11 @@ export class World {
 
   private pickShell(s: Shell): void {
     const stats = this.stats;
-    stats.shells += s.big ? CFG.shell.big : 1;
+    const value = s.big ? CFG.shell.big : 1;
+    // Shell Fever doubles every shell
+    stats.shells += this.feverT > 0 ? value * 2 : value;
+    if (this.feverT > 0) stats.feverShells += value;
+    else this.addFever(value / CFG.fever.shells);
     if (this.opts.race && this.dashT <= 0) {
       this.dashMeter = Math.min(1, this.dashMeter + (s.big ? CFG.shell.big : 1) / CFG.race.dashShells);
       if (this.dashMeter >= 1) {
@@ -887,6 +972,7 @@ export class World {
             this.stats.closeShaves++;
             this.stats.bonus += CFG.closeShave.reward;
             this.events.push({ t: 'closeShave', reward: CFG.closeShave.reward });
+            this.addFever(CFG.fever.shave);
           } else if (e.kind === 'roller' && p.y > 0.05 && Math.abs(p.x - e.x) < 1.2) {
             this.stats.obstaclesHopped++;
           }

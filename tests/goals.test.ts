@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GOAL_POOL, Goals, goalById, type RunSnapshot } from '../src/sim/goals';
 
 const stats = (o: Partial<RunSnapshot['stats']> = {}): RunSnapshot['stats'] => ({
-  shells: 0, bonus: 0, closeShaves: 0, hops: 0, laneChanges: 0, powerups: 0, powerKinds: { magnet: 0, shield: 0, rider: 0 },
+  shells: 0, fevers: 0, feverShells: 0, bonus: 0, closeShaves: 0, hops: 0, laneChanges: 0, powerups: 0, powerKinds: { magnet: 0, shield: 0, rider: 0 },
   wavesHopped: 0, obstaclesHopped: 0, maxStreak: 0, maxDistNoShell: 0, maxDistNoHop: 0, zonesReached: 0, bumps: 0, ...o,
 });
 const run = (distance: number, o: Partial<RunSnapshot['stats']> = {}, zone = 0): RunSnapshot => ({ distance, stats: stats(o), zone });
@@ -36,7 +36,7 @@ describe('goals', () => {
   });
   it('moves through every tier and then generates endless goals', () => {
     const g = new Goals({ active: [], completed: [], progress: {} });
-    const huge = run(10000, { shells: 10000, hops: 100, laneChanges: 100, powerups: 10, wavesHopped: 50, powerKinds: { magnet: 3, shield: 3, rider: 3 }, closeShaves: 20, maxDistNoShell: 2000, maxDistNoHop: 2000, maxStreak: 100, obstaclesHopped: 100 }, 3);
+    const huge = run(10000, { shells: 10000, hops: 100, laneChanges: 100, powerups: 10, wavesHopped: 50, powerKinds: { magnet: 3, shield: 3, rider: 3 }, closeShaves: 20, maxDistNoShell: 2000, maxDistNoHop: 2000, maxStreak: 100, obstaclesHopped: 100, fevers: 5 }, 3);
     for (let i = 0; i < 20; i++) g.finishRun(huge);
     for (const def of GOAL_POOL) expect(g.state.completed).toContain(def.id);
     expect(g.state.active.every((id) => id.startsWith('gen-'))).toBe(true);

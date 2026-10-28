@@ -50,6 +50,11 @@ export class UI {
   private powerPie: HTMLElement;
   private powerIc: HTMLElement;
   private streakEl: HTMLElement;
+  /** Shell Fever meter (Update 5) */
+  private feverEl: HTMLElement;
+  private feverFill: HTMLElement;
+  private lastFever = -2;
+  private lastFeverOn = false;
   private streakNum: HTMLElement;
   private pauseGoals: HTMLElement;
   // Island Hop HUD
@@ -88,7 +93,9 @@ export class UI {
     // shell streak meter with a flame that grows
     this.streakEl = el('div', 'streak-meter hidden', `<span class="fl">${ICON.flame}</span><b>×<span>0</span></b>`);
     this.streakNum = this.streakEl.querySelector('b span') as HTMLElement;
-    left.append(this.shellsPill, this.powerPie, this.streakEl);
+    this.feverEl = el('div', 'fever-meter hidden', `<span class="fv-ico">${ICON.flame}</span><span class="fv-bar"><i></i></span><b class="fv-lbl">FEVER</b>`);
+    this.feverFill = this.feverEl.querySelector('i') as HTMLElement;
+    left.append(this.shellsPill, this.feverEl, this.powerPie, this.streakEl);
     for (let i = 0; i < 10; i++) {
       const f = el('div', 'shell-fly', ICON.shell);
       f.setAttribute('aria-hidden', 'true');
@@ -390,7 +397,30 @@ export class UI {
     }
   }
 
+  /** Shell Fever: meter 0..1 (-1 hides it), `on` while a Fever runs */
+  updateFever(v: number, on: boolean): void {
+    const q = v < 0 ? -1 : Math.round(v * 50) / 50;
+    if (q === this.lastFever && on === this.lastFeverOn) return;
+    if (q < 0 !== this.lastFever < 0) this.feverEl.classList.toggle('hidden', q < 0);
+    if (on && !this.lastFeverOn) {
+      this.feverEl.classList.remove('burst');
+      void this.feverEl.offsetWidth;
+      this.feverEl.classList.add('burst');
+    }
+    this.feverEl.classList.toggle('on', on);
+    this.feverEl.classList.toggle('full', q >= 0.98 && !on);
+    this.lastFever = q;
+    this.lastFeverOn = on;
+    this.feverFill.style.transform = `scaleX(${Math.max(0, q).toFixed(2)})`;
+    document.getElementById('vignette')?.classList.toggle('fever', on);
+  }
+
   resetHUD(): void {
+    this.lastFever = -1;
+    this.lastFeverOn = false;
+    this.feverEl.classList.add('hidden');
+    this.feverEl.classList.remove('on', 'full');
+    document.getElementById('vignette')?.classList.remove('fever');
     this.lastShells = -1;
     this.lastDist = -1;
     this.lastPower = null;

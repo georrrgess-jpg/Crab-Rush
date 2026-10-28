@@ -311,6 +311,19 @@ try {
   await fr(3);
   check((await page.evaluate(() => document.querySelectorAll('.rival-tag').length)) === 0, 'leaving a race clears the rivals');
 
+  // ---------------- Update 5: Second Chance and Shell Fever
+  await page.evaluate(() => { window.__crab.reviveOn(true); window.__crab.startRun({ seed: 24, autopilot: false, tutorial: false }); window.__crab.game.world.opts.god = true; window.__crab.frames(60 * 8); window.__crab.game.world.opts.god = false; window.__crab.crash(); window.__crab.frames(60 * 2.5); });
+  check((await st()).state === 'revive' && (await page.isVisible('#revive .rv-go')), 'a crash offers a Second Chance');
+  await page.click('#revive .rv-go');
+  await fr(60);
+  const rv = await page.evaluate(() => ({ state: window.__crab.game.state, mode: window.__crab.game.world.mode, used: window.__crab.game.save.data.revive.used }));
+  check(rv.mode === 'running' && (rv.state === 'running' || rv.state === 'countdown') && rv.used === 1, 'Continue picks the run back up (the daily free one is used)');
+  await page.evaluate(() => { window.__crab.crash(); window.__crab.frames(60 * 2.5); });
+  check((await st()).state === 'results', 'only one Second Chance per run');
+  await page.evaluate(() => { window.__crab.startRun({ seed: 25, autopilot: true, tutorial: false }); window.__crab.frames(60); window.__crab.fever(0.99); for (let i = 0; i < 400 && window.__crab.game.world.feverT <= 0; i++) window.__crab.skip(1); window.__crab.frames(4); });
+  check((await page.evaluate(() => window.__crab.game.world.feverT > 0 && document.querySelector('.fever-meter').classList.contains('on'))), 'a full meter starts a Shell Fever with its HUD');
+  await page.evaluate(() => { window.__crab.game.flags.autopilot = false; window.__crab.reviveOn(false); window.__crab.setState('title'); });
+
   // ---------------- Golden Shell boost
   await page.evaluate(() => { window.__crab.xp(0, 1); window.__crab.setState('title'); });
   await fr(3);

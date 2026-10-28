@@ -141,6 +141,13 @@ export const CFG = {
   /** Update 5: the magnet reaches the neighbouring lanes and 16 m ahead (was 2 lanes, 30 m) */
   magnetRange: { lanes: 1, ahead: 16 },
   /** pulled shells: flight time = base + perMetre × distance; arc = how high the curve bows (m) */
+  /** Shell Fever (Beach Run, Daily Tide): `shells` of shell value fill the meter (close shaves add
+   * `shave`); a Fever lasts `time` s with 2× shells and a short pull (`reach` m); the meter drains at
+   * `decay`/s after `idle` s without a pickup */
+  fever: { shells: 45, shave: 0.12, time: 6, reach: 7, idle: 3, decay: 0.05 },
+  /** Second Chance: clear obstacles this far ahead (m), blink for `invuln` s, restart at `speed` × pace;
+   * pearl cost per use today after the daily free one */
+  revive: { clear: 32, invuln: 2.2, speed: 0.6, costs: [5, 10, 20, 30], window: 5 },
   /** Update 5: no power-up within powerupGap m of another; no shell within powerupClear m of one */
   powerupGap: 12,
   powerupClear: 1.4,

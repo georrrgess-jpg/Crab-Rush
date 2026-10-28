@@ -80,10 +80,18 @@ const SCENES = {
   // ---- Update 5: Sand Slam impact, magnet pull
   slam: async (p) => {
     await p.evaluate(() => { window.__crab.startRun({ seed: 21, autopilot: false, tutorial: false }); window.__crab.game.world.opts.god = true; window.__crab.frames(60 * 2); window.__crab.act('hop'); window.__crab.frames(18); window.__crab.act('slam'); });
-    await p.evaluate(() => { for (let i = 0; i < 40 && !window.__crab.game.world.player.grounded; i++) window.__crab.frames(1); window.__crab.frames(5); });
+    await p.evaluate(() => { for (let i = 0; i < 40 && !window.__crab.game.world.player.grounded; i++) window.__crab.skip(1); window.__crab.frames(5); });
   },
   magnet: async (p) => {
     await p.evaluate(() => { window.__crab.startRun({ seed: 22, autopilot: true, tutorial: false }); window.__crab.frames(60 * 2); window.__crab.game.world.activate('magnet'); window.__crab.frames(24); });
+  },
+  fever: async (p) => {
+    await p.evaluate(() => { window.__crab.startRun({ seed: 23, autopilot: true, tutorial: false }); window.__crab.frames(60 * 2); window.__crab.fever(0.99); });
+    await p.evaluate(() => { for (let i = 0; i < 300 && window.__crab.game.world.feverT <= 0; i++) window.__crab.skip(1); window.__crab.frames(40); });
+  },
+  revive: async (p) => {
+    await p.evaluate(() => { window.__crab.reviveOn(true); window.__crab.startRun({ seed: 24, autopilot: false, tutorial: false }); window.__crab.game.world.opts.god = true; window.__crab.frames(60 * 8); window.__crab.game.world.opts.god = false; window.__crab.crash(); window.__crab.frames(60 * 2.5); });
+    await p.waitForTimeout(600);
   },
   cup: async (p) => {
     await p.evaluate(() => window.__crab.clearCups(['sandy']));
