@@ -77,6 +77,14 @@ const SCENES = {
     await p.evaluate(() => window.__crab.startRun({ seed: 14, autopilot: true, tutorial: false, start: 5300 }));
     await p.evaluate(() => window.__crab.frames(60 * 3));
   },
+  // ---- Update 5: Sand Slam impact, magnet pull
+  slam: async (p) => {
+    await p.evaluate(() => { window.__crab.startRun({ seed: 21, autopilot: false, tutorial: false }); window.__crab.game.world.opts.god = true; window.__crab.frames(60 * 2); window.__crab.act('hop'); window.__crab.frames(18); window.__crab.act('slam'); });
+    await p.evaluate(() => { for (let i = 0; i < 40 && !window.__crab.game.world.player.grounded; i++) window.__crab.frames(1); window.__crab.frames(5); });
+  },
+  magnet: async (p) => {
+    await p.evaluate(() => { window.__crab.startRun({ seed: 22, autopilot: true, tutorial: false }); window.__crab.frames(60 * 2); window.__crab.game.world.activate('magnet'); window.__crab.frames(24); });
+  },
   cup: async (p) => {
     await p.evaluate(() => window.__crab.clearCups(['sandy']));
     await p.evaluate(() => window.__crab.setState('cup'));

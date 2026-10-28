@@ -7,7 +7,7 @@ import { Backdrop } from './backdrop';
 import { CAMERA_ELEVATION } from './camera';
 import { EntityViews } from './entities';
 import { LivingWorld } from './life';
-import { BlobShadows, Footprints, Particles } from './fx';
+import { BlobShadows, SlamFx, Footprints, Particles } from './fx';
 import { Materials, type TrailKind, makeTrailTex } from './materials';
 import { BODY_SKINS, CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, type HatKind, IDLE_DRIVE } from './models/crab';
 import { greatWave, powerupIcon, riderWave } from './models/obstacles';
@@ -50,6 +50,8 @@ export class GameView {
   private shadows: BlobShadows;
   private dust: Particles;
   private sparks: Particles;
+  /** Sand Slam shockwave and crater */
+  private slamFx = new SlamFx();
   /** Wardrobe trail sprites (one extra draw call, only while a non-sand trail is equipped) */
   private trail: Particles;
   private trailKind: TrailKind = 'sand';
@@ -158,7 +160,7 @@ export class GameView {
       this.world.add(this.homeSet);
     }
     this.shells = new ShellRenderer(this.mats);
-    this.world.add(this.shells.mesh, this.shells.glow, this.shells.sparkle);
+    this.world.add(this.shells.mesh, this.shells.glow, this.shells.sparkle, this.shells.pops);
     this.dust = new Particles(this.mats.dustTex, false, 160);
     this.sparks = new Particles(this.mats.sparkTex, true, 160);
     this.dust.limit = Math.floor(quality.maxParticles * 0.6);
@@ -166,7 +168,7 @@ export class GameView {
     this.trail = new Particles(this.mats.sparkTex, false, 120);
     this.trail.limit = Math.floor(quality.maxParticles * 0.4);
     this.trail.mesh.visible = false;
-    this.world.add(this.dust.mesh, this.sparks.mesh, this.trail.mesh);
+    this.world.add(this.dust.mesh, this.sparks.mesh, this.trail.mesh, this.slamFx.group);
 
     this.crab = new CrabModel(this.mats);
     this.world.add(this.crab.root);
@@ -376,6 +378,7 @@ export class GameView {
     this.celebrating = false;
     this.trauma = 0;
     this.fovPunch.snap(0);
+    this.slamFx.reset();
     this.camDip.snap(0);
   }
 
@@ -482,7 +485,8 @@ export class GameView {
       switch (ev.t) {
         case 'shell':
           if (ev.big) this.crab.happy();
-          for (let i = 0; i < (ev.big ? 12 : 4); i++) {
+          this.shells.addPop(ev.x, ev.y + 0.15, ev.big, this.time);
+          for (let i = 0, n = (ev.big ? 12 : 5) >> (this.renderer.quality.name === 'low' ? 1 : 0); i < n; i++) {
             const a = Math.random() * Math.PI * 2;
             const sp = 1.2 + Math.random() * 1.8;
             // player-relative (local) so the burst stays with the crab instead of streaming at the camera
@@ -500,9 +504,20 @@ export class GameView {
           break;
         case 'land':
           this.crab.land(ev.hard);
-          if (!this.reduceMotion) this.camDip.impulse(ev.hard ? -2.2 : -1.1);
-          this.puff(p.x, w.dist, ev.hard ? 12 : 8, ev.hard ? 0.55 : 0.4);
-          if (ev.hard) this.shake(0.08, 0.12);
+          if (!this.reduceMotion) this.camDip.impulse(ev.hard ? -3.4 : -1.1);
+          this.puff(p.x, w.dist, ev.hard ? 18 : 8, ev.hard ? 0.7 : 0.4);
+          if (ev.hard) {
+            // Sand Slam: shockwave, crater, a fountain of sand and a camera punch
+            this.slamFx.spawn(p.x, w.dist);
+            this.shake(0.2, 0.22);
+            if (!this.reduceMotion) this.fovPunch.impulse(-38);
+            const n = this.renderer.quality.name === 'low' ? 10 : 22;
+            for (let i = 0; i < n; i++) {
+              const a = (i / n) * Math.PI * 2 + Math.random() * 0.3;
+              const sp = 3 + Math.random() * 3;
+              this.sparks.spawn(p.x + Math.cos(a) * 0.4, 0.15, w.dist + Math.sin(a) * 0.4, Math.cos(a) * sp, 3 + Math.random() * 3.5, Math.sin(a) * sp, 0.55 + Math.random() * 0.25, 0.16 + Math.random() * 0.1, i % 3 === 0 ? 0xfff2c8 : 0xe9c37e, 14);
+            }
+          }
           break;
         case 'slam':
           this.crab.slam();
@@ -714,6 +729,7 @@ export class GameView {
     this.crab.root.visible = !blink;
     this.crab.update(dt, dv);
     this.rivals?.update(dt, dist, px, this.renderer.camera, running && this.rivals.active);
+    this.slamFx.update(dt, dist);
     // Shell Dash: a golden trail
     if (running && w.dashT > 0 && dt > 0 && Math.random() < 0.8) this.sparks.spawn(px + (Math.random() - 0.5) * 0.9, 0.25 + Math.random() * 0.6, dist - 0.4, 0, 0.6, 0, 0.35, 0.2, 0xffd23a, 1);
     // shadow under the crab shrinks as it rises

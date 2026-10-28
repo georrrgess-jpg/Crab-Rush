@@ -49,8 +49,14 @@ export interface Shell {
   wz: number;
   big: boolean;
   dead: boolean;
-  /** pull-in animation toward the player (magnet) */
+  /** pull-in animation toward the player (magnet, slam shockwave, fever) */
   magnet: boolean;
+  /** pull progress (s), its duration, and where it started (x, y, distance ahead of the player) */
+  pullT: number;
+  pullDur: number;
+  x0: number;
+  y0: number;
+  rel0: number;
 }
 
 export interface PlayerState {
@@ -68,6 +74,8 @@ export interface PlayerState {
   laneChangeAt: number;
   /** lateral velocity (m/s), for leaning visuals */
   vx: number;
+  /** lane-glide spring velocity (m/s) */
+  laneV: number;
   invuln: number;
   airTime: number;
 }

@@ -300,6 +300,8 @@ export class Spawner {
             case 'P': {
               // Tide Rush: no power-ups (the shell strand through the cell still counts)
               if (w.level?.rush) break;
+              // never two power-ups on top of each other
+              if (w.powerupNear(wz, CFG.powerupGap)) break;
               const kind: PowerKind = block ? (block.powerup ?? 'magnet') : scripted ? 'magnet' : this.pickPower();
               w.addEntity('powerup', l, wz, { power: kind, skin: POWER_KINDS.indexOf(kind) });
               if (!scripted && !block) this.schedulePower(wz);

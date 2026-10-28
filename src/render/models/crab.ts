@@ -430,7 +430,7 @@ export class CrabModel {
   land(hard: boolean): void {
     this.landT = 0;
     this.landHard = hard;
-    this.squash.velocity = hard ? -11 : -6;
+    this.squash.velocity = hard ? -16 : -6;
     this.hatX.impulse(hard ? 5 : 3);
     for (const s of this.antX) s.impulse(hard ? 9 : 5);
     if (this.state === 'slam') this.setState('run');
@@ -990,13 +990,18 @@ export class CrabModel {
       }
     }
     // landing: leg splay
-    if (this.landT < 0.25) {
-      const k = Math.min(1, this.landT / 0.05) * (1 - this.landT / 0.25) * (this.landHard ? 1.4 : 1);
+    if (this.landT < (this.landHard ? 0.4 : 0.25)) {
+      const k = Math.min(1, this.landT / 0.05) * (1 - this.landT / (this.landHard ? 0.4 : 0.25)) * (this.landHard ? 1.4 : 1);
       for (let l = 0; l < 6; l++) {
         o[P_LEG + l * 4 + 1] = (o[P_LEG + l * 4 + 1] as number) - 0.35 * k;
         o[P_LEG + l * 4 + 2] = (o[P_LEG + l * 4 + 2] as number) + 0.3 * k;
       }
       this.mouth = this.landHard ? 2 : this.mouth;
+      // Sand Slam: a superhero landing, body punched low and claws flung wide
+      if (this.landHard) {
+        o[P_BODY_Y] = (o[P_BODY_Y] as number) - 0.14 * k;
+        for (let s2 = 0; s2 < 2; s2++) o[P_CLAW + s2 * 4 + 1] = (o[P_CLAW + s2 * 4 + 1] as number) + (s2 === 0 ? 1 : -1) * 0.5 * k;
+      }
     }
     // bump: head snap, eyes squeezed shut
     if (this.bumpT < 0.35) {
@@ -1252,7 +1257,8 @@ export class CrabModel {
     // eyes look around; lids blink
     for (let s = 0; s < 2; s++) {
       const e = bone(B_EYE[s] as number);
-      e.rotation.set(-(o[P_LOOK_Y] as number) * 0.45, (o[P_LOOK_X] as number) * 0.55, 0);
+      // looking up tips the eyeballs back toward the hat brim: allow only a little of it
+      e.rotation.set(-clamp(o[P_LOOK_Y] as number, -1, 0.3) * 0.45, (o[P_LOOK_X] as number) * 0.55, 0);
       const lid = bone(B_LID[s] as number);
       lid.rotation.x = clamp(o[P_LID] as number, 0, 1) * 2.2;
       const a = bone(B_ANT[s] as number);
@@ -1344,6 +1350,9 @@ const _cb = new THREE.Color();
  * Crab v2 geometry (UPDATE2_PLAN.md §2.2), built in the rest pose and tagged per bone. `clay` gets
  * the matte parts, `gloss` the shell, claws and eyes, `line` the silhouette for the outline hull.
  */
+const _bn = new THREE.Vector3();
+const _bf = new THREE.Vector3(0.15, 0.35, 1).normalize();
+
 export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: GeoBuilder, line: GeoBuilder): void {
   const outlineOnly = clay === line;
   const seg = (n: number): number => Math.max(4, Math.round(hi ? n : n * 0.55));
@@ -1531,17 +1540,38 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
       clay.bone(B_EYE[si] as number).geo(new THREE.TorusGeometry(0.058, 0.014, 4, seg(10)), dark, [s * 0.2, 0.66, 0.28], [Math.PI / 2 - 0.25, 0, 0]);
       clay.bone(B_EYE[si] as number).geo(new THREE.TorusGeometry(0.05, 0.013, 4, seg(10)), dark, [s * 0.24, 0.79, 0.315], [Math.PI / 2 - 0.25, 0, 0]);
     }
-    both(gloss, (g) => ball(g.bone(B_EYE[si] as number), 0xfafafa, 0.17, [ex, 0.9, 0.35], [1, 1.05, 1], 14));
+    both(gloss, (g) => {
+      if (g === line) return void ball(g, 0xfafafa, 0.13, [ex, 0.9, 0.35], [1, 1.05, 1], 10); // hull tucked inside: no grey rim on the whites
+      // the white is shaded as if it faced forward (bent normals), so its edge never drops into the
+      // toon shadow band: a clean white eye instead of a grey goggle rim
+      const ws = Math.max(5, Math.round(hi ? 14 : 14 * 0.6));
+      const eg = new THREE.SphereGeometry(0.17, ws, Math.max(3, Math.round(ws * 0.6)));
+      const nrm = eg.attributes.normal as THREE.BufferAttribute;
+      for (let i = 0; i < nrm.count; i++) {
+        _bn.set(nrm.getX(i), nrm.getY(i), nrm.getZ(i)).lerp(_bf, 0.55).normalize();
+        nrm.setXYZ(i, _bn.x, _bn.y, _bn.z);
+      }
+      g.bone(B_EYE[si] as number).geo(eg, 0xfafafa, [ex, 0.9, 0.35], [0, 0, 0], [1, 1.05, 1]);
+    });
     if (deco) {
-    ball(gloss.bone(B_EYE[si] as number), skin.iris, 0.105, [ex, 0.9, 0.475], [1, 1.1, 0.45], 10);
+    // iris, pupil and highlights are caps on the eyeball's own sphere, so they wrap it from every
+    // angle instead of floating in front of it like flat discs
+    const EYE_C: V3 = [ex, 0.9, 0.35];
+    const cap = (r: number, theta: number, w: number): THREE.SphereGeometry => new THREE.SphereGeometry(r, seg(w), Math.max(3, Math.round(seg(w) / 3)), 0, Math.PI * 2, 0, theta);
+    gloss.bone(B_EYE[si] as number).geo(cap(0.1725, 0.6, 14), skin.iris, EYE_C, [Math.PI / 2, 0, 0], [1, 1.05, 1]);
     gloss.paint((x, y, z, c) => {
       const r = Math.hypot(x - ex, y - 0.9);
-      if (r > 0.08) c.multiplyScalar(0.7);
-      else c.lerp(_cb.set(0xffffff), Math.max(0, 0.07 - r) * 2);
+      if (r > 0.075) c.multiplyScalar(0.62);
+      else c.lerp(_cb.set(0xffffff), Math.max(0, 0.06 - r) * 2.5);
     });
-    ball(gloss.bone(B_EYE[si] as number), 0x0e0e16, 0.062, [ex, 0.9, 0.508], [1, 1.12, 0.4], 8);
-    ball(gloss.bone(B_EYE[si] as number), 0xffffff, 0.034, [ex - s * 0.03 - 0.02, 0.95, 0.53], [1, 1, 0.5], 6);
-    ball(gloss.bone(B_EYE[si] as number), 0xffffff, 0.017, [ex + 0.035, 0.865, 0.535], [1, 1, 0.5], 5);
+    gloss.bone(B_EYE[si] as number).geo(cap(0.175, 0.32, 10), 0x0e0e16, EYE_C, [Math.PI / 2, 0, 0], [1, 1.05, 1]);
+    // two catch-lights sitting on the surface, upper-outer and lower-inner
+    const hl = (dx: number, dy: number, rr: number, w: number): void => {
+      const n = new THREE.Vector3(dx, dy, 1).normalize().multiplyScalar(0.176);
+      ball(gloss.bone(B_EYE[si] as number), 0xffffff, rr, [ex + n.x, 0.9 + n.y * 1.05, 0.35 + n.z], [1, 1, 0.45], w, [Math.atan2(-n.y, n.z), Math.atan2(n.x, n.z), 0]);
+    };
+    hl(-0.22, 0.3, 0.032, 6);
+    hl(0.18, -0.2, 0.016, 5);
     // eyelid: a hemispherical cap tilted back (open); the lid bone rotates it down over the eye
     const lid = new THREE.SphereGeometry(0.182, seg(12), seg(5), 0, Math.PI * 2, 0, Math.PI / 2);
     gloss.bone(B_LID[si] as number).geo(lid, dark, [ex, 0.9, 0.35], [-0.95, 0, 0], [1, 1.05, 1]);

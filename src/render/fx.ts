@@ -230,3 +230,106 @@ export class Footprints {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 }
+
+/**
+ * Sand Slam impact (UPDATE5_PLAN.md §2): a shockwave ring racing out across the sand and a crater
+ * scorch that fades. Two reused meshes; hidden when idle (no draw calls).
+ */
+export class SlamFx {
+  readonly group = new THREE.Group();
+  private ring: THREE.Mesh;
+  private ring2: THREE.Mesh;
+  private crater: THREE.Mesh;
+  private ringMat: THREE.MeshBasicMaterial;
+  private ring2Mat: THREE.MeshBasicMaterial;
+  private craterMat: THREE.MeshBasicMaterial;
+  private t = 99;
+  private x = 0;
+  private wz = 0;
+
+  constructor() {
+    // a soft-edged band: alpha ramps in from the inside, peaks near the rim and falls off outside
+    const ringGeo = new THREE.RingGeometry(0.62, 1, 48, 3);
+    const rp = ringGeo.attributes.position as THREE.BufferAttribute;
+    const col = new Float32Array(rp.count * 3);
+    for (let i = 0; i < rp.count; i++) {
+      const r = Math.hypot(rp.getX(i), rp.getY(i));
+      const a = r < 0.86 ? Math.pow((r - 0.62) / 0.24, 2) : 1 - (r - 0.86) / 0.14;
+      col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = Math.max(0, Math.min(1, a));
+    }
+    ringGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    ringGeo.rotateX(-Math.PI / 2);
+    this.ringMat = new THREE.MeshBasicMaterial({ color: 0xfff6dc, vertexColors: true, transparent: true, depthWrite: false, opacity: 0, blending: THREE.AdditiveBlending });
+    this.ring2Mat = new THREE.MeshBasicMaterial({ color: 0xffc860, vertexColors: true, transparent: true, depthWrite: false, opacity: 0, blending: THREE.AdditiveBlending });
+    this.ring = new THREE.Mesh(ringGeo, this.ringMat);
+    this.ring2 = new THREE.Mesh(ringGeo, this.ring2Mat);
+    // crater: a radial gradient (dark pressed sand, a bright rim, cracks) drawn once
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d') as CanvasRenderingContext2D;
+    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+    grad.addColorStop(0, 'rgba(120,80,30,0.75)');
+    grad.addColorStop(0.55, 'rgba(150,105,50,0.55)');
+    grad.addColorStop(0.78, 'rgba(255,240,200,0.7)');
+    grad.addColorStop(1, 'rgba(255,240,200,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = 'rgba(100,60,20,0.6)';
+    g.lineWidth = 2;
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + 0.3;
+      g.beginPath();
+      g.moveTo(64 + Math.cos(a) * 10, 64 + Math.sin(a) * 10);
+      g.lineTo(64 + Math.cos(a + 0.15) * 30, 64 + Math.sin(a + 0.15) * 30);
+      g.lineTo(64 + Math.cos(a - 0.05) * 46, 64 + Math.sin(a - 0.05) * 46);
+      g.stroke();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const craterGeo = new THREE.PlaneGeometry(2, 2);
+    craterGeo.rotateX(-Math.PI / 2);
+    this.craterMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    this.crater = new THREE.Mesh(craterGeo, this.craterMat);
+    for (const m of [this.ring, this.ring2, this.crater]) {
+      m.renderOrder = 2;
+      m.visible = false;
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
+  }
+
+  spawn(x: number, wz: number): void {
+    this.t = 0;
+    this.x = x;
+    this.wz = wz;
+  }
+
+  reset(): void {
+    this.t = 99;
+    for (const m of [this.ring, this.ring2, this.crater]) m.visible = false;
+  }
+
+  update(dt: number, dist: number): void {
+    if (this.t > 2) return;
+    this.t += dt;
+    const z = -(this.wz - dist);
+    const t = this.t;
+    const u1 = Math.min(1, t / 0.5);
+    const u2 = Math.min(1, Math.max(0, (t - 0.08) / 0.6));
+    const out = (u: number): number => 1 - (1 - u) * (1 - u) * (1 - u);
+    this.ring.visible = u1 < 1;
+    this.ring.position.set(this.x, 0.04, z);
+    this.ring.scale.setScalar(0.4 + out(u1) * 4.4);
+    this.ringMat.opacity = (1 - u1) * 0.9;
+    this.ring2.visible = u2 > 0 && u2 < 1;
+    this.ring2.position.set(this.x, 0.035, z);
+    this.ring2.scale.setScalar(0.3 + out(u2) * 2.8);
+    this.ring2Mat.opacity = (1 - u2) * 0.7;
+    const uc = Math.min(1, t / 1.8);
+    this.crater.visible = uc < 1;
+    this.crater.position.set(this.x, 0.02, z);
+    this.crater.scale.setScalar(0.7 + Math.min(1, t / 0.12) * 0.55);
+    this.craterMat.opacity = (1 - uc * uc) * 0.9;
+    if (this.t > 2) this.reset();
+  }
+}

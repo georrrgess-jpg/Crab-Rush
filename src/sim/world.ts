@@ -57,7 +57,8 @@ export interface TutorialStep {
 
 const HOP_G = (8 * CFG.hop.apex) / (CFG.hop.airtime * CFG.hop.airtime);
 const HOP_V0 = (4 * CFG.hop.apex) / CFG.hop.airtime;
-const LANE_TAU = CFG.laneChangeTime / 3;
+/** critically damped lane spring: ~95% of a lane change done in `laneChangeTime` */
+const LANE_W = 4.74 / CFG.laneChangeTime;
 /** bounce pad launch speed (apex CFG.island.padApex) and time to apex */
 export const PAD_V0 = Math.sqrt(2 * HOP_G * CFG.island.padApex);
 export const PAD_APEX_T = PAD_V0 / HOP_G;
@@ -107,6 +108,7 @@ function freshPlayer(): PlayerState {
     prevLane: 1,
     laneChangeAt: -10,
     vx: 0,
+    laneV: 0,
     invuln: 0,
     airTime: 0,
   };
@@ -278,8 +280,16 @@ export class World {
     return e;
   }
 
+  /** a live power-up within `gap` metres of `wz` (any lane) */
+  powerupNear(wz: number, gap: number): boolean {
+    for (const e of this.entities) if (e.kind === 'powerup' && !e.dead && Math.abs(e.wz - wz) < gap) return true;
+    return false;
+  }
+
   addShell(x: number, y: number, wz: number, big: boolean): void {
-    const s = this.shellPool.pop() ?? ({ id: 0, x: 0, y: 0, wz: 0, big: false, dead: false, magnet: false } as Shell);
+    // a power-up's spot stays clear: no shell on top of it
+    for (const e of this.entities) if (e.kind === 'powerup' && !e.dead && Math.abs(e.wz - wz) < CFG.powerupClear && Math.abs(e.x - x) < 1.2) return;
+    const s = this.shellPool.pop() ?? ({ id: 0, x: 0, y: 0, wz: 0, big: false, dead: false, magnet: false, pullT: 0, pullDur: 0, x0: 0, y0: 0, rel0: 0 } as Shell);
     s.id = this.nextId++;
     s.x = x;
     s.y = y;
@@ -459,11 +469,14 @@ export class World {
     const p = this.player;
     p.prevX = p.x;
     p.prevY = p.y;
-    // lane glide: exponential smoothing, ~95% in laneChangeTime
+    // lane glide: a critically damped spring, so a move eases in and out (no snap at the start)
     const tx = CFG.laneX[p.lane] as number;
-    const k = 1 - Math.exp(-dt / LANE_TAU);
-    p.x += (tx - p.x) * k;
-    if (Math.abs(tx - p.x) < 0.004) p.x = tx;
+    p.laneV += (LANE_W * LANE_W * (tx - p.x) - 2 * LANE_W * p.laneV) * dt;
+    p.x += p.laneV * dt;
+    if (Math.abs(tx - p.x) < 0.004 && Math.abs(p.laneV) < 0.08) {
+      p.x = tx;
+      p.laneV = 0;
+    }
     p.vx = (p.x - p.prevX) / dt;
     if (p.bumpT > 0) p.bumpT = Math.max(0, p.bumpT - dt);
     if (p.invuln > 0) p.invuln = Math.max(0, p.invuln - dt);
@@ -488,6 +501,13 @@ export class World {
         p.grounded = true;
         this.slamming = false;
         this.events.push({ t: 'land', hard });
+        // Sand Slam: the shockwave pulls in shells just ahead in this lane and its neighbours
+        if (hard) {
+          for (const s of this.shells) {
+            const rel = s.wz - this.dist;
+            if (rel > -0.5 && rel < CFG.hop.slamReach && Math.abs(s.x - p.x) < 3.4) this.pull(s);
+          }
+        }
         if (p.hopBuffer > 0) this.startHop();
       }
     }
@@ -539,14 +559,21 @@ export class World {
       }
       if (e.knocked > 0) e.knocked += dt;
     }
+    // pulled shells fly a curved, accelerating arc into the crab (a quadratic Bézier, eased in)
+    const p = this.player;
     for (const s of this.shells) {
-      if (s.magnet) {
-        const p = this.player;
-        const k = Math.min(1, 12 * dt);
-        s.x += (p.x - s.x) * k;
-        s.y += (p.y + 0.5 - s.y) * k;
-        s.wz -= 32 * dt;
-      }
+      if (!s.magnet || s.dead) continue;
+      s.pullT += dt;
+      const u = Math.min(1, s.pullT / s.pullDur);
+      const e = u * u * (1.6 - 0.6 * u);
+      const a = (1 - e) * (1 - e);
+      const b = 2 * (1 - e) * e;
+      const c = e * e;
+      const tx = p.x;
+      const ty = p.y + 0.5;
+      s.x = a * s.x0 + b * (s.x0 + tx) * 0.5 + c * tx;
+      s.y = a * s.y0 + b * (Math.max(s.y0, ty) + CFG.pull.arc) + c * ty;
+      s.wz = this.dist + a * s.rel0 + b * s.rel0 * 0.35;
     }
   }
 
@@ -562,10 +589,21 @@ export class World {
         const rel = s.wz - this.dist;
         if (rel < -1 || rel > CFG.magnetRange.ahead) continue;
         if (!all && Math.abs(s.x - this.player.x) > CFG.magnetRange.lanes * 2.3) continue;
-        s.magnet = true;
+        this.pull(s);
       }
     }
     if (pw.kind && pw.t <= 0) this.endPower(false);
+  }
+
+  /** start a shell's pull toward the crab */
+  pull(s: Shell): void {
+    if (s.magnet || s.dead) return;
+    s.magnet = true;
+    s.pullT = 0;
+    s.x0 = s.x;
+    s.y0 = s.y;
+    s.rel0 = Math.max(0, s.wz - this.dist);
+    s.pullDur = CFG.pull.base + s.rel0 * CFG.pull.perMetre;
   }
 
   private endPower(popped: boolean): void {
@@ -697,6 +735,7 @@ export class World {
     p.prevLane = p.lane;
     p.lane = lane;
     p.bumpT = CFG.bumpWobble;
+    p.laneV = 0;
     p.laneChangeAt = this.time;
     this.streak = 0;
     this.lastShellTime = -10;

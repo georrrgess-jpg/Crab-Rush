@@ -38,14 +38,16 @@ export const CFG = {
   // ---- lanes & player ----
   laneX: [-2.2, 0, 2.2] as readonly number[],
   laneCount: 3,
-  /** Exponential smoothing time-constant: ~95% of a lane change done in `laneChangeTime`. */
-  laneChangeTime: 0.13,
+  /** Lane glide (a critically damped spring): ~95% of a lane change done in `laneChangeTime`. */
+  laneChangeTime: 0.17,
   player: { w: 0.9, d: 0.8, h: 0.9 },
   hop: {
     airtime: 0.55,
     apex: 1.5,
     slamGravityMul: 3,
     slamKick: 11, // downward speed (m/s) given on slam
+    /** Sand Slam shockwave: shells this far ahead (m) in the lane and its neighbours fly in */
+    slamReach: 6,
     buffer: 0.12,
   },
   bumpWobble: 0.25,
@@ -136,7 +138,13 @@ export const CFG = {
     rider: [4, 5, 6, 7, 8],
   },
   upgradeCosts: [200, 500, 1100, 2200] as readonly number[],
-  magnetRange: { lanes: 2, ahead: 30 },
+  /** Update 5: the magnet reaches the neighbouring lanes and 16 m ahead (was 2 lanes, 30 m) */
+  magnetRange: { lanes: 1, ahead: 16 },
+  /** pulled shells: flight time = base + perMetre × distance; arc = how high the curve bows (m) */
+  /** Update 5: no power-up within powerupGap m of another; no shell within powerupClear m of one */
+  powerupGap: 12,
+  powerupClear: 1.4,
+  pull: { base: 0.16, perMetre: 0.022, arc: 0.9 },
   riderSpeedMul: 1.35,
   riderHeight: 1.2,
 
