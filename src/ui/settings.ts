@@ -158,7 +158,7 @@ export class SettingsScreen {
     const done = btn('Done', 'big', () => this.h.back());
     done.style.width = '100%';
     b.appendChild(done);
-    b.appendChild(el('div', 'credits', 'Crab Dash · every model, sound and song is made in code · built with three.js'));
+    b.appendChild(el('div', 'credits', 'Crab Rush · every model, sound and song is made in code · built with three.js'));
     b.scrollTop = scroll;
   }
 }

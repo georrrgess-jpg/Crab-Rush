@@ -226,9 +226,9 @@ try {
 
   // ---------------- Treasure Dig (Update 5): spades, prizes, relics, a cleared site
   await page.evaluate(() => { window.__crab.setState('title'); });
-  await page.click('#home .mode-card.dig');
+  await page.click('#home .h6-nav .tab:nth-of-type(4)');
   await fr(3);
-  check((await st()).state === 'dig' && (await page.locator('#dig .dig-grid .dt').count()) === 30, 'Treasure Dig opens from its Home card with a 6 × 5 site');
+  check((await st()).state === 'dig' && (await page.locator('#dig .dig-grid .dt').count()) === 30, 'Treasure Dig opens from the Dig tab with a 6 × 5 site');
   const sp0 = await page.evaluate(() => window.__crab.game.save.data.dig.spades);
   await page.evaluate(() => document.querySelector(`#dig .dt[data-i="${window.__crab.game.digScreen.pick(false)}"]`).click());
   await page.waitForTimeout(700);

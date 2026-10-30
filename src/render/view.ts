@@ -796,12 +796,14 @@ export class GameView {
       this.titleSpin += dt;
       const aspect = cam.aspect;
       const portrait = aspect < 1;
-      const r = portrait ? 6.4 : 4.4;
+      const r = portrait ? 6.2 : 4.4;
       const a = Math.sin(this.titleSpin * 0.18) * 0.35 + 0.28;
       const titlePos = this.vTitlePos.set(Math.sin(a) * r + this.parX * 0.35, (portrait ? 2.1 : 1.7) + this.parY * 0.2, Math.cos(a) * r);
       // landscape phones: aim right of the crab so it sits in the left half, clear of the mode cards
       const lx = portrait || window.innerHeight >= 480 ? -0.3 : 0.9 + Math.min(0.9, Math.max(0, aspect - 1.4) * 0.8);
-      const titleLook = this.vTitleLook.set(lx, portrait ? 0.45 : 1.3, -3);
+      // portrait: Home stacks the hero card and mode tiles in the lower half, so the crab is framed in
+      // the upper-middle band (looking below it lifts it up the screen)
+      const titleLook = this.vTitleLook.set(lx, portrait ? (aspect > 0.52 ? -2.1 : -1.25) : 1.3, -3);
       if (mode === 'title') {
         pos = titlePos;
         look = titleLook;

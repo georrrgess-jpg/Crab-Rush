@@ -33,7 +33,7 @@ export class WhatsNewSheet {
     this.el.id = 'whatsnew';
     this.el.setAttribute('role', 'dialog');
     this.el.setAttribute('aria-modal', 'true');
-    this.el.setAttribute('aria-label', "What's new in Crab Dash");
+    this.el.setAttribute('aria-label', "What's new in Crab Rush");
     const dim = el('div', 'wn-dim');
     this.card = el('div', 'wn-card');
     this.el.append(dim, this.card);

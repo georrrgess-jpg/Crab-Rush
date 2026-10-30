@@ -1,12 +1,11 @@
 import { btn, el, fmt } from './dom';
-import { BOOST_SVG, HAT_SVG, ICON } from './icons';
+import { BOOST_SVG, ICON } from './icons';
 import type { GoalView } from './ui';
 import { Sheet, Wallet, onSizeClass } from './kit';
 import { morphFrom } from './motion';
-import { CUP_ICON } from './cup';
 import { DIG_ICON } from './dig';
 
-/** Everything the Home screen shows (UPDATE3_PLAN.md §2). */
+/** Everything the Home screen shows. */
 export interface HomeData {
   best: number;
   shells: number;
@@ -32,20 +31,20 @@ export interface HomeData {
   /** profile card: a portrait of the equipped crab (data URL) and the player's title */
   avatar?: string | null;
   title?: string;
-  /** Treasure Dig: spades in hand, relics found, current site */
-  dig?: { spades: number; relics: number; total: number; site: number } | null;
   pearls?: number;
   /** Crab Cup: cups cleared, the cup in progress */
   cup?: { cleared: number; total: number; current: string | null; wins: number } | null;
+  /** Treasure Dig: spades in hand, relics found, current site */
+  dig?: { spades: number; relics: number; total: number; site: number } | null;
 }
 
 export interface HomeHandlers {
   play(): void;
   islands(): void;
   daily(): void;
+  cup?(): void;
   dig?(): void;
   trophies?(): void;
-  cup?(): void;
   wardrobe(): void;
   pass(): void;
   settings(): void;
@@ -54,7 +53,7 @@ export interface HomeHandlers {
   /** tap on the crab area: emote */
   poke(): void;
   toggleBoost(): void;
-  /** carousel focus changed (sound / camera) */
+  /** card focus changed (sound / camera) */
   focus?(i: number): void;
 }
 
@@ -64,26 +63,44 @@ export function countdown(ms: number): string {
   return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
 }
 
-/** Illustrated, animated card scenes (inline SVG + CSS animation; no assets). */
-const ART = {
-  beach: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ab-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb347"/><stop offset=".55" stop-color="#ff8a3a"/><stop offset="1" stop-color="#ff6a2a"/></linearGradient></defs><rect width="320" height="160" fill="url(#ab-sky)"/><circle class="a-sun" cx="250" cy="52" r="26" fill="#fff3b0" opacity=".9"/><g class="a-waves" fill="rgba(255,255,255,.28)"><path d="M0 112q20-10 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0v60H0z"/></g><path d="M0 130c60-14 140-18 320-6v36H0z" fill="#ffd27a"/><g class="a-palm"><path d="M44 132c2-26 6-46 14-64" stroke="#8a4a1e" stroke-width="6" fill="none" stroke-linecap="round"/><path d="M58 68c-18-10-34-6-42 2 14-2 26 0 42 6zm0 0c14-14 32-14 40-6-14-2-26 0-40 10zm0 0c4-18-4-30-14-34 8 10 10 22 8 34z" fill="#2f9e4a"/></g><g class="a-crab"><ellipse cx="0" cy="0" rx="12" ry="8" fill="#e8402f"/><circle cx="-5" cy="-9" r="3.4" fill="#fff"/><circle cx="5" cy="-9" r="3.4" fill="#fff"/><circle cx="-5" cy="-9" r="1.6" fill="#222"/><circle cx="5" cy="-9" r="1.6" fill="#222"/><path d="M-12-2l-8-6M12-2l8-6" stroke="#e8402f" stroke-width="3.5" stroke-linecap="round"/></g></svg>`,
-  islands: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ai-sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fc4f0"/><stop offset="1" stop-color="#1f74b8"/></linearGradient></defs><rect width="320" height="160" fill="url(#ai-sea)"/><g class="a-waves" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="3" stroke-linecap="round"><path d="M10 40q10-6 20 0t20 0M200 24q10-6 20 0t20 0M120 140q10-6 20 0t20 0"/></g><g class="a-isle"><ellipse cx="230" cy="112" rx="70" ry="22" fill="#f6dda6"/><path d="M232 104c2-20 6-34 12-46" stroke="#8a4a1e" stroke-width="5" fill="none"/><path d="M244 58c-14-8-26-4-32 2 10-2 20 0 32 4zm0 0c10-10 24-10 30-4-10-2-20 0-30 8z" fill="#2f9e4a"/><path class="a-flag" d="M200 100V74l18 6-18 6" fill="#ff5a4a" stroke="#fff" stroke-width="2"/></g><path d="M40 120q40-30 80-20t80-4" stroke="#fff" stroke-width="3" stroke-dasharray="6 7" fill="none" opacity=".8"/><circle cx="40" cy="120" r="7" fill="#ffd23a" stroke="#fff" stroke-width="2"/><circle cx="120" cy="100" r="7" fill="#ffd23a" stroke="#fff" stroke-width="2"/></svg>`,
-  daily: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ad-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5fd0c0"/><stop offset="1" stop-color="#1d8c84"/></linearGradient></defs><rect width="320" height="160" fill="url(#ad-sky)"/><g class="a-waves" fill="rgba(255,255,255,.22)"><path d="M0 120q20-10 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0 40 0v60H0z"/></g><g class="a-cal"><rect x="208" y="34" width="76" height="76" rx="12" fill="#fff"/><rect x="208" y="34" width="76" height="22" rx="10" fill="#ff5a4a"/><rect class="a-page" x="216" y="62" width="60" height="40" rx="6" fill="#eef7fb"/><path d="M232 82l9 9 17-19" stroke="#3fbf55" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g><path class="a-flame" d="M60 118c2-10 12-14 12-28 6 8 4 14 8 18 2-4 2-8 2-10 6 6 8 12 8 20a15 15 0 0 1-30 0z" fill="#ffb020"/></svg>`,
-  dig: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="ag-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffcf4a"/><stop offset="1" stop-color="#ff8a2a"/></linearGradient></defs><rect width="320" height="160" fill="url(#ag-sky)"/><g class="a-rays" fill="rgba(255,255,255,.16)"><path d="M232 92L330 30v34zM232 92L330 120v34zM232 92L170 -10h50z"/></g><path d="M0 118c70-14 180-18 320-4v46H0z" fill="#f6dda6"/><path d="M0 132c90-10 200-10 320 0v28H0z" fill="#e9c37e"/><g class="a-chest"><rect x="200" y="84" width="64" height="38" rx="6" fill="#a8743f" stroke="#5a3a1a" stroke-width="3"/><path d="M198 88c0-18 68-18 68 0z" fill="#c98a4a" stroke="#5a3a1a" stroke-width="3"/><rect x="226" y="92" width="12" height="14" rx="3" fill="#ffd23a" stroke="#8a5a10" stroke-width="2"/><path d="M200 100h64" stroke="#5a3a1a" stroke-width="3"/><circle class="a-glint" cx="214" cy="78" r="5" fill="#fff"/></g><path d="M196 122c10-8 60-8 72 0z" fill="#e9c37e"/><g class="a-shovel"><path d="M70 40l40 66" stroke="#8a4a1e" stroke-width="7" stroke-linecap="round"/><path d="M98 96l26 14-8 18c-8 6-24-2-26-12z" fill="#cfd8e0" stroke="#5a6a7a" stroke-width="3"/></g><g fill="#fff"><path class="a-spark" d="M150 50l4 10 10 4-10 4-4 10-4-10-10-4 10-4z"/><path class="a-spark s2" d="M282 54l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></g><g class="a-sandpuff" fill="rgba(255,240,200,.85)"><circle cx="118" cy="118" r="7"/><circle cx="132" cy="112" r="5"/><circle cx="106" cy="110" r="4"/></g></svg>`,
-  cup: `<svg class="mc-art" viewBox="0 0 320 160" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="au-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff7a8a"/><stop offset="1" stop-color="#d23a5a"/></linearGradient></defs><rect width="320" height="160" fill="url(#au-sky)"/><g class="a-rays" fill="rgba(255,255,255,.12)"><path d="M250 70L330 20v30zM250 70L330 100v30zM250 70L200 -10h40z"/></g><path d="M0 128h320v32H0z" fill="#f6dda6"/><g opacity=".9"><rect x="150" y="104" width="10" height="34" fill="#fff"/><rect x="150" y="104" width="5" height="5" fill="#222"/><rect x="155" y="109" width="5" height="5" fill="#222"/><rect x="150" y="114" width="5" height="5" fill="#222"/><rect x="155" y="119" width="5" height="5" fill="#222"/></g><g class="a-cup"><path d="M226 40h48v20a24 24 0 0 1-48 0z" fill="#ffd23a" stroke="#b07a10" stroke-width="3"/><path d="M226 46h-12c0 14 8 20 16 20M274 46h12c0 14-8 20-16 20" stroke="#ffd23a" stroke-width="6" fill="none"/><rect x="244" y="82" width="12" height="12" fill="#e9a820"/><rect x="232" y="94" width="36" height="10" rx="3" fill="#ffd23a" stroke="#b07a10" stroke-width="3"/><path d="M250 48l3 6 6 1-4 4 1 6-6-3-6 3 1-6-4-4 6-1z" fill="#fff" opacity=".8"/></g><g class="a-racers"><g class="a-r1"><ellipse cx="0" cy="0" rx="13" ry="9" fill="#ff5a4a"/><circle cx="-5" cy="-9" r="3" fill="#fff"/><circle cx="5" cy="-9" r="3" fill="#fff"/></g><g class="a-r2"><ellipse cx="0" cy="0" rx="13" ry="9" fill="#5ab0ff"/><circle cx="-5" cy="-9" r="3" fill="#fff"/><circle cx="5" cy="-9" r="3" fill="#fff"/></g></g><g stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".7"><path class="a-speed" d="M20 112h30M10 122h40M30 132h26"/></g></svg>`,
+/** Inline illustrations for the hero card and the mode rows (no assets). */
+const HERO_ART = `<svg class="h6-hero-art" viewBox="0 0 300 200" preserveAspectRatio="xMaxYMax slice" aria-hidden="true"><defs><linearGradient id="h6s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#bfe9ff"/><stop offset="1" stop-color="#fff6e0"/></linearGradient><linearGradient id="h6w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3fd0f0"/><stop offset="1" stop-color="#1b8fd6"/></linearGradient></defs><rect width="300" height="200" fill="url(#h6s)"/><g class="h6-cloud" fill="#fff"><ellipse cx="70" cy="40" rx="30" ry="10"/><ellipse cx="88" cy="34" rx="18" ry="10"/></g><path d="M150 132l40-58 22 10 30-36 30 40 28 4v40z" fill="#4a5568"/><path d="M190 74l22 10 30-36 8 10-28 32-22-8z" fill="#5f6b7d"/><path d="M196 92c10-10 26-12 30-6-10 0-22 4-30 10z" fill="#3a9a52"/><g class="h6-house"><rect x="236" y="34" width="12" height="28" fill="#fff"/><rect x="236" y="42" width="12" height="5" fill="#e8432a"/><rect x="236" y="54" width="12" height="5" fill="#e8432a"/><path d="M233 34h18l-9-9z" fill="#e8432a"/></g><path d="M0 140h300v60H0z" fill="url(#h6w)"/><path d="M0 146q20-6 40 0t40 0 40 0 40 0 40 0 40 0 40 0 40 0" stroke="#fff" stroke-width="2.5" fill="none" opacity=".6"/><g class="h6-boat"><path d="M232 150h34l-6 8h-22z" fill="#fff"/><path d="M249 150v-34l14 30z" fill="#fff"/><path d="M247 150v-26l-12 24z" fill="#cfe9ff"/></g><path d="M0 170c60-14 140-12 190 4 30 10 70 12 110 6v20H0z" fill="#f6dda6"/><g class="h6-palm"><path d="M44 178c4-24 12-44 24-58" stroke="#8a5a2a" stroke-width="6" fill="none" stroke-linecap="round"/><path d="M68 120c-14-10-30-8-38 0 12-2 24 0 38 6zm0 0c-2-16 8-26 20-28-6 8-10 18-14 30zm0 0c16-6 30-2 36 8-12-4-24-4-36 0zm0 0c-16 4-24 16-24 28 6-10 14-18 26-22z" fill="#3fae4f"/></g></svg>`;
+const ROW_ART: Record<'cup' | 'islands' | 'daily', string> = {
+  cup: `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M18 8h28v16a14 14 0 0 1-28 0z" fill="#ffc93a" stroke="#c4840a" stroke-width="2.5"/><path d="M18 13H9c0 10 5 15 12 15M46 13h9c0 10-5 15-12 15" stroke="#ffc93a" stroke-width="5" fill="none"/><rect x="28" y="36" width="8" height="10" fill="#e9a820"/><rect x="18" y="46" width="28" height="9" rx="3" fill="#ffc93a" stroke="#c4840a" stroke-width="2.5"/><path d="M32 14l3 6 6 1-4 4 1 6-6-3-6 3 1-6-4-4 6-1z" fill="#fff" opacity=".85"/></svg>`,
+  islands: `<svg viewBox="0 0 64 64" aria-hidden="true"><ellipse cx="32" cy="50" rx="26" ry="8" fill="#2fb8e8"/><ellipse cx="32" cy="46" rx="20" ry="7" fill="#f6dda6"/><path d="M30 46c1-12 4-22 8-30" stroke="#8a5a2a" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M38 16c-8-6-18-4-22 2 8-2 14 0 22 4zm0 0c0-9 6-14 14-14-5 4-8 9-10 16zm0 0c9-2 17 2 20 8-7-3-14-3-20-1z" fill="#3fae4f"/></svg>`,
+  daily: `<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 30c8-10 16-10 24 1 8-11 16-11 24-1-8-2-14 0-24 11C22 30 16 28 8 30z" fill="#fff" stroke="#14254f" stroke-width="2.5" stroke-linejoin="round"/><path d="M29 36l3 5 3-5" fill="#ffb020"/><circle cx="27" cy="31" r="1.6" fill="#14254f"/><path d="M14 52c6-3 12-3 18 0s12 3 18 0" stroke="#2fb8e8" stroke-width="4" fill="none" stroke-linecap="round"/></svg>`,
 };
+const LEAVES = `<svg class="h6-leaves" viewBox="0 0 240 120" aria-hidden="true"><path d="M30 92c-10-30 6-60 40-70-22 16-30 40-26 68zM210 92c10-30-6-60-40-70 22 16 30 40 26 68z" fill="#3fae4f"/><path d="M20 70c-2-24 16-44 42-48-18 10-30 26-30 50zM220 70c2-24-16-44-42-48 18 10 30 26 30 50z" fill="#2f9a42"/></svg>`;
+const CROWN = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 30l3-18 8 9 3-12 3 12 8-9 3 18z" fill="#ffc93a" stroke="#c4840a" stroke-width="2" stroke-linejoin="round"/><rect x="6" y="30" width="28" height="5" rx="2" fill="#ffb020"/></svg>`;
+const CLIPBOARD = `<svg viewBox="0 0 40 40" aria-hidden="true"><rect x="8" y="6" width="24" height="30" rx="4" fill="#ffe0a8" stroke="#c4840a" stroke-width="2"/><rect x="14" y="3" width="12" height="7" rx="2" fill="#ffb020"/><path d="M13 17h14M13 23h14M13 29h9" stroke="#c4840a" stroke-width="2.5" stroke-linecap="round"/></svg>`;
+const CHEVRON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M16 10l10 10-10 10" stroke="currentColor" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const GEAR = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M17 4h6l1 5 4 2 4-3 4 4-3 4 2 4 5 1v6l-5 1-2 4 3 4-4 4-4-3-4 2-1 5h-6l-1-5-4-2-4 3-4-4 3-4-2-4-5-1v-6l5-1 2-4-3-4 4-4 4 3 4-2z" fill="#14254f"/><circle cx="20" cy="20" r="6" fill="#fffaf2"/></svg>`;
+/** goal icons by wording */
+const GOAL_ICO = {
+  run: `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="24" cy="7" r="4" fill="#14254f"/><path d="M22 13l-6 8 6 4-3 10M16 21l-7 2M22 13l6 6 6-1M22 25l7 5" stroke="#14254f" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  hop: `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 34h28" stroke="#e9c37e" stroke-width="4" stroke-linecap="round"/><path d="M8 28c4-14 20-14 24 0" stroke="#14254f" stroke-width="3.5" fill="none" stroke-dasharray="4 4"/><path d="M28 18l4 9-9-2" fill="#ff8414"/></svg>`,
+  wave: `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M3 30c3-14 12-22 22-22 6 0 10 4 12 8-4-4-10-4-12 2 4-1 8 1 8 5-4-4-10-2-12 3-3 5-10 6-18 4z" fill="#2fb8e8"/></svg>`,
+};
+function goalIcon(text: string): string {
+  const t = text.toLowerCase();
+  if (/shell/.test(t)) return ICON.shell;
+  if (/wave/.test(t)) return GOAL_ICO.wave;
+  if (/hop/.test(t)) return GOAL_ICO.hop;
+  if (/run|reach/.test(t)) return GOAL_ICO.run;
+  return ICON.star;
+}
 
 interface Card {
-  id: 'beach' | 'cup' | 'islands' | 'daily' | 'dig';
+  id: 'beach' | 'cup' | 'islands' | 'daily';
   el: HTMLButtonElement;
-  sub: HTMLElement;
-  badge: HTMLElement;
-  cta: HTMLElement;
+  sub: HTMLElement | null;
+  badge: HTMLElement | null;
 }
 
 /**
- * Home v3 (UPDATE3_PLAN.md §2): a profile card and wallet on top, the logo and goals, the crab
- * diorama, a mode carousel of animated illustrated cards, and an animated bottom nav.
+ * Home (UPDATE6_PLAN.md §2): a profile card, wallet and settings on top; the logo and Beach Goals on
+ * the left; the crab in the middle with a Customize pill; the Beach Run hero card and the mode rows
+ * on the right; the nav at the bottom. Phones stack it: crab, hero, then a row of mode tiles.
  */
 export class HomeScreen {
   readonly el: HTMLElement;
@@ -91,15 +108,13 @@ export class HomeScreen {
   private wallet: Wallet;
   private more: Sheet;
   private goalsSheet = new Sheet('home-goals-sheet');
-  private goalsSheetList = el('div', 'sheet-goals');
-  private passNext: HTMLElement;
-  private goalsEl: HTMLElement;
+  private goalsSheetList = el('div', 'sheet-goals h6-goal-list');
+  private goalsList: HTMLElement;
   private goalsChip: HTMLButtonElement;
   private wardrobeDot: HTMLElement;
   private passDot: HTMLElement;
   private boost: HTMLButtonElement;
-  private track: HTMLElement;
-  private dots: HTMLElement;
+  private best: HTMLElement;
   private cards: Card[] = [];
   private digDot: HTMLElement | null = null;
   private navBubble: HTMLElement;
@@ -110,126 +125,107 @@ export class HomeScreen {
   private timer = 0;
 
   constructor(private h: HomeHandlers) {
-    this.el = el('div', 'screen home v3 v4 hidden');
+    this.el = el('div', 'screen h6 hidden');
     this.el.id = 'home';
 
-    // ---- top bar: profile card + wallet
-    const top = el('div', 'home-top');
-    this.profile = el('button', 'pass-pill profile') as HTMLButtonElement;
+    // ---- top: profile card · wallet + settings
+    const top = el('div', 'h6-top');
+    this.profile = el('button', 'h6-profile') as HTMLButtonElement;
     this.profile.type = 'button';
-    this.profile.setAttribute('aria-label', 'Sunny Pass and profile');
-    this.profile.innerHTML = `<span class="pf-ava"><span class="pf-ring"></span><span class="pf-img">${ICON.crab}</span><span class="pf-tier"><b>0</b></span></span><span class="col"><span class="lbl pf-title">Beach Rookie</span><span class="pf-row"><span class="bar"><i></i></span><span class="txt"></span></span></span><i class="dot hidden"></i>`;
+    this.profile.innerHTML = `<span class="h6-ava"><span class="h6-img">${ICON.crab}</span><b class="h6-lvl">0</b></span><span class="h6-pcol"><span class="h6-name">Beach Rookie</span><span class="h6-prow"><span class="h6-level">Level 0</span><span class="bar"><i></i></span><span class="h6-xp"></span></span></span><i class="dot hidden"></i>`;
     this.profile.addEventListener('click', (e) => {
       e.stopPropagation();
       this.h.pass();
     });
     this.passDot = this.profile.querySelector('.dot') as HTMLElement;
-    this.passNext = el('span', 'pass-next-chip hidden');
-    this.profile.appendChild(this.passNext);
-    // one wallet pill (shells and pearls); help lives in the More sheet
     this.wallet = new Wallet('home-wallet');
-    const right = el('div', 'home-top-r');
-    right.append(this.wallet.el);
+    const gear = btn(GEAR, 'icon h6-gear', () => this.h.settings(), 'Settings');
+    const right = el('div', 'h6-topr');
+    right.append(this.wallet.el, gear);
     top.append(this.profile, right);
 
-    // ---- logo + goals
-    const brand = el('div', 'home-brand');
-    brand.innerHTML = `<h1 class="logo intro" aria-label="Crab Dash"><span class="w w1" data-t="Crab">${HAT_SVG}${split('Crab')}</span><span class="gap-shell">${ICON.shell}</span><span class="w w2" data-t="Dash">${split('Dash')}</span></h1><div class="home-tag"><span class="tagline">Treasure Tide</span></div>`;
-    this.goalsChip = el('button', 'goals-chip') as HTMLButtonElement;
+    // ---- left: logo and Beach Goals
+    const left = el('div', 'h6-left');
+    const brand = el('div', 'h6-brand home-brand');
+    brand.innerHTML = `${LEAVES}<h1 class="logo intro" aria-label="Crab Rush"><span class="w w1" data-t="Crab">${split('Crab')}</span><span class="gap-shell">${ICON.shell}</span><span class="w w2" data-t="Rush">${split('Rush')}</span></h1>`;
+    const goals = el('div', 'h6-goals h6-card');
+    const gh = el('button', 'h6-goals-head') as HTMLButtonElement;
+    gh.type = 'button';
+    gh.innerHTML = `<span class="h6-gi">${CLIPBOARD}</span><span class="h6-gt">Beach Goals</span><span class="h6-chev">${CHEVRON}</span>`;
+    gh.setAttribute('aria-label', 'Show all goals');
+    gh.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.openGoals();
+    });
+    this.goalsList = el('div', 'h6-goal-list');
+    goals.append(gh, this.goalsList);
+    // phones: goals open from a chip
+    this.goalsChip = el('button', 'goals-chip h6-goals-chip') as HTMLButtonElement;
     this.goalsChip.type = 'button';
     this.goalsChip.addEventListener('click', (e) => {
       e.stopPropagation();
-      // the goals list opens as a sheet (it only sits inline on wide landscape screens)
-      this.goalsSheetList.innerHTML = this.goalsEl.innerHTML;
-      this.goalsSheet.show('Goals');
+      this.openGoals();
     });
-    this.goalsEl = el('div', 'home-goals');
+    left.append(brand, goals);
 
-    // ---- the crab stage: taps make the crab emote
-    const stage = el('div', 'home-stage');
+    // ---- centre: the crab (tap to emote) and Customize
+    const stage = el('div', 'h6-stage home-stage');
     stage.setAttribute('aria-hidden', 'true');
     stage.addEventListener('click', (e) => {
       e.stopPropagation();
       this.h.poke();
     });
+    const custom = btn(`${ICON.hanger}<span>Customize</span>`, 'teal h6-customize', () => this.h.wardrobe(), 'Customize your crab');
+    const centre = el('div', 'h6-centre');
+    centre.append(stage, this.goalsChip, custom);
 
-    // ---- mode carousel
-    const modes = el('div', 'home-modes');
-    this.track = el('div', 'mc-track');
-    this.track.setAttribute('role', 'list');
-    const mk = (id: Card['id'], title: string, icon: string, on: () => void, extra = ''): Card => {
-      const c = el('button', `mode-card big ${id}${extra}`) as HTMLButtonElement;
-      c.type = 'button';
-      c.dataset.mode = id;
-      c.setAttribute('role', 'listitem');
-      c.innerHTML = `${ART[id]}<span class="mc-shade"></span><span class="mc-ico">${icon}</span><span class="mc-col"><span class="mc-title pc-label">${title}</span><span class="mc-sub pc-sub"></span></span><span class="mc-cta">${ICON.play}</span><span class="mc-badge hidden"></span><span class="shine"></span>`;
-      c.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // other modes grow out of their card; Play hands over to the camera's run intro instead
-        if (id !== 'beach') morphFrom(c);
-        on();
-      });
-      c.addEventListener('focus', () => this.setFocus(this.cards.findIndex((k) => k.el === c), false));
-      return { id, el: c, sub: c.querySelector('.mc-sub') as HTMLElement, badge: c.querySelector('.mc-badge') as HTMLElement, cta: c.querySelector('.mc-cta') as HTMLElement };
-    };
-    this.cards.push(mk('beach', 'Play', ICON.play, () => this.h.play(), ' play-card'));
-    if (this.h.cup) this.cards.push(mk('cup', 'Crab Cup', CUP_ICON, () => this.h.cup?.()));
-    this.cards.push(mk('islands', 'Island Hop', ICON.island, () => this.h.islands()));
-    this.cards.push(mk('daily', 'Daily Tide', ICON.calendar, () => this.h.daily()));
-    if (this.h.dig) this.cards.push(mk('dig', 'Treasure Dig', DIG_ICON, () => this.h.dig?.()));
-    for (const c of this.cards) this.track.appendChild(c.el);
-    // the focused card follows the scroll position (swipes, wheel, arrows)
-    let raf = 0;
-    this.track.addEventListener('scroll', () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const mid = this.track.scrollLeft + this.track.clientWidth / 2;
-        let best = 0;
-        let bd = Infinity;
-        this.cards.forEach((c, i) => {
-          const d = Math.abs(c.el.offsetLeft + c.el.offsetWidth / 2 - mid);
-          if (d < bd) {
-            bd = d;
-            best = i;
-          }
-        });
-        if (best !== this.focusIdx) this.setFocus(best, false);
-      });
+    // ---- right: the Beach Run hero card and the mode rows
+    const modes = el('div', 'h6-modes');
+    const hero = el('div', 'h6-hero h6-card');
+    hero.innerHTML = `${HERO_ART}<div class="h6-hero-col"><h2 class="h6-hero-title">Beach Run</h2><span class="h6-hero-sub">Endless adventure</span><span class="h6-best"></span></div>`;
+    this.best = hero.querySelector('.h6-best') as HTMLElement;
+    const start = el('button', 'h6-start play-card mode-card beach') as HTMLButtonElement;
+    start.type = 'button';
+    start.dataset.mode = 'beach';
+    start.innerHTML = `<span class="h6-play">${ICON.play}</span><span class="h6-start-l">Start Beach Run</span>`;
+    start.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.h.play();
     });
-    this.track.addEventListener(
-      'wheel',
-      (e) => {
-        if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && this.el.classList.contains('carousel-x')) {
-          e.preventDefault();
-          this.step(e.deltaY > 0 ? 1 : -1);
-        }
-      },
-      { passive: false },
-    );
+    start.addEventListener('focus', () => this.setFocus(0, false));
     this.boost = el('button', 'boost-chip hidden') as HTMLButtonElement;
     this.boost.type = 'button';
     this.boost.addEventListener('click', (e) => {
       e.stopPropagation();
       this.h.toggleBoost();
     });
-    this.dots = el('div', 'mc-dots');
-    this.cards.forEach((c, i) => {
-      // decorative position dots (swipes, arrows and keys do the navigating); still clickable
-      const d = el('span', 'mc-dot');
-      d.setAttribute('aria-hidden', 'true');
-      void c;
-      d.addEventListener('click', (e) => {
+    hero.append(start, this.boost);
+    this.cards.push({ id: 'beach', el: start, sub: null, badge: null });
+    const rows = el('div', 'h6-rows');
+    rows.setAttribute('role', 'list');
+    const row = (id: 'cup' | 'islands' | 'daily', title: string, on: () => void): void => {
+      const r = el('button', `h6-row mode-card ${id}`) as HTMLButtonElement;
+      r.type = 'button';
+      r.dataset.mode = id;
+      r.setAttribute('role', 'listitem');
+      r.innerHTML = `<span class="h6-ri">${ROW_ART[id]}</span><span class="h6-rcol"><span class="h6-rt">${title}</span><span class="h6-rs"></span></span><span class="h6-chev">${CHEVRON}</span><span class="mc-badge hidden"></span>`;
+      r.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.setFocus(i, true);
+        morphFrom(r);
+        on();
       });
-      this.dots.appendChild(d);
-    });
-    const prev = btn(ICON.back, 'icon ghost mc-arrow prev', () => this.step(-1), 'Previous mode');
-    const next = btn(ICON.back, 'icon ghost mc-arrow next', () => this.step(1), 'Next mode');
-    modes.append(this.goalsChip, this.boost, this.track, prev, next, this.dots);
+      const idx = this.cards.length;
+      r.addEventListener('focus', () => this.setFocus(idx, false));
+      rows.appendChild(r);
+      this.cards.push({ id, el: r, sub: r.querySelector('.h6-rs'), badge: r.querySelector('.mc-badge') });
+    };
+    if (this.h.cup) row('cup', 'Crab Cup', () => this.h.cup?.());
+    row('islands', 'Island Hop', () => this.h.islands());
+    row('daily', 'Daily Tide', () => this.h.daily());
+    modes.append(hero, rows);
 
     // ---- bottom nav with a sliding bubble
-    this.nav = el('nav', 'home-nav');
+    this.nav = el('nav', 'home-nav h6-nav');
     this.nav.setAttribute('aria-label', 'Main');
     this.navBubble = el('span', 'nav-bubble');
     this.nav.appendChild(this.navBubble);
@@ -255,7 +251,7 @@ export class HomeScreen {
       this.digDot = dg.querySelector('.dot');
       tabs.push(dg);
     }
-    // Stats, Settings and How to play share the More sheet: five tabs fit a 360 px phone
+    // Trophies, Stats, Settings and How to play share the More sheet
     tabs.push(tab(MORE_ICON, 'More', () => this.openMore()));
     this.nav.append(...tabs);
     this.more = new Sheet('home-more');
@@ -278,14 +274,12 @@ export class HomeScreen {
       item(ICON.help, 'How to play', 'Controls, obstacles and power-ups', () => this.h.howto(), '#3fbf55'),
     );
     this.more.body.appendChild(list);
-
-    const left = el('div', 'home-left');
-    left.append(brand, this.goalsEl);
     this.goalsSheet.body.appendChild(this.goalsSheetList);
-    this.el.append(top, left, stage, modes, this.nav, this.more.el, this.goalsSheet.el);
+
+    this.el.append(top, left, centre, modes, this.nav, this.more.el, this.goalsSheet.el);
     window.addEventListener('resize', () => this.layout());
     onSizeClass(() => this.layout());
-    // parallax: card art layers drift with the pointer (desktop) or the device tilt (phones)
+    // parallax: the hero art drifts with the pointer (desktop) or the device tilt (phones)
     const setPar = (x: number, y: number): void => {
       this.el.style.setProperty('--px', x.toFixed(3));
       this.el.style.setProperty('--py', y.toFixed(3));
@@ -300,12 +294,14 @@ export class HomeScreen {
     }, { passive: true });
   }
 
-  /** narrow screens scroll the carousel sideways; wide ones stack the cards */
   private layout(): void {
-    const x = window.innerWidth < 900 || window.innerHeight < 500;
-    this.el.classList.toggle('carousel-x', x);
     const on = this.nav.querySelector('.tab.on') as HTMLElement | null;
     if (on) this.moveBubble(on, true);
+  }
+
+  private openGoals(): void {
+    this.goalsSheetList.innerHTML = this.goalsList.innerHTML;
+    this.goalsSheet.show('Beach Goals');
   }
 
   private openMore(): void {
@@ -321,7 +317,7 @@ export class HomeScreen {
     this.navBubble.style.transform = `translate(${b.offsetLeft}px, ${b.offsetTop}px)`;
   }
 
-  /** move the carousel by one card (arrow keys, buttons) */
+  /** move focus by one card (arrow keys) */
   step(d: number): void {
     this.setFocus(Math.max(0, Math.min(this.cards.length - 1, this.focusIdx + d)), true);
   }
@@ -335,86 +331,73 @@ export class HomeScreen {
     return this.cards[this.focusIdx]?.id ?? 'beach';
   }
 
-  private setFocus(i: number, scroll: boolean): void {
+  private setFocus(i: number, move: boolean): void {
     if (i < 0) return;
     const changed = i !== this.focusIdx;
     this.focusIdx = i;
     this.cards.forEach((c, k) => c.el.classList.toggle('focus', k === i));
-    [...this.dots.children].forEach((d, k) => d.classList.toggle('on', k === i));
     this.el.dataset.focus = this.cards[i]?.id ?? 'beach';
-    if (scroll && this.el.classList.contains('carousel-x')) {
-      const c = this.cards[i]!.el;
-      this.track.scrollTo({ left: c.offsetLeft - (this.track.clientWidth - c.offsetWidth) / 2, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-    }
+    if (move) this.cards[i]?.el.focus({ preventScroll: true });
     if (changed) this.h.focus?.(i);
   }
 
   set(d: HomeData): void {
     this.data = d;
     const p = this.profile;
-    (p.querySelector('.pf-tier b') as HTMLElement).textContent = String(d.tier);
+    (p.querySelector('.h6-lvl') as HTMLElement).textContent = String(d.tier);
+    (p.querySelector('.h6-level') as HTMLElement).textContent = `Level ${d.tier}`;
     const frac = d.tier >= d.maxTier ? 1 : d.tierInto / Math.max(1, d.tierNeed);
     (p.querySelector('.bar i') as HTMLElement).style.width = `${Math.round(frac * 100)}%`;
-    (p.querySelector('.pf-ring') as HTMLElement).style.setProperty('--p', String(frac));
-    // the tier number is on the avatar badge; the row shows XP into the next tier
-    (p.querySelector('.txt') as HTMLElement).textContent = d.tier >= d.maxTier ? 'Complete!' : `${fmt(d.tierInto)}/${fmt(d.tierNeed)}`;
-    p.setAttribute('aria-label', `${d.title ?? 'Sunny Pass'}: tier ${d.tier}, ${fmt(d.tierInto)} of ${fmt(d.tierNeed)} XP. Open the Sunny Pass`);
-    (p.querySelector('.pf-title') as HTMLElement).textContent = d.title ?? 'Sunny Pass';
-    const img = p.querySelector('.pf-img') as HTMLElement;
+    (p.querySelector('.h6-xp') as HTMLElement).textContent = d.tier >= d.maxTier ? 'Max level' : `${fmt(d.tierInto)} / ${fmt(d.tierNeed)} XP`;
+    p.setAttribute('aria-label', `${d.title ?? 'Profile'}: level ${d.tier}, ${fmt(d.tierInto)} of ${fmt(d.tierNeed)} XP. Open the Sunny Pass`);
+    (p.querySelector('.h6-name') as HTMLElement).textContent = d.title ?? 'Beach Rookie';
+    const img = p.querySelector('.h6-img') as HTMLElement;
     if (d.avatar && !img.querySelector(`img[src="${d.avatar}"]`)) img.innerHTML = `<img alt="" src="${d.avatar}">`;
     this.passDot.classList.toggle('hidden', d.passClaimable <= 0);
     this.wallet.set(d.shells, d.pearls);
     this.wardrobeDot.classList.toggle('hidden', !d.wardrobeBadge);
+    this.digDot?.classList.toggle('hidden', !d.dig || d.dig.spades < 3);
+    // hero: personal best and the Golden Shell toggle
+    this.best.innerHTML = d.best > 0 ? `${CROWN}<span>Personal Best</span><b>${fmt(Math.floor(d.best))} m</b>` : `${CROWN}<span>Set your first record!</span>`;
     this.boost.classList.toggle('hidden', d.boosts <= 0);
     this.boost.classList.toggle('on', d.boostOn);
     this.boost.setAttribute('aria-pressed', String(d.boostOn));
     this.boost.setAttribute('aria-label', `Golden Shell: double shells next run (${d.boosts} left)`);
     this.boost.innerHTML = `${BOOST_SVG}<span>${d.boostOn ? '2× on' : '2× shells'}</span><b>${d.boosts}</b>`;
-    this.passNext.classList.toggle('hidden', !d.nextReward || d.passClaimable > 0);
-    this.passNext.textContent = d.passClaimable > 0 ? '' : (d.nextReward ?? '');
 
     for (const c of this.cards) {
+      if (!c.sub || !c.badge) continue;
       c.badge.classList.add('hidden');
-      c.el.classList.remove('ready', 'soon');
-      if (c.id === 'beach') c.sub.innerHTML = `Beach Run${d.best > 0 ? ` · Best <b>${fmt(d.best)} m</b>` : ' · Endless'}`;
-      else if (c.id === 'islands') {
-        c.el.classList.toggle('soon', !d.islands);
-        c.sub.innerHTML = d.islands ? `<span class="mstar">${ICON.star}</span>${d.islands.stars}/${d.islands.total} stars` : 'Coming soon';
+      c.el.classList.remove('ready');
+      if (c.id === 'islands') {
+        c.sub.innerHTML = d.islands ? `<b>${d.islands.stars} / ${d.islands.total} stars</b><small>Explore islands</small>` : '<small>Coming soon</small>';
       } else if (c.id === 'daily') {
         if (d.daily) {
           this.dailyMs = d.daily.msLeft;
-          c.sub.innerHTML = d.daily.playedToday ? `New tide in <span class="cd">${countdown(this.dailyMs)}</span>` : `Today: ${d.daily.modifier}`;
+          c.sub.innerHTML = d.daily.playedToday ? `<b>${d.daily.modifier}</b><small>New tide in <span class="cd">${countdown(this.dailyMs)}</span></small>` : `<b>${d.daily.modifier}</b><small>Special challenge today</small>`;
           c.badge.classList.toggle('hidden', d.daily.streak <= 0);
           c.badge.innerHTML = `${ICON.flame}${d.daily.streak}`;
           c.el.classList.toggle('ready', !d.daily.playedToday);
-        } else c.sub.textContent = 'Coming soon';
+        }
       } else if (c.id === 'cup') {
         const cu = d.cup;
-        c.sub.innerHTML = cu ? (cu.current ? `${cu.current} in progress` : cu.cleared >= cu.total ? `All cups cleared · ${cu.wins} wins` : `${cu.cleared}/${cu.total} cups · race 3 rivals`) : 'Race 3 rivals';
+        c.sub.innerHTML = cu ? (cu.current ? `<b>${cu.current}</b><small>Race in progress</small>` : `<b>${cu.cleared} / ${cu.total} cups</b><small>${cu.cleared >= cu.total ? `${cu.wins} wins` : 'Race 3 rivals'}</small>`) : '<small>Race 3 rivals</small>';
         c.badge.classList.toggle('hidden', !cu?.current);
         c.badge.innerHTML = '!';
         c.el.classList.toggle('ready', !!cu?.current);
-      } else if (c.id === 'dig') {
-        this.digDot?.classList.toggle('hidden', !d.dig || d.dig.spades < 3);
-        const dg = d.dig;
-        c.sub.innerHTML = dg ? `Site ${dg.site} · ${dg.relics}/${dg.total} relics` : 'Dig up buried treasure';
-        c.badge.classList.toggle('hidden', !dg || dg.spades <= 0);
-        c.badge.innerHTML = dg ? `${DIG_ICON}${dg.spades}` : '';
-        c.el.classList.toggle('ready', !!dg && dg.spades >= 3);
       }
     }
 
-    // goals
+    // goals: the card on wide screens, a chip (and a sheet) on phones
     const done = d.goals.filter((g) => g.done).length;
-    this.goalsChip.innerHTML = `<span class="gi">${ICON.trophy}</span><span class="gl">Goals</span> <b>${done}/${d.goals.length}</b>`;
+    this.goalsChip.innerHTML = `<span class="gi">${CLIPBOARD}</span><span class="gl">Goals</span> <b>${done}/${d.goals.length}</b>`;
     this.goalsChip.setAttribute('aria-label', `Goals: ${done} of ${d.goals.length} done`);
     this.goalsChip.classList.toggle('hidden', d.goals.length === 0);
-    this.goalsEl.innerHTML = '';
+    this.goalsList.innerHTML = '';
     for (const g of d.goals) {
-      const r = el('div', `hgoal${g.done ? ' done' : ''}`);
-      r.innerHTML = `<span class="chk">${g.done ? ICON.check : ''}</span><span class="txt">${g.text}<span class="bar"><i style="width:${Math.round(Math.min(1, g.progress) * 100)}%"></i></span></span><span class="rw">${ICON.shell}${g.reward}</span>`;
-      r.title = g.value;
-      this.goalsEl.appendChild(r);
+      const r = el('div', `h6-goal${g.done ? ' done' : ''}`);
+      r.innerHTML = `<span class="h6-goi">${g.done ? ICON.check : goalIcon(g.text)}</span><span class="h6-gcol"><span class="h6-gtxt">${g.text}</span><span class="h6-grow"><span class="bar"><i style="width:${Math.round(Math.min(1, g.progress) * 100)}%"></i></span><small>${g.value}</small></span></span><span class="h6-grw">${ICON.shell}<b>${g.reward}</b></span>`;
+      this.goalsList.appendChild(r);
     }
   }
 
@@ -425,7 +408,7 @@ export class HomeScreen {
     this.el.classList.remove('enter');
     void this.el.offsetWidth;
     this.el.classList.add('enter');
-    this.setFocus(this.focusIdx, true);
+    this.setFocus(this.focusIdx, false);
     (this.cards[this.focusIdx]?.el as HTMLElement | undefined)?.focus({ preventScroll: true });
     requestAnimationFrame(() => {
       const on = this.nav.querySelector('.tab.on') as HTMLElement | null;
@@ -437,7 +420,6 @@ export class HomeScreen {
 
   hide(): void {
     this.el.classList.add('hidden');
-    this.el.classList.remove('goals-open');
     if (this.more.open) this.more.close();
     if (this.goalsSheet.open) this.goalsSheet.close();
     clearInterval(this.timer);
@@ -445,7 +427,6 @@ export class HomeScreen {
 
   /** the boot cinematic hides the chrome until the crab has popped out of the sand */
   setCinematic(on: boolean): void {
-    // finished entrance animations hold their end state, which would override the hiding
     if (on) this.el.classList.remove('enter');
     this.el.classList.toggle('cine', on);
     if (!on) {

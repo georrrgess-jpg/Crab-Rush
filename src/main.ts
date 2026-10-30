@@ -6,7 +6,7 @@ import './ui/screens.css';
 import './ui/v4.css';
 import './ui/cup.css';
 import './ui/u5.css';
-import './ui/theme5.css';
+import './ui/theme6.css';
 import { installSizeClass } from './ui/kit';
 import { Game } from './game';
 
@@ -17,7 +17,7 @@ function showFatal(msg: string): void {
   const loader = document.getElementById('loader');
   if (loader) {
     loader.classList.remove('done');
-    loader.innerHTML = `<div class="loader-logo">Crab Dash</div><p style="max-width:80vw;text-align:center;font-size:18px">${msg}</p>`;
+    loader.innerHTML = `<div class="loader-logo">Crab Rush</div><p style="max-width:80vw;text-align:center;font-size:18px">${msg}</p>`;
   }
 }
 
@@ -31,7 +31,7 @@ function webgl2Supported(): boolean {
 }
 
 if (!webgl2Supported()) {
-  showFatal('Your browser or device does not support WebGL 2, which Crab Dash needs. Try an up-to-date Safari, Chrome, Edge or Firefox.');
+  showFatal('Your browser or device does not support WebGL 2, which Crab Rush needs. Try an up-to-date Safari, Chrome, Edge or Firefox.');
 } else {
   // staged start so the loader can paint its progress between the heavy steps
   const loader = document.getElementById('loader');

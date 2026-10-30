@@ -1,6 +1,6 @@
 {
-  "name": "Crab Dash",
-  "short_name": "Crab Dash",
+  "name": "Crab Rush",
+  "short_name": "Crab Rush",
   "description": "A three-lane beach runner: dodge, hop, collect shells and unlock crabs.",
   "start_url": "./",
   "scope": "./",

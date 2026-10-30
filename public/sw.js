@@ -1,4 +1,4 @@
-// Crab Dash offline support: the page is fetched network-first (so a new deploy shows up on the next
+// Crab Rush offline support: the page is fetched network-first (so a new deploy shows up on the next
 // visit), the hashed assets cache-first. Everything is same-origin; nothing is downloaded from elsewhere.
 const CACHE = 'crabdash-v1';
 const MAX_ENTRIES = 40;
