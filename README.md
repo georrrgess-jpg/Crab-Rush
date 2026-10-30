@@ -1,4 +1,4 @@
-# Crab Dash
+# Crab Rush
 
 A three-lane beach runner for iPhone, Chromebook and PC browsers. Scuttle down the sand as Sandy the crab: dodge sandcastles, beach balls, logs, gulls and waves, grab golden shells, and dress your crab up in the Wardrobe.
 
@@ -7,6 +7,8 @@ A three-lane beach runner for iPhone, Chromebook and PC browsers. Scuttle down t
 **Update 3, "Shell Shock"**, adds Crab Cove, trophies and titles, Island Hop+ and a new Home.
 
 **Update 4, "Race Day"**, adds the Crab Cup race mode, a tougher Beach Run, a cleaner phone layout and more detailed models.
+
+**Update 6, "Menu Makeover"**, rebuilds Home, the run HUD, Treasure Dig, the Wardrobe and Daily Tide to match the concept art, with a new cream-card look across every menu.
 
 **Update 5, "Treasure Tide"**, replaces Crab Cove with Treasure Dig, adds Shell Fever, Second Chance and the Sand Slam, smooths the controls, fixes the crab's eyes, brightens the whole look and adds detail to every beach.
 
@@ -118,7 +120,7 @@ BALANCE=1 npx vitest run tests/balance.test.ts   # run length, shell income and 
   - Sky and ocean shaders, and a day-to-night cycle.
   - Auto quality that scales resolution, and between runs the graphics tier.
 - **`src/ui/`** is the DOM/CSS interface: a screen router, design tokens and one module per screen. **`src/core/`** has the fixed 120 Hz loop, input, save (v5, with v1–v4 migration), synthesised audio and quality code.
-- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2) and **[`UPDATE3_PLAN.md`](UPDATE3_PLAN.md)** (Update 3, "Shell Shock") and **[`UPDATE4_PLAN.md`](UPDATE4_PLAN.md)** (Update 4, "Race Day") and **[`UPDATE5_PLAN.md`](UPDATE5_PLAN.md)** (Update 5, "Treasure Tide").
+- Every tunable lives in **`src/config.ts`**. The designs are in **[`PLAN.md`](PLAN.md)** (v1) and **[`UPDATE2_PLAN.md`](UPDATE2_PLAN.md)** (Update 2) and **[`UPDATE3_PLAN.md`](UPDATE3_PLAN.md)** (Update 3, "Shell Shock") and **[`UPDATE4_PLAN.md`](UPDATE4_PLAN.md)** (Update 4, "Race Day") and **[`UPDATE5_PLAN.md`](UPDATE5_PLAN.md)** (Update 5, "Treasure Tide") and **[`UPDATE6_PLAN.md`](UPDATE6_PLAN.md)** (Update 6, "Menu Makeover").
 
 ### Performance budgets (measured at the busiest moments)
 

@@ -24,7 +24,12 @@ export interface ShopHandlers {
   surprise(): void;
   /** hat dye: wear (or buy with pearls) dye n of a hat */
   dye(hat: string, n: number): void;
+  /** the turntable: drag to rotate (radians), and back to the front */
+  spin?(d: number): void;
+  resetView?(): void;
 }
+
+type Filter = 'all' | 'owned' | 'locked';
 
 export const DYE_COST = 10;
 const DYE_COLORS = [['#f2cf7a', '#2a5ab0'], ['#7ad85a', '#ff5a8a'], ['#5ab8ff', '#ffd23a'], ['#d07aff', '#3fbf55']];
@@ -60,6 +65,9 @@ export class ShopScreen {
   private tabLine: (b: HTMLElement | null) => void = () => {};
   private tabBtns: HTMLButtonElement[] = [];
   private tab: Tab = 'bodies';
+  private filter: Filter = 'all';
+  /** the name card under the turntable crab (UPDATE6_PLAN.md §2) */
+  private nameCard: HTMLElement;
   private previewId: Record<Slot, string> = { bodies: 'sandy', hats: 'straw', trails: 'sand', dances: 'clap' };
   private last: SaveData | null = null;
   /** items that were new when the Wardrobe opened (they keep their NEW tag for this visit) */
@@ -73,9 +81,40 @@ export class ShopScreen {
     const top = el('div', 'top-bar');
     const back = btn(ICON.back, 'blue round', () => this.h.back(), 'Back');
     const title = el('h2', '', 'Wardrobe');
+    const tcard = el('div', 'wd-title');
+    tcard.append(back, title);
     top.dataset.toastAvoid = '';
-    top.append(back, title, this.wallet.el);
+    top.append(tcard, this.wallet.el);
+    // the turntable: drag to rotate, the name card, Reset View and Saved Outfits
     const stage = el('div', 'shop-stage');
+    let dragX: number | null = null;
+    stage.addEventListener('pointerdown', (e) => {
+      dragX = e.clientX;
+      stage.setPointerCapture?.(e.pointerId);
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (dragX === null) return;
+      this.h.spin?.((e.clientX - dragX) * 0.012);
+      dragX = e.clientX;
+    });
+    const endDrag = (): void => {
+      dragX = null;
+    };
+    stage.addEventListener('pointerup', endDrag);
+    stage.addEventListener('pointercancel', endDrag);
+    this.nameCard = el('div', 'wd-name');
+    const hint = el('div', 'wd-hint', `${DRAG_ICON}<span>Drag to rotate</span>`);
+    const reset = btn(`${RESET_ICON}<span>Reset View</span>`, 'ghost wd-reset', () => this.h.resetView?.(), 'Reset the view');
+    const outfits = btn(`${OUTFIT_ICO}<span>Saved Outfits</span>`, 'teal wd-outfits of-open', () => {
+      if (!this.last) return;
+      this.fillOutfitSheet(this.last);
+      this.outfitSheet.show('Saved Outfits');
+    }, 'Saved outfits');
+    const sbtns = el('div', 'wd-stage-btns');
+    sbtns.append(reset, outfits);
+    const sui = el('div', 'wd-stage-ui');
+    sui.append(this.nameCard, hint, sbtns);
+    stage.appendChild(sui);
     const panel = el('div', 'panel shop-panel');
     const tabs = el('div', 'tabs wtabs');
     tabs.setAttribute('role', 'tablist');
@@ -130,9 +169,10 @@ export class ShopScreen {
     this.body.innerHTML = '';
     this.foot.innerHTML = '';
     if (this.outfitSheet.open) this.fillOutfitSheet(save);
+    const nb = this.items('bodies').find((i) => i.id === this.previewId.bodies);
+    this.nameCard.innerHTML = `<b>${nb?.name ?? ''}</b><small>${this.skins.find((k) => k.id === this.previewId.bodies)?.blurb ?? ''}</small>`;
     if (this.tab === 'upgrades') this.renderUpgrades(save);
     else {
-      this.renderOutfits(save);
       this.renderSlot(save, this.tab);
       const keys = unseen(save.wardrobe, save.seen, this.tab);
       if (keys.length) this.h.seen(keys);
@@ -165,16 +205,33 @@ export class ShopScreen {
     const list = this.items(slot);
     const ownedN = list.filter((i) => owns(w, slot, i.id)).length;
     const count = el('div', 'w-count', `<b>${ownedN}</b>/${list.length} collected`);
+    const filters = el('div', 'wd-filters');
+    for (const [f, label] of [['all', 'All'], ['owned', 'Owned'], ['locked', 'Locked']] as [Filter, string][]) {
+      const b = el('button', `chip${this.filter === f ? ' on' : ''}`, label) as HTMLButtonElement;
+      b.type = 'button';
+      b.dataset.filter = f;
+      b.setAttribute('aria-pressed', String(this.filter === f));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.filter = f;
+        this.render(save);
+      });
+      filters.appendChild(b);
+    }
+    const frow = el('div', 'wd-frow');
+    frow.append(filters, count);
     for (const item of list) {
       const id = item.id;
       const owned = owns(w, slot, id);
+      if ((this.filter === 'owned' && !owned) || (this.filter === 'locked' && owned)) continue;
       const wearing = equipped === id;
       const t = el('button', `tile${owned ? ' owned' : ' locked'}${wearing ? ' selected' : ''}${this.previewId[slot] === id ? ' preview' : ''}`) as HTMLButtonElement;
       t.type = 'button';
       t.dataset.item = `${slot}:${id}`;
       t.setAttribute('aria-label', `${item.name}${owned ? (wearing ? ', wearing' : ', owned') : `, locked: ${item.source}`}`);
       let badge = '';
-      if (wearing) badge = `<span class="badge ok">${ICON.check}</span>`;
+      if (wearing) badge = `<span class="badge ok">${ICON.check}</span><span class="wd-tag eq">Equipped</span>`;
+      else if (owned) badge = '<span class="wd-tag own">Owned</span>';
       else if (!owned) {
         const buyable = slot === 'bodies' && (CRAB_ORDER as readonly string[]).includes(id) && !SKILL_UNLOCKS[id];
         badge = buyable ? `<span class="badge">${ICON.shell}${fmt(crabPrice(id))}</span>` : `<span class="badge lock">${ICON.lock}</span>`;
@@ -189,19 +246,21 @@ export class ShopScreen {
       });
       grid.appendChild(t);
     }
-    this.body.append(count, grid);
+    if (!grid.children.length) grid.appendChild(el('div', 'wd-empty', this.filter === 'owned' ? 'Nothing here yet: unlock some!' : 'You own everything here!'));
+    this.body.append(frow, grid);
 
     // detail + action for the previewed item
     const id = this.previewId[slot];
     const item = list.find((i) => i.id === id) ?? (list[0] as Item);
     const owned = owns(w, slot, item.id);
     const d = el('div', 'crab-detail');
+    d.appendChild(el('span', 'wd-thumb', this.art(slot, item.id)));
     const blurb = slot === 'bodies' ? (this.skins.find((s) => s.id === item.id)?.blurb ?? '') : owned ? 'Yours to wear.' : '';
     const txt = el('div', 'txt', `<div class="nm">${item.name}</div><div class="bl">${owned ? blurb : `<span class="src">${ICON.lock.replace(/#fff/g, '#c46a0a')}${item.source}</span>`}</div>`);
     let action: HTMLElement;
     if (owned) {
       const wearing = equipped === item.id;
-      action = btn(wearing ? 'Wearing' : 'Wear', `small ${wearing ? 'blue' : 'green'}`, () => this.h.equip(slot, item.id));
+      action = btn(wearing ? `${ICON.check}<span>Equipped</span>` : `<span>Equip</span>`, `small wd-equip${wearing ? ' on' : ''}`, () => this.h.equip(slot, item.id));
       if (wearing) (action as HTMLButtonElement).disabled = true;
     } else if (slot === 'bodies' && (CRAB_ORDER as readonly string[]).includes(item.id) && !SKILL_UNLOCKS[item.id]) {
       const price = crabPrice(item.id);
@@ -211,7 +270,8 @@ export class ShopScreen {
     } else {
       action = el('div', 'w-lock', ICON.lock);
     }
-    d.append(txt, action);
+    const rnd = btn(`${DICE_ICON}<span>Randomize Owned</span>`, 'ghost wd-random surprise', () => this.h.surprise(), 'Wear a random outfit from what you own');
+    d.append(txt, rnd, action);
     if (slot === 'hats' && owned && item.id !== 'none') {
       const owns = save.dyes[item.id] ?? [];
       const worn = save.hatDye[item.id] ?? 0;
@@ -238,18 +298,6 @@ export class ShopScreen {
       d.insertBefore(again, action);
     }
     this.foot.appendChild(d);
-  }
-
-  /** Outfits (opens the sheet with the three saved looks) and Surprise Me */
-  private renderOutfits(save: SaveData): void {
-    const bar = el('div', 'outfits v4');
-    const saved = save.outfits.filter(Boolean).length;
-    const ob = btn(`<span class="of-ico">${OUTFIT_ICO}</span><span>Outfits</span><small>${saved}/3</small>`, 'small blue of-open', () => {
-      this.fillOutfitSheet(save);
-      this.outfitSheet.show('Outfits');
-    }, 'Saved outfits');
-    bar.append(ob, btn(`${ICON.sparkle}<span>Surprise me</span>`, 'small surprise', () => this.h.surprise(), 'Wear a random outfit'));
-    this.body.appendChild(bar);
   }
 
   /** the outfit slots: wear a saved look, or save the current one */
@@ -302,6 +350,9 @@ export class ShopScreen {
   }
 }
 
+const DRAG_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><rect x="13" y="6" width="14" height="24" rx="7" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 10v6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M8 33c-3-2-4-4-4-6M32 33c3-2 4-4 4-6" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/><path d="M4 33h5v-5M36 33h-5v-5" stroke="currentColor" stroke-width="2.5" fill="none"/></svg>`;
+const RESET_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M31 20a11 11 0 1 1-4-8.5" stroke="#1a84dc" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M29 5l1 8-8 1" stroke="#1a84dc" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const DICE_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4l14 8v16l-14 8-14-8V12z" fill="#e6f8fa" stroke="#10a2b4" stroke-width="2.5" stroke-linejoin="round"/><path d="M6 12l14 8 14-8M20 20v16" stroke="#10a2b4" stroke-width="2.5"/><circle cx="20" cy="12" r="2" fill="#10a2b4"/><circle cx="13" cy="22" r="2" fill="#10a2b4"/><circle cx="27" cy="28" r="2" fill="#10a2b4"/></svg>`;
 const OUTFIT_ICO = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M14 6l6 4 6-4 9 6-4 7-4-2v17H13V17l-4 2-4-7z" fill="#fff"/></svg>`;
 function nameOf(slot: Slot, id: string): string {
   return ITEMS.find((i) => i.slot === slot && i.id === id)?.name ?? id;

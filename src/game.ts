@@ -128,6 +128,8 @@ export class Game {
   private fakeNow: number | null = null;
   private tierToast = 0;
   private rumbleT = 0;
+  /** Wardrobe turntable: seconds before auto-spin resumes after a drag */
+  private shopHold = 0;
   // Crab Cup (UPDATE4_PLAN.md §5)
   private cupScreen: CupScreen;
   private raceEnd: RaceEndScreen;
@@ -288,6 +290,15 @@ export class Game {
         const d = this.save.data;
         for (const k of keys) if (!d.seen.includes(k)) d.seen.push(k);
         this.save.save();
+      },
+      spin: (d) => {
+        this.view.shopSpin += d;
+        this.shopHold = 2.5;
+      },
+      resetView: () => {
+        this.audio.play('tap');
+        this.view.shopSpin = 0;
+        this.shopHold = 1.5;
       },
       buyUpgrade: (k: PowerKind) => {
         if (buyUpgrade(this.save.data, k)) {
@@ -665,6 +676,8 @@ export class Game {
     this.view.resetRun(opts.best);
     this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
     this.ui.resetHUD();
+    this.ui.setRunBest(this.dailyRun ? 0 : opts.best);
+    this.ui.setRacing(false);
     this.ui.setLevelHUD(this.world.level ? { chase: !!this.world.level.def.chase } : null);
     this.ui.hideTutorial();
     this.ui.clearToasts();
@@ -1248,6 +1261,8 @@ export class Game {
     this.view.resetRun(0);
     this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
     this.ui.resetHUD();
+    this.ui.setRunBest(0);
+    this.ui.setRacing(false);
     this.ui.setLevelHUD({ chase: !!cl.def.chase });
     this.ui.hideTutorial();
     this.ui.clearToasts();
@@ -1460,6 +1475,8 @@ export class Game {
     this.view.resetRun(0);
     this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
     this.ui.resetHUD();
+    this.ui.setRunBest(0);
+    this.ui.setRacing(true);
     this.ui.setLevelHUD(null);
     this.ui.hideTutorial();
     this.ui.clearToasts();
@@ -1497,6 +1514,7 @@ export class Game {
 
   private clearRace(): void {
     this.race = null;
+    this.ui.setRacing(false);
     this.raceHud.stop();
     this.view.rivals?.clear();
     this.raceEnd.hide();
@@ -2102,14 +2120,18 @@ export class Game {
     this.world.events.length = 0;
     const menu = this.state === 'title' || this.state === 'settings' || this.state === 'howto' || this.state === 'stats' || this.state === 'map' || this.state === 'levelIntro' || this.state === 'pass' || this.state === 'daily' || this.state === 'chest' || this.state === 'cup' || this.state === 'dig' || this.state === 'trophies';
     const mode: CamMode = this.state === 'map' || this.state === 'levelIntro' || this.state === 'chest' ? 'map' : menu ? (this.returnTo === 'paused' && this.state === 'settings' ? 'run' : 'title') : this.state === 'intro' ? 'intro' : this.state === 'shop' ? 'shop' : 'run';
-    if (this.state === 'shop') this.view.shopSpin += frameDt * 0.5;
+    // the turntable turns on its own unless it was just dragged
+    if (this.state === 'shop') {
+      if (this.shopHold > 0) this.shopHold -= frameDt;
+      else this.view.shopSpin += frameDt * 0.35;
+    }
     const dt = this.state === 'paused' || (this.state === 'settings' && this.returnTo === 'paused') ? 0 : frameDt;
     this.view.frame(this.world, alpha, dt, mode, this.introT);
     if (this.qm.sample(frameDt * 1000, this.state === 'running')) this.view.renderer.setDprScale(this.qm.dprScale);
     if (this.state === 'running' || this.state === 'intro' || this.state === 'crashing' || this.state === 'countdown' || this.state === 'paused' || this.state === 'finishing') {
       const w = this.world;
       const pk = w.power.kind;
-      this.ui.updateHUD(w.runShells, w.distance, pk, pk ? w.power.t / w.power.dur : 0, w.streak);
+      this.ui.updateHUD(w.runShells, w.distance, pk, pk ? w.power.t / w.power.dur : 0, w.streak, pk ? w.power.t : 0);
       this.ui.updateFever(w.feverEnabled ? w.fever : -1, w.feverT > 0);
       if (this.race) {
         this.raceHudT -= frameDt;

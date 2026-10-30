@@ -1,4 +1,6 @@
 import { ICON } from './icons';
+
+const CROWN_SVG = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 30l3-18 8 9 3-12 3 12 8-9 3 18z" fill="#ffc93a" stroke="#c4840a" stroke-width="2" stroke-linejoin="round"/><rect x="6" y="30" width="28" height="5" rx="2" fill="#ffb020"/></svg>`;
 import { toastCorner, toastTop } from './kit';
 import { installPress, staggerIn } from './motion';
 import { btn, el, fmt } from './dom';
@@ -48,6 +50,9 @@ export class UI {
   private flyers: { el: HTMLElement; busy: boolean }[] = [];
   private distVal: HTMLElement;
   private powerPie: HTMLElement;
+  private powerSecs!: HTMLElement;
+  private bestPill!: HTMLElement;
+  private lastSecs = -1;
   private powerIc: HTMLElement;
   private streakEl: HTMLElement;
   /** Shell Fever meter (Update 5) */
@@ -95,7 +100,7 @@ export class UI {
     this.streakNum = this.streakEl.querySelector('b span') as HTMLElement;
     this.feverEl = el('div', 'fever-meter hidden', `<span class="fv-ico">${ICON.flame}</span><span class="fv-bar"><i></i></span><b class="fv-lbl">FEVER</b>`);
     this.feverFill = this.feverEl.querySelector('i') as HTMLElement;
-    left.append(this.shellsPill, this.feverEl, this.powerPie, this.streakEl);
+    left.append(this.shellsPill, this.feverEl, this.streakEl);
     for (let i = 0; i < 10; i++) {
       const f = el('div', 'shell-fly', ICON.shell);
       f.setAttribute('aria-hidden', 'true');
@@ -103,10 +108,18 @@ export class UI {
     }
     const right = el('div', 'right');
     const pauseBtn = btn(ICON.pause, 'blue pause-btn', () => this.h.pause(), 'Pause');
-    const dist = el('div', 'pill dist', `<b>0</b><span class="unit">m</span><span class="ico">${ICON.flag}</span>`);
+    // distance at the top centre with the run's best under it (UPDATE6_PLAN.md §2)
+    const dist = el('div', 'pill dist', `<b>0</b><span class="unit">m</span>`);
     this.distVal = dist.querySelector('b') as HTMLElement;
-    right.append(pauseBtn, dist);
-    this.hud.append(left, right);
+    this.bestPill = el('div', 'best-pill hidden', `<span class="bp-ico">${CROWN_SVG}</span><span>Best</span><b></b>`);
+    const mid = el('div', 'hud-mid');
+    mid.append(dist, this.bestPill);
+    right.append(pauseBtn);
+    this.hud.append(left, mid, right);
+    // the active power-up: a round badge at the bottom left with the seconds left
+    this.powerSecs = el('b', 'pp-secs');
+    this.powerPie.appendChild(this.powerSecs);
+    this.hud.appendChild(this.powerPie);
     // Island Hop: progress to the flag, sand dollar slots, the star-3 rule and the chase meter
     this.lvBar = el('div', 'lv-progress hidden', `<span class="track"><i></i><span class="me">${ICON.crab}</span></span><span class="fl">${ICON.flag}</span>`);
     this.lvFill = this.lvBar.querySelector('i') as HTMLElement;
@@ -350,7 +363,18 @@ export class UI {
     };
   }
 
-  updateHUD(shells: number, dist: number, power: PowerKind | null, powerFrac: number, streak: number): void {
+  /** the run's best distance under the distance pill (0 hides it) */
+  setRunBest(best: number): void {
+    this.bestPill.classList.toggle('hidden', best <= 0);
+    (this.bestPill.querySelector('b') as HTMLElement).textContent = `${fmt(Math.floor(best))} m`;
+  }
+
+  /** Crab Cup: the race HUD owns the top centre */
+  setRacing(on: boolean): void {
+    this.hud.classList.toggle('racing', on);
+  }
+
+  updateHUD(shells: number, dist: number, power: PowerKind | null, powerFrac: number, streak: number, powerLeft = 0): void {
     if (shells !== this.lastShells) {
       if (this.lastShells >= 0 && shells > this.lastShells) {
         this.shellsPill.classList.remove('bump');
@@ -378,6 +402,11 @@ export class UI {
         this.lastPie = p;
         this.powerPie.style.setProperty('--p', String(p / 100));
         this.powerPie.classList.toggle('low', p < 25);
+      }
+      const secs = Math.max(0, Math.ceil(powerLeft));
+      if (secs !== this.lastSecs) {
+        this.lastSecs = secs;
+        this.powerSecs.textContent = `${secs}s`;
       }
     }
     const s = streak >= 5 ? streak : 0;

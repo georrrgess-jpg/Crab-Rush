@@ -4,12 +4,21 @@
  */
 import { COLS, RELIC_SETS, RELIC_TOTAL, ROWS, SITE_THEMES, TILES, type DigResult, type DigState, type DugTile, generateSite, heat, relicId, siteReward } from '../meta/dig';
 import { btn, el, fmt } from './dom';
-import { GIFT_SVG, ICON } from './icons';
-import { PEARL_ICO, Sheet, Wallet, actionBar, pageHead } from './kit';
+import { ICON } from './icons';
+import { PEARL_ICO, Sheet, Wallet, pageHead } from './kit';
 import { flyReward, reduced } from './motion';
 
 export const DIG_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M24.5 6.5l9 9-3 3-9-9z" fill="#ffd23a" stroke="#8a5a10" stroke-width="2" stroke-linejoin="round"/><path d="M26 14L12 28" stroke="#8a4a1e" stroke-width="4" stroke-linecap="round"/><path d="M7 25l8 8-4 3c-3 1-6-2-5-5z" fill="#cfd8e0" stroke="#5a6a7a" stroke-width="2" stroke-linejoin="round"/></svg>`;
 const DYNAMITE = `<svg viewBox="0 0 40 40" aria-hidden="true"><rect x="10" y="14" width="20" height="20" rx="4" fill="#ff4a3a" stroke="#8a1a10" stroke-width="2"/><path d="M10 21h20M10 27h20" stroke="#ffd0c0" stroke-width="2"/><path d="M20 14c0-5 4-6 7-8" stroke="#5a3a1a" stroke-width="2.5" fill="none"/><circle cx="28" cy="6" r="3.5" fill="#ffd23a"/></svg>`;
+const HEAT_ICON = {
+  hot: `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4c2 8 10 11 10 21a10 10 0 0 1-20 0c0-5 3-8 5-10 0 4 2 6 4 6-1-6 1-12 1-17z" fill="#ff4a3a"/><path d="M20 22c1 3 5 4 5 8a5 5 0 0 1-10 0c0-3 3-5 5-8z" fill="#ffc93a"/></svg>`,
+  warm: `<svg viewBox="0 0 40 40" aria-hidden="true"><g stroke="#ff9a1f" stroke-width="4.5" fill="none" stroke-linecap="round"><path d="M7 13c4-4 8 4 13 0s9 4 13 0"/><path d="M7 21c4-4 8 4 13 0s9 4 13 0"/><path d="M7 29c4-4 8 4 13 0s9 4 13 0"/></g></svg>`,
+  cold: `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4c5 8 11 14 11 21a11 11 0 0 1-22 0c0-7 6-13 11-21z" fill="#2fa6ea"/><ellipse cx="15.5" cy="25" rx="3" ry="5" fill="#bfe8ff"/></svg>`,
+};
+const HALL_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M4 14L20 5l16 9z" fill="#fff"/><rect x="6" y="15" width="28" height="3" fill="#fff"/><g fill="#fff"><rect x="8" y="19" width="4" height="12"/><rect x="15" y="19" width="4" height="12"/><rect x="22" y="19" width="4" height="12"/><rect x="29" y="19" width="4" height="12"/></g><rect x="5" y="32" width="30" height="4" rx="1" fill="#fff"/></svg>`;
+/** the site card's illustration: an open chest of gold on the sand */
+const CHEST_ART = `<svg viewBox="0 0 220 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="dgs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9fdcff"/><stop offset="1" stop-color="#e8f7ff"/></linearGradient></defs><rect width="220" height="130" fill="url(#dgs)"/><path d="M150 70l18-26 12 6 14-16 26 36z" fill="#7a8494"/><rect x="186" y="26" width="8" height="18" fill="#fff"/><rect x="186" y="32" width="8" height="4" fill="#e8432a"/><path d="M0 74h220v16H0z" fill="#3fc6ea"/><path d="M0 86c50-10 160-12 220 0v44H0z" fill="#f6dda6"/><path d="M14 92c-2-22 4-40 12-52" stroke="#8a5a2a" stroke-width="4" fill="none"/><path d="M26 40c-10-6-22-2-26 4 9-2 18 0 26 3zm0 0c2-10 12-14 20-12-7 3-12 8-16 15z" fill="#3fae4f"/><g class="dc-chest"><path d="M70 120l6-38h70l6 38z" fill="#a8743f" stroke="#5a3a1a" stroke-width="3"/><path d="M76 82c0-26 70-26 70 0z" fill="#c98a4a" stroke="#5a3a1a" stroke-width="3" transform="rotate(-18 76 82)"/><path d="M78 84h66l-3 10H81z" fill="#ffc93a"/><circle cx="96" cy="84" r="9" fill="#ffd23a" stroke="#c4840a" stroke-width="2"/><circle cx="118" cy="80" r="11" fill="#ffd23a" stroke="#c4840a" stroke-width="2"/><circle cx="136" cy="86" r="8" fill="#ffd23a" stroke="#c4840a" stroke-width="2"/><path d="M114 75v10M110 80h8" stroke="#c4840a" stroke-width="2"/><rect x="104" y="94" width="14" height="14" rx="3" fill="#ffd23a" stroke="#8a5a10" stroke-width="2"/><path d="M70 104h82" stroke="#5a3a1a" stroke-width="3"/></g><path d="M160 116l6-6 6 6-6 6z" fill="#ff7a3a"/><circle class="dc-glint" cx="122" cy="70" r="4" fill="#fff"/></svg>`;
+
 /** relic art: a gem-studded artefact tinted per set */
 const RELIC_HUES = [42, 200, 320, 28, 190, 150, 12, 48, 230, 260, 6, 50];
 export function relicSvg(set: number, i: number, found = true): string {
@@ -59,8 +68,11 @@ export class DigScreen {
     this.spadeChip.setAttribute('aria-label', 'Spades');
     const { head } = pageHead('Treasure Dig', () => this.h.back(), [this.spadeChip, this.wallet.el]);
     this.body = el('div', 'page-body dig-body');
-    this.info = el('div', 'dig-info');
+    // left: the site card, relics found, the site reward, Museum and Play (UPDATE6_PLAN.md §2)
+    this.info = el('div', 'dig-side');
+    const main = el('div', 'dig-main');
     const field = el('div', 'dig-field');
+    field.innerHTML = '<i class="rope r1"></i><i class="rope r2"></i><i class="rope r3"></i><i class="rope r4"></i>';
     this.grid = el('div', 'dig-grid');
     this.grid.style.setProperty('--cols', String(COLS));
     this.grid.style.setProperty('--rows', String(ROWS));
@@ -76,9 +88,11 @@ export class DigScreen {
       this.grid.appendChild(t);
     }
     field.appendChild(this.grid);
-    this.body.append(this.info, field);
-    this.actions = actionBar();
-    card.append(head, this.body, this.actions);
+    const legend = el('div', 'dig-legend', `<span class="dl-hint">Choose a tile to dig · 1 spade per dig</span><span class="dl-keys"><span class="hl hot">${HEAT_ICON.hot}<b>Hot:</b> very close</span><span class="hl warm">${HEAT_ICON.warm}<b>Warm:</b> nearby</span><span class="hl cold">${HEAT_ICON.cold}<b>Cold:</b> farther away</span></span>`);
+    main.append(field, legend);
+    this.body.append(this.info, main);
+    this.actions = el('div', 'dig-side-btns');
+    card.append(head, this.body);
     this.museum = new Sheet('museum-sheet');
     this.el.append(el('div', 'page-dim'), card, this.museum.el);
   }
@@ -101,17 +115,19 @@ export class DigScreen {
         return `<span class="rl${done ? ' got' : ''}" title="${RELIC_SETS[set]!.relics[ri]}"><span class="rl-art">${relicSvg(set, ri, done)}</span><span class="rl-pips">${cells.map((_, k) => `<i class="${k < got ? 'on' : ''}"></i>`).join('')}</span></span>`;
       })
       .join('');
-    this.info.innerHTML = `<div class="dig-site"><span class="ds-n">Site ${st.site}</span><span class="ds-theme">${SITE_THEMES[(st.site - 1) % SITE_THEMES.length]} · ${RELIC_SETS[set]!.name}</span></div>
-      <div class="dig-relics">${relics}</div>
-      <div class="dig-chest"><span class="dc-ico">${GIFT_SVG}</span><span class="dc-col"><b>Site chest</b><small>${ICON.shell}${fmt(rw.shells)} · ${PEARL_ICO}${rw.pearls}${rw.boosts ? ' · Golden Shell' : ''}${rw.item ? ' · <em>Pearl crab!</em>' : ''}</small></span></div>
-      <div class="dig-legend"><span class="hl hot">Hot</span><span class="hl warm">Warm</span><span class="hl cold">Cold</span><small>Holes glow hotter near a buried relic</small></div>`;
+    const theme = SITE_THEMES[(st.site - 1) % SITE_THEMES.length];
+    const found = [0, 1, 2].filter((ri) => site.relic.every((r, k) => r !== ri || st.dug.includes(k))).length;
+    this.info.innerHTML = `<div class="dig-site-card"><span class="ds-art">${CHEST_ART}</span><span class="ds-col"><span class="ds-n">Site ${st.site}</span><span class="ds-theme">${theme} · ${RELIC_SETS[set]!.name}</span></span></div>
+      <div class="dig-box dig-relics-box"><span class="db-t">Relics found <b>${found}/3</b></span><div class="dig-relics">${relics}</div></div>
+      <div class="dig-box dig-reward-box"><span class="db-t">Site reward</span><div class="dig-rw"><span>${ICON.shell}<b>${fmt(rw.shells)}</b></span><span>${PEARL_ICO}<b>${rw.pearls}</b></span>${rw.boosts ? `<span class="dr-x">+ Golden Shell</span>` : ''}${rw.item ? `<span class="dr-x">+ Pearl crab!</span>` : ''}</div></div>`;
     for (let i = 0; i < TILES; i++) this.paintTile(i, site, st.dug, false);
     this.grid.classList.toggle('out', st.spades === 0);
-    // actions: the museum, and a way to earn spades
+    // the Museum, and a way to earn spades
     this.actions.innerHTML = '';
-    const museum = btn(`${ICON.trophy}<span class="dm-col">Museum<small>${st.relics.length}/${RELIC_TOTAL}</small></span>`, 'blue dig-museum', () => this.openMuseum(), `Relic Museum: ${st.relics.length} of ${RELIC_TOTAL}`);
-    const play = btn(`${ICON.play}<span>${st.spades === 0 ? 'Play for spades' : 'Play'}</span>`, `big dig-play${st.spades === 0 ? ' glow' : ''}`, () => this.h.play());
+    const museum = btn(`${ICON.trophy}<span class="dm-col">Museum<small>${st.relics.length}/${RELIC_TOTAL}</small></span><span class="dm-hall">${HALL_ICON}</span>`, 'blue big dig-museum', () => this.openMuseum(), `Relic Museum: ${st.relics.length} of ${RELIC_TOTAL}`);
+    const play = btn(`${ICON.play}<span>${st.spades === 0 ? 'Play for spades' : 'Play'}</span>`, `dig-play${st.spades === 0 ? ' glow' : ''}`, () => this.h.play(), st.spades === 0 ? 'Play a run to earn spades' : 'Play a run');
     this.actions.append(museum, play);
+    this.info.appendChild(this.actions);
   }
 
   private paintTile(i: number, site: ReturnType<typeof generateSite>, dug: readonly number[], fresh: boolean): void {
@@ -136,6 +152,7 @@ export class DigScreen {
     else if (kind === 'pearls') inner = `<span class="dt-ico">${PEARL_ICO}</span><b>${amt}</b>`;
     else if (kind === 'spade') inner = `<span class="dt-ico">${DIG_ICON}</span><b>+${amt}</b>`;
     else if (kind === 'dynamite') inner = `<span class="dt-ico">${DYNAMITE}</span>`;
+    if (kind === 'empty') inner = `<span class="dt-heat">${HEAT_ICON[h as 'hot' | 'warm' | 'cold']}<b>${h === 'hot' ? 'Hot' : h === 'warm' ? 'Warm' : 'Cold'}</b></span>`;
     t.innerHTML = `<span class="dt-hole"></span>${inner}`;
     t.setAttribute('aria-label', kind === 'empty' ? `${h} hole` : `${kind} ${amt || ''}`.trim());
   }

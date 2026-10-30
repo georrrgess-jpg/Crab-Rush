@@ -113,7 +113,7 @@ try {
   await fr(3);
   check((await st()).state === 'shop', 'shop opens');
   await page.click('.tile:has-text("Chill")');
-  await page.click('.crab-detail .btn');
+  await page.click('.crab-detail > .btn:not(.wd-random)');
   const afterBuy = await page.evaluate(() => window.__crab.game.save.data);
   check(afterBuy.crabs.owned.includes('chill') && afterBuy.crabs.selected === 'chill' && afterBuy.shells === 550, 'buying Chill spends 450 shells and wears it');
   // wardrobe: equip an owned hat and a trail, mix them with the body
@@ -272,7 +272,7 @@ try {
   // ---------------- Daily Tide: start, finish, streak (faked dates)
   await page.evaluate(() => { window.__crab.setDate('2026-03-10T12:00:00'); window.__crab.setState('daily'); });
   await fr(3);
-  check((await st()).state === 'daily' && (await page.isVisible('#daily .dt-name')), 'Daily Tide opens with today\'s modifier');
+  check((await st()).state === 'daily' && (await page.isVisible('#daily .dh-name')), 'Daily Tide opens with today\'s modifier');
   await page.click('#daily .daily-play');
   await fr(10);
   const dk = await page.evaluate(() => ({ kind: window.__crab.game.world.kind, mod: window.__crab.game.world.modifier }));
@@ -322,7 +322,7 @@ try {
   // ---------------- Update 5: Second Chance and Shell Fever
   await page.evaluate(() => { window.__crab.reviveOn(true); window.__crab.startRun({ seed: 24, autopilot: false, tutorial: false }); window.__crab.game.world.opts.god = true; window.__crab.frames(60 * 8); window.__crab.game.world.opts.god = false; window.__crab.crash(); window.__crab.frames(60 * 2.5); });
   check((await st()).state === 'revive' && (await page.isVisible('#revive .rv-go')), 'a crash offers a Second Chance');
-  await page.click('#revive .rv-go');
+  await page.click('#revive .rv-go', { force: true }); // it pulses (never "stable")
   await fr(60);
   const rv = await page.evaluate(() => ({ state: window.__crab.game.state, mode: window.__crab.game.world.mode, used: window.__crab.game.save.data.revive.used }));
   check(rv.mode === 'running' && (rv.state === 'running' || rv.state === 'countdown') && rv.used === 1, 'Continue picks the run back up (the daily free one is used)');

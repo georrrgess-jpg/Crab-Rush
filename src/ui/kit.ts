@@ -197,7 +197,7 @@ export class Sheet {
  * Toast lane: toasts sit just below the lowest header-like element in the top 45% of the screen
  * (anything marked `data-toast-avoid`), so they never cover a header, wallet or status bar.
  */
-const TOAST_AVOID = '[data-toast-avoid], .page-head, .res-head, .home-top, #hud > .left, #hud > .right, .lv-progress, .rh-pos, .rh-track, .spade-chip';
+const TOAST_AVOID = '[data-toast-avoid], .page-head, .res-head, .home-top, .h6-top, #hud > .left, #hud > .right, #hud .hud-mid, .lv-progress, .rh-pos, .rh-track, .spade-chip';
 /** On landscape phones a card fills the height, so toasts go to the bottom-left corner instead. */
 export function toastCorner(): boolean {
   return sizeClass() === 'short' && !!document.querySelector('.res-card, .chest-card');
@@ -217,7 +217,7 @@ export function toastTop(): number {
         break;
       }
     }
-    if (!hidden) top = Math.max(top, r.bottom + 8);
+    if (!hidden) top = Math.max(top, r.bottom + 16);
   }
   return Math.min(top, limit);
 }

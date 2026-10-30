@@ -55,7 +55,7 @@ html[data-size='short'] .rv-no { width: auto; flex: 1 1 30%; }
 .spade-chip svg { width: 28px; height: 28px; }
 .spade-chip b { font-weight: 400; }
 .spade-chip.empty { filter: saturate(0.3); }
-.dig-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; }
+
 .dig-info { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: center; }
 .dig-site { display: flex; flex-direction: column; min-width: 0; }
 .ds-n { font-family: var(--font-display); font-size: 24px; line-height: 1; color: var(--c-navy-800); }
@@ -109,8 +109,6 @@ html[data-size='short'] .rv-no { width: auto; flex: 1 1 30%; }
 .dig-grid.out .dt:not(.dug) { filter: saturate(0.6) brightness(0.96); }
 .sand-grain { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #e2b86e; box-shadow: 0 0 0 1px rgba(150, 100, 40, 0.3); pointer-events: none; z-index: 30; }
 .dig-play.glow { animation: playglow 1.6s ease-in-out infinite; }
-.dig .page-actions .dig-museum { flex: 0 1 auto; }
-.dig .page-actions .dig-play { flex: 1 1 auto; }
 /* the site chest celebration */
 .dig-clear { position: absolute; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: radial-gradient(ellipse at 50% 45%, rgba(255, 200, 80, 0.35), rgba(40, 15, 60, 0.7)); animation: rt-in 0.3s both; }
 .dcl-card { position: relative; width: min(100%, 360px); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 18px 18px 16px; border-radius: 28px; background: linear-gradient(180deg, #fffaf0, #fff0d0); border: 4px solid #fff; box-shadow: 0 20px 40px rgba(60, 20, 0, 0.4); overflow: hidden; animation: rvin 0.45s var(--ease-back) both; }
@@ -138,14 +136,7 @@ html[data-size='short'] .rv-no { width: auto; flex: 1 1 30%; }
 .mu-r .mu-art svg { width: 100%; height: 100%; }
 .mu-r small { font-size: 12px; color: var(--c-teal-700); line-height: 1.1; }
 /* layouts */
-html[data-size='compact'] .dig-grid { gap: 5px; }
 html[data-size='compact'] .dig-field { padding: 8px; }
-html[data-size='compact'] .dig-legend small { display: none; }
-html[data-size='short'] .dig-card, html[data-size='regular'][data-orient='land'] .dig-card { width: min(100%, 920px); }
-html[data-size='short'] .dig-body, html[data-size='regular'][data-orient='land'] .dig-body { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: start; }
-html[data-size='short'] .dig-info, html[data-size='regular'][data-orient='land'] .dig-info { grid-template-columns: minmax(0, 1fr); }
-html[data-size='short'] .dig-legend small { display: none; }
-html[data-size='short'] .dig-chest { padding: 4px 8px; }
 /* trophies page */
 .tr-body { gap: 10px; }
 .tp-none { font-size: 13px; color: var(--c-teal-700); }
@@ -161,10 +152,4 @@ html[data-size='short'] .dig-chest { padding: 4px 8px; }
 @keyframes aspark { 0%, 100% { transform: scale(0.4); opacity: 0.3; } 50% { transform: scale(1.1) rotate(45deg); opacity: 1; } }
 .mc-art .a-chest { animation: aisle 2.6s ease-in-out infinite; }
 html[data-size='compact'] .dig .kit-wallet { display: none; }
-html[data-size='short'] .dig-grid { width: min(100%, calc((100vh - 200px) * 1.2)); }
-.dig-museum .dm-col { display: flex; flex-direction: column; align-items: flex-start; line-height: 1; }
-.dig-museum .dm-col small { font-size: 13px; opacity: 0.9; margin-top: 2px; }
-.dig .page-actions .dig-museum { font-size: 18px; padding-left: 0.6em; padding-right: 0.7em; }
-.dig-legend small { font-size: 12px; }
-.dig .page-actions .dig-museum { flex: 0 0 auto; }
 .race-end .res-buttons .btn.big { padding-left: 0.6em; padding-right: 0.6em; font-size: clamp(22px, 3.6vmin, 32px); }

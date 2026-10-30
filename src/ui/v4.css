@@ -186,15 +186,9 @@ html[data-size='compact'] .dt-desc { font-size: 14px; }
 html[data-size='compact'] .dt-stat { padding: 6px 2px; }
 html[data-size='compact'] .dt-stat b { font-size: 22px; }
 html[data-size='compact'] .dm { padding: 6px 8px; }
-html[data-size='short'] .daily-card { width: min(100%, 860px); }
-html[data-size='short'] .daily-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 html[data-size='short'] .dt-art { width: 56px; height: 56px; padding: 6px; }
 html[data-size='short'] .dt-name { font-size: 24px; }
 html[data-size='short'] .dt-hero { padding: 6px 10px; }
-html[data-size='short'] .dt-playcol { flex-direction: row; align-items: center; gap: 10px; }
-html[data-size='short'] .dt-playcol .daily-play { flex: 0 0 52%; min-height: 52px; }
-html[data-size='regular'][data-orient='land'] .daily-card { width: min(100%, 900px); }
-html[data-size='regular'][data-orient='land'] .daily-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 
 /* =================================================================== Sunny Pass v4 */
 .ph-lbl { white-space: nowrap; }

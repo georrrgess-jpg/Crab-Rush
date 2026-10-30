@@ -1,6 +1,6 @@
 # Crab Dash: working rules
 
-Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is in **`UPDATE4_PLAN.md`**; Update 5 ("Treasure Tide") is in **`UPDATE5_PLAN.md`**. Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
+Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is in **`UPDATE4_PLAN.md`**; Update 5 ("Treasure Tide") is in **`UPDATE5_PLAN.md`**; Update 6 ("Menu Makeover", the concept-art menus) is in **`UPDATE6_PLAN.md`**. The game is called **Crab Rush** (saves keep their `crabdash.*` keys). Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
 
 ## Commands
 - `npm run dev`: dev server
@@ -41,6 +41,11 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - Shell Fever and Second Chance live in the sim (`World.fever/feverT`, `World.revive()`); knobs `CFG.fever`, `CFG.revive`; the card is `src/ui/revive.ts`.
 - Feel: lane glide is a critically damped spring (`CFG.laneChangeTime`); pulled shells fly an eased Bézier (`World.pull`, `CFG.pull`); Sand Slam pulls shells (`CFG.hop.slamReach`) and plays `SlamFx` (`src/render/fx.ts`). Power-up spacing: `CFG.powerupGap/powerupClear`.
 - Vibrant theme: `src/ui/theme5.css` (loaded last); Update 5 screens in `src/ui/u5.css`. Map extras (`extras` in `Scenery.buildVariant`) are High/Medium only.
+## Where things live (Update 6)
+- Menu look: `src/ui/theme6.css` (loaded last; replaces the Update 5 candy theme): cream cards, navy titles on the card, round blue back buttons, orange primary / teal secondary buttons, cream chips (`.u-pill`).
+- Home is rebuilt in `src/ui/home.ts` (classes `h6-*`): profile, wallet + gear, logo + Beach Goals, the crab + Customize, the Beach Run hero card (`.h6-start.play-card`) and mode rows (`.h6-row.mode-card.<id>`), nav. Portrait framing of the Home crab is in `GameView.frame` (title camera).
+- HUD: distance + best pill at the top centre (`.hud-mid`, `ui.setRunBest`), power-up badge bottom left with seconds; `ui.setRacing` hides it in Crab Cup.
+- Wardrobe: All / Owned / Locked filters, drag to rotate (`ShopHandlers.spin`, `Game.shopHold`), Reset View, Saved Outfits, Randomize Owned. Daily Tide and Treasure Dig follow the concept layouts.
 - Save format is v5 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
 
 ## Rules
