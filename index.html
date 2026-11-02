@@ -20,13 +20,45 @@
       <div id="vignette"></div>
       <div id="touch-layer"></div>
       <div id="ui"></div>
-      <div id="loader">
-        <div class="loader-logo">Crab Rush</div>
-        <div class="crab-run" aria-hidden="true">
-          <div class="track"><i></i></div>
-          <div class="crab"><svg viewBox="0 0 52 40"><path d="M6 22c-5-3-6-10-1-13 1 4 4 6 7 6M46 22c5-3 6-10 1-13-1 4-4 6-7 6" fill="#e53935"/><g stroke="#b3261e" stroke-width="2.6" stroke-linecap="round"><path d="M14 28l-6 8M18 30l-3 8M34 30l3 8M38 28l6 8"/></g><ellipse cx="26" cy="25" rx="15" ry="10" fill="#e53935"/><ellipse cx="26" cy="29" rx="11" ry="5" fill="#ffc9a0"/><circle cx="20" cy="13" r="5" fill="#fff"/><circle cx="32" cy="13" r="5" fill="#fff"/><circle cx="21" cy="14" r="2.3" fill="#14141c"/><circle cx="33" cy="14" r="2.3" fill="#14141c"/></svg></div>
+      <div id="loader" role="img" aria-label="Crab Rush is loading">
+        <div class="sp-stage">
+          <canvas class="sp-rays" width="256" height="256" aria-hidden="true"></canvas>
+          <div class="sp-sun" aria-hidden="true"></div>
+          <div class="sp-sparks" aria-hidden="true"><i style="--x:68.0%;--y:30.2%;--dl:1.39s;--s:0.82"></i><i style="--x:81.3%;--y:45.6%;--dl:1.14s;--s:0.96"></i><i style="--x:9.6%;--y:34.9%;--dl:1.55s;--s:1.20"></i><i style="--x:79.6%;--y:16.5%;--dl:0.93s;--s:0.97"></i><i style="--x:6.1%;--y:24.3%;--dl:0.40s;--s:0.58"></i><i style="--x:9.4%;--y:37.8%;--dl:0.31s;--s:0.67"></i><i style="--x:40.0%;--y:42.3%;--dl:0.19s;--s:0.81"></i><i style="--x:54.5%;--y:42.9%;--dl:1.97s;--s:1.10"></i><i style="--x:29.6%;--y:22.3%;--dl:0.86s;--s:1.12"></i><i style="--x:92.1%;--y:10.6%;--dl:0.42s;--s:0.66"></i><i style="--x:25.5%;--y:25.3%;--dl:1.41s;--s:0.68"></i><i style="--x:4.4%;--y:22.4%;--dl:0.89s;--s:0.90"></i><i style="--x:91.7%;--y:34.4%;--dl:1.24s;--s:0.93"></i><i style="--x:66.2%;--y:6.4%;--dl:2.16s;--s:1.05"></i></div>
+          <div class="sp-isle" aria-hidden="true"><i class="a"></i><i class="b"></i></div>
+          <div class="sp-sea" aria-hidden="true"><div class="w w3"></div><div class="w w2"></div><div class="w w1"></div></div>
+          <div class="sp-bubbles" aria-hidden="true"><i style="--x:85.2%;--dl:3.19s;--s:10px;--du:4.12s"></i><i style="--x:12.7%;--dl:2.54s;--s:7px;--du:3.35s"></i><i style="--x:22.6%;--dl:0.65s;--s:9px;--du:3.32s"></i><i style="--x:3.0%;--dl:0.61s;--s:7px;--du:4.04s"></i><i style="--x:5.4%;--dl:3.50s;--s:12px;--du:3.54s"></i><i style="--x:26.7%;--dl:1.39s;--s:10px;--du:3.48s"></i><i style="--x:82.8%;--dl:3.97s;--s:11px;--du:4.31s"></i><i style="--x:11.1%;--dl:0.41s;--s:9px;--du:3.81s"></i><i style="--x:80.9%;--dl:0.65s;--s:6px;--du:5.39s"></i></div>
+          <div class="sp-center">
+            <div class="sp-burst" aria-hidden="true"><i class="sp-ring"></i><i class="sp-p dot" style="--a:-2deg;--d:29vmin;--c:#ffd23a;--r:-226deg"></i><i class="sp-p dot" style="--a:24deg;--d:28vmin;--c:#ff4f8b;--r:219deg"></i><i class="sp-p shell" style="--a:37deg;--d:28vmin;--c:#2ee0c8;--r:-229deg"></i><i class="sp-p dot" style="--a:57deg;--d:37vmin;--c:#ff7a1a;--r:279deg"></i><i class="sp-p dot" style="--a:75deg;--d:30vmin;--c:#8b5cf6;--r:290deg"></i><i class="sp-p conf" style="--a:101deg;--d:27vmin;--c:#ffffff;--r:-253deg"></i><i class="sp-p shell" style="--a:121deg;--d:29vmin;--c:#4ade80;--r:-153deg"></i><i class="sp-p conf" style="--a:140deg;--d:37vmin;--c:#38bdf8;--r:-195deg"></i><i class="sp-p star" style="--a:161deg;--d:39vmin;--c:#ffd23a;--r:-201deg"></i><i class="sp-p dot" style="--a:181deg;--d:27vmin;--c:#ff4f8b;--r:-90deg"></i><i class="sp-p star" style="--a:200deg;--d:37vmin;--c:#2ee0c8;--r:176deg"></i><i class="sp-p star" style="--a:221deg;--d:35vmin;--c:#ff7a1a;--r:-46deg"></i><i class="sp-p conf" style="--a:244deg;--d:40vmin;--c:#8b5cf6;--r:-217deg"></i><i class="sp-p star" style="--a:261deg;--d:37vmin;--c:#ffffff;--r:159deg"></i><i class="sp-p dot" style="--a:277deg;--d:46vmin;--c:#4ade80;--r:224deg"></i><i class="sp-p conf" style="--a:299deg;--d:41vmin;--c:#38bdf8;--r:200deg"></i><i class="sp-p dot" style="--a:319deg;--d:45vmin;--c:#ffd23a;--r:271deg"></i><i class="sp-p star" style="--a:341deg;--d:44vmin;--c:#ff4f8b;--r:48deg"></i></div>
+            <div class="loader-logo sp-logo"><span class="sp-word"><span style="--i:0;--c:#ff7a1a"><b>C</b></span><span style="--i:1;--c:#ffd23a"><b>R</b></span><span style="--i:2;--c:#ff4f8b"><b>A</b></span><span style="--i:3;--c:#2ee0c8"><b>B</b></span></span><span class="sp-word"><span style="--i:4;--c:#ffd23a"><b>R</b></span><span style="--i:5;--c:#ff4f8b"><b>U</b></span><span style="--i:6;--c:#2ee0c8"><b>S</b></span><span style="--i:7;--c:#ff7a1a"><b>H</b></span></span></div>
+            <div class="sp-ribbon"><span>Endless Beach Adventure</span></div>
+            <div class="sp-crab" aria-hidden="true">
+            <div class="sp-crab-bob">
+              <div class="sp-claw l"><svg viewBox="0 0 60 60"><path d="M44 52C36 50 30 44 30 36" stroke="#c4302b" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M30 38C14 40 4 28 8 14c2-6 8-10 14-9-4 5-4 11 0 15 4 3 9 3 13 0 3 7 0 16-5 18z" fill="url(#spClaw)" stroke="#8f1f1b" stroke-width="2.5"/><path d="M14 14c2-3 5-4 8-4" stroke="#fff" stroke-opacity=".55" stroke-width="3" fill="none" stroke-linecap="round"/></svg></div>
+              <div class="sp-claw r"><svg viewBox="0 0 60 60"><path d="M44 52C36 50 30 44 30 36" stroke="#c4302b" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M30 38C14 40 4 28 8 14c2-6 8-10 14-9-4 5-4 11 0 15 4 3 9 3 13 0 3 7 0 16-5 18z" fill="url(#spClaw)" stroke="#8f1f1b" stroke-width="2.5"/><path d="M14 14c2-3 5-4 8-4" stroke="#fff" stroke-opacity=".55" stroke-width="3" fill="none" stroke-linecap="round"/></svg></div>
+              <svg class="sp-crab-body" viewBox="0 0 140 100">
+                <defs>
+                  <radialGradient id="spShell" cx="40%" cy="30%" r="75%"><stop offset="0" stop-color="#ff8a6a"/><stop offset=".55" stop-color="#ef3b2d"/><stop offset="1" stop-color="#b81f1a"/></radialGradient>
+                  <radialGradient id="spClaw" cx="35%" cy="30%" r="80%"><stop offset="0" stop-color="#ff8a6a"/><stop offset="1" stop-color="#d22c22"/></radialGradient>
+                </defs>
+                <g stroke="#a3221c" stroke-width="6" stroke-linecap="round" fill="none"><path d="M34 66l-16 12-6 14M40 72l-12 14-2 10M106 66l16 12 6 14M100 72l12 14 2 10"/></g>
+                <path d="M52 40V22M88 40V22" stroke="#c4302b" stroke-width="6" stroke-linecap="round"/>
+                <ellipse cx="70" cy="62" rx="44" ry="30" fill="url(#spShell)" stroke="#8f1f1b" stroke-width="3"/>
+                <path d="M40 50c10-12 50-12 60 0" stroke="#fff" stroke-opacity=".45" stroke-width="5" fill="none" stroke-linecap="round"/>
+                <ellipse cx="50" cy="70" rx="7" ry="4.5" fill="#ff9aa8" opacity=".85"/><ellipse cx="90" cy="70" rx="7" ry="4.5" fill="#ff9aa8" opacity=".85"/>
+                <path d="M60 72q10 9 20 0" stroke="#5a1210" stroke-width="3.5" fill="#7a1a16" stroke-linecap="round"/>
+              </svg>
+              <div class="sp-eyes"><i><b></b></i><i><b></b></i></div>
+            </div>
+            <div class="sp-crab-shadow"></div>
+          </div>
+          </div>
+          <div class="sp-load">
+            <div class="sp-bar"><i></i></div>
+            <div class="loader-tip">Waxing the surfboards…</div>
+          </div>
         </div>
-        <div class="loader-tip">Waxing the surfboards…</div>
+        <div class="sp-wipe" aria-hidden="true"><div class="sp-wipe-top"></div><div class="sp-wipe-body"></div><div class="sp-wipe-bot"></div></div>
       </div>
       <noscript>Crab Rush needs JavaScript to run.</noscript>
     </div>

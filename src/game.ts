@@ -515,15 +515,13 @@ export class Game {
     this.loop.tick(1 / 60);
     // repaint canvas signs when fonts arrive
     document.fonts?.ready.then(() => this.view.entities.refreshSigns()).catch(() => {});
-    const loader = document.getElementById('loader');
-    if (loader) {
-      loader.classList.add('done');
-      setTimeout(() => loader.remove(), 500);
-    }
+    // the splash (src/ui/splash.ts) is dismissed by main.ts once boot() returns
     if (this.flags.autopilot && !this.flags.shots) this.startRun(true);
     const hooks = (window as unknown as { __crab?: { ready: boolean } }).__crab;
     if (hooks) hooks.ready = true;
-    setTimeout(() => this.prepareThumbs(), 1200);
+    // Wardrobe thumbnails are GPU work on the main thread: wait until the boot cinematic has played so
+    // the opening never hitches (opening the Wardrobe or Pass builds them at once if needed)
+    setTimeout(() => this.prepareThumbs(), this.view.cinematicPlaying ? 6400 : 1200);
   }
 
   /** The boot cinematic: first open of each session, skippable, never with Reduce Motion. */

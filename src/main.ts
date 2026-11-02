@@ -7,16 +7,21 @@ import './ui/v4.css';
 import './ui/cup.css';
 import './ui/u5.css';
 import './ui/theme6.css';
+import './ui/splash.css';
 import { installSizeClass } from './ui/kit';
 import { Game } from './game';
+import { Splash } from './ui/splash';
 
 installSizeClass();
+// the opening animation is already playing (index.html + splash.css); this drives its progress and exit
+const splash = new Splash();
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 
 function showFatal(msg: string): void {
   const loader = document.getElementById('loader');
   if (loader) {
-    loader.classList.remove('done');
+    loader.classList.remove('done', 'out', 'quick');
+    loader.classList.add('fatal');
     loader.innerHTML = `<div class="loader-logo">Crab Rush</div><p style="max-width:80vw;text-align:center;font-size:18px">${msg}</p>`;
   }
 }
@@ -33,13 +38,11 @@ function webgl2Supported(): boolean {
 if (!webgl2Supported()) {
   showFatal('Your browser or device does not support WebGL 2, which Crab Rush needs. Try an up-to-date Safari, Chrome, Edge or Firefox.');
 } else {
-  // staged start so the loader can paint its progress between the heavy steps
-  const loader = document.getElementById('loader');
-  const tip = loader?.querySelector('.loader-tip');
+  // staged start so the splash can paint its progress between the heavy steps (its animation runs on
+  // the compositor, so it keeps moving even while these steps block the main thread)
   const progress = (pct: number, text?: string): Promise<void> =>
     new Promise((res) => {
-      loader?.style.setProperty('--load', `${pct}%`);
-      if (text && tip) tip.textContent = text;
+      splash.progress(pct, text);
       requestAnimationFrame(() => setTimeout(res, 0));
     });
   void (async () => {
@@ -50,7 +53,11 @@ if (!webgl2Supported()) {
       // compile every program now so the first run doesn't hitch (UPDATE2_PLAN.md §4.4)
       await game.view.precompile();
       await progress(100, 'Off we scuttle!');
+      // let the intro land its big moments, then boot under cover of the splash (the first frame and
+      // its GPU uploads happen while it still covers the screen) and sweep it away with the wave
+      await splash.ready();
       game.boot();
+      requestAnimationFrame(() => requestAnimationFrame(() => splash.exit()));
     } catch (e) {
       console.error(e);
       showFatal('Something went wrong while starting the game. Please reload the page.');

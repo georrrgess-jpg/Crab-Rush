@@ -395,14 +395,6 @@
 .stat-empty > svg { flex: none; width: 40px; height: 40px; padding: 8px; border-radius: 50%; background: linear-gradient(180deg, #ffc84a, #ff8414); }
 .stat-empty b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 18px; color: var(--u-ink); }
 
-/* =================================================================== loader: a crab scuttling along a progress track */
-#loader .crab-run { position: relative; width: min(64vw, 340px); height: 70px; }
-#loader .crab-run .track { position: absolute; left: 0; right: 0; bottom: 6px; height: 12px; border-radius: 6px; background: rgba(23, 63, 102, 0.22); overflow: hidden; }
-#loader .crab-run .track i { display: block; height: 100%; width: var(--load, 8%); border-radius: 6px; background: linear-gradient(90deg, #ff9a1f, #ffd23a); transition: width 0.3s ease; }
-#loader .crab-run .crab { position: absolute; bottom: 14px; left: calc(var(--load, 8%) - 26px); width: 52px; height: 40px; transition: left 0.3s ease; animation: scuttle 0.22s ease-in-out infinite alternate; }
-#loader .crab-run .crab svg { width: 100%; height: 100%; }
-#loader .loader-tip { font-size: 16px; color: #5a2a10; opacity: 0.85; }
-@keyframes scuttle { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-4px) rotate(4deg); } }
 
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 

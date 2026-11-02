@@ -298,6 +298,11 @@ export const CFG = {
    *  mean seconds between shoreline foam splashes */
   fx: { contactFadeH: 2.2, contactCoreH: 0.6, contactCoreAlpha: 0.9, landPuffRef: 9, landPuffMin: 0.35, landPuffMax: 1.6, sprayGrains: 8, foamEvery: 0.22 },
 
+  /** the opening animation (src/ui/splash.ts): the intro holds at least `minMs` from page start (so
+   *  the logo, burst and crab all land; a tap skips the wait), the wave wipe lasts `wipeMs`
+   *  (match `sp-wipe` in splash.css), and the sun has `rays` rays */
+  splash: { minMs: 2700, wipeMs: 1100, rays: 18 },
+
   // ---- fixed step ----
   simHz: 120,
 } as const;

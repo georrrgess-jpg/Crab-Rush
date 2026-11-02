@@ -54,6 +54,7 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - Obstacles have `lo` / `hi` / `rich` (High, near) geometry; zone 1/2 blocks and lows are `crateBlock`, `rockBlock`, `lowBarrier`.
 - Audio is a lookahead sequencer over synthesised instrument banks (32-bar forms per track), a beach ambience bed (`setAmbience`), and layered SFX (`play(name, {intensity, kind, pan, streak})`).
 - Map detail and run FX knobs: `CFG.scenery`, `CFG.fx`.
+- Opening animation (Update 8.1): markup in `index.html` (`#loader`), motion in `src/ui/splash.css` (transform/opacity only, so it plays on the compositor while the game loads), controller `src/ui/splash.ts` (progress, minimum hold `CFG.splash.minMs`, tap to skip the wait, wave-wipe exit). `main.ts` boots the game under the splash, then calls `splash.exit()`. Automation and Reduce Motion get a static "quick" splash; `?splash` forces the full intro, `?splash=hold` freezes it for screenshots. Wardrobe thumbnails wait until the boot cinematic has played.
 - Smoke runs under SwiftShader: first-open thumbnail renders can stall a frame for tens of seconds, so the script waits for them and uses long timeouts. Run smoke alone and kill stray `vite` servers first.
 
 ## Rules
