@@ -1,6 +1,6 @@
-import { CFG, tierAt, zoneAt } from '../config';
+import { CFG, tierAt, tierProgress, zoneAt } from '../config';
 import type { Rng } from '../core/rng';
-import { PATTERNS, PATTERN_BY_ID, patternRows, rowSpacing, toSolverRows, type Pattern } from './patterns';
+import { HAZARDS, INTRO_PATTERNS, PATTERNS, PATTERN_BY_ID, patternRows, rowSpacing, toSolverRows, type Pattern } from './patterns';
 import { initialStates, solveRows, type SolverState } from './solver';
 import type { PowerKind } from './events';
 import { POWER_KINDS } from './events';
@@ -39,6 +39,19 @@ interface Strand {
   pts: { lane: number; wz: number; big: boolean }[];
 }
 
+/** Update 7: a per-tier [lo, hi] range at track position d, gliding toward the next tier's across the tier. */
+function tierRange(table: readonly (readonly [number, number])[], d: number): [number, number] {
+  const t = tierAt(d);
+  const r0 = (table[t] ?? table[table.length - 1]) as readonly [number, number];
+  const r1 = (table[t + 1] ?? r0) as readonly [number, number];
+  const f = tierProgress(d);
+  return [r0[0] + (r1[0] - r0[0]) * f, r0[1] + (r1[1] - r0[1]) * f];
+}
+
+const INTRO_IDS = new Set<string>(Object.values(INTRO_PATTERNS));
+/** exactly one bit set */
+const single = (m: number): boolean => m !== 0 && (m & (m - 1)) === 0;
+
 const smooth = (a: number, b: number, x: number): number => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -60,6 +73,9 @@ export class Spawner {
   lastPower: PowerKind | null = null;
   /** Island Hop: index of the next level block to place */
   private blockIdx = 0;
+  /** Update 7: hazards this run has already shown (bit mask, see `HAZARDS`), patterns since the last debut */
+  private seen = 0;
+  private sinceIntro = 99;
   private flagDone = false;
 
   constructor(private w: World, private rng: Rng, startDist: number, tutorial: TutorialFlags | null) {
@@ -71,11 +87,16 @@ export class Spawner {
     this.queue = script.map((s) => s.id);
     // Don't spawn arches for zones we start beyond.
     for (let z = 0; z < CFG.zoneStarts.length; z++) this.archDone[z] = (CFG.zoneStarts[z] as number) <= startDist;
+    // starting further down the beach: hazards from the tiers we skipped need no debut
+    const t0 = tierAt(startDist);
+    HAZARDS.forEach((h, i) => {
+      if ((PATTERN_BY_ID.get(INTRO_PATTERNS[h])?.def.minTier ?? 0) < t0) this.seen |= 1 << i;
+    });
   }
 
   private pickBreather(): number {
-    const [a, b] = (CFG.breatherByTier[tierAt(this.lastRowWz)] ?? CFG.breatherEvery) as readonly [number, number];
-    return a + this.rng.int(b - a + 1);
+    const [a, b] = tierRange(CFG.breatherByTier, this.lastRowWz);
+    return Math.min(Math.round(b), Math.floor(a + this.rng.next() * (b - a + 1)));
   }
 
   /** Called every sim step: keep the track filled to the spawn horizon. */
@@ -140,7 +161,7 @@ export class Spawner {
   private spawnNext(): void {
     const w = this.w;
     const rng = this.rng;
-    const [gMin, gMax] = (CFG.gapByTier[tierAt(this.lastRowWz)] ?? [CFG.gapMin, CFG.gapMax]) as readonly [number, number];
+    const [gMin, gMax] = tierRange(CFG.gapByTier, this.lastRowWz);
     const gap0 = rng.range(gMin, gMax);
     const probeWz = this.lastRowWz + gap0;
 
@@ -168,10 +189,23 @@ export class Spawner {
         const only = cands.filter((pt) => themed(pt, mod));
         if (only.length > 0) cands = only;
       }
+      // Update 7: a hazard debuts alone in its intro pattern (one debut per `introGap` patterns);
+      // until then no other pattern uses it
+      const seen = this.seen;
+      const known = cands.filter((pt) => ((pt.hazards ?? 0) & ~seen) === 0);
+      const intro = cands.find((pt) => INTRO_IDS.has(pt.def.id) && single((pt.hazards ?? 0) & ~seen));
+      cands = intro && (this.sinceIntro >= CFG.introGap || known.length === 0) ? [intro] : known;
+      // patterns new in this tier fade in over its first part instead of arriving all at once
+      const [nw0, nw1] = CFG.newPatternWeight as readonly [number, number];
+      // (the top tier has no end, so its fade uses the previous tier's length)
+      const ts = CFG.tierStarts;
+      const top = tier > 0 && tier === ts.length - 1;
+      const prog = top ? (probeWz - (ts[tier] as number)) / ((ts[tier] as number) - (ts[tier - 1] as number)) : tierProgress(probeWz);
+      const newW = nw0 + (nw1 - nw0) * Math.min(1, Math.max(0, prog) / CFG.newPatternRamp);
       const v = w.speedForDist(probeWz);
       let pool = cands.slice();
       for (let attempt = 0; attempt < 8 && pool.length > 0; attempt++) {
-        const pt = rng.weighted(pool, pool.map((c) => c.def.weight * (c.def.minTier === tier ? 1.5 : 1) * (themed(c, mod) ? CFG.daily.themeWeight : 1)));
+        const pt = rng.weighted(pool, pool.map((c) => c.def.weight * (c.def.minTier === tier ? newW : 1) * (themed(c, mod) ? CFG.daily.themeWeight : 1)));
         pool = pool.filter((c) => c !== pt);
         const mirror = rng.next() < 0.5;
         const rows = patternRows(pt, mirror);
@@ -185,6 +219,7 @@ export class Spawner {
           if (res) {
             this.states = res;
             this.place(pt, mirror, this.lastRowWz + gap, v, false);
+            this.sinceIntro = pt === intro ? 0 : this.sinceIntro + 1;
             this.recent.push(pt.def.id);
             if (this.recent.length > CFG.patternNoRepeat) this.recent.shift();
             this.sinceBreather++;
@@ -227,6 +262,7 @@ export class Spawner {
       this.schedulePower(wz0 + L);
     }
     this.place(pt, false, wz0, this.w.speedForDist(wz0), false);
+    this.sinceIntro++;
     this.states = initialStates();
     this.sinceBreather = 0;
     this.breatherEvery = this.pickBreather();
@@ -240,6 +276,7 @@ export class Spawner {
     const rows = patternRows(pt, mirror);
     const sp = pt.def.id === 'breather' || block ? pt.def.spacing : rowSpacing(pt.def.spacing, v);
     this.lastPattern = pt.def.id;
+    this.seen |= pt.hazards ?? 0;
     const strands: Strand[] = [];
     let active = new Map<number, Strand>();
     let firstObstacleWz = Infinity;

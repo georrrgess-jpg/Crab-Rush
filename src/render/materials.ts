@@ -88,7 +88,8 @@ export class Materials {
   readonly unlitVC = new THREE.MeshBasicMaterial({ vertexColors: true });
 
   readonly glowTex = makeRadial([[0, 'rgba(255,240,170,1)'], [0.35, 'rgba(255,200,70,0.55)'], [1, 'rgba(255,180,40,0)']]);
-  readonly shadowTex = makeRadial([[0, 'rgba(40,30,10,0.55)'], [0.6, 'rgba(40,30,10,0.25)'], [1, 'rgba(40,30,10,0)']]);
+  /** white alpha falloff (tinted per zone by BlobShadows.setTint): a dense contact core, a long soft penumbra */
+  readonly shadowTex = makeRadial([[0, 'rgba(255,255,255,0.66)'], [0.28, 'rgba(255,255,255,0.5)'], [0.62, 'rgba(255,255,255,0.2)'], [0.85, 'rgba(255,255,255,0.06)'], [1, 'rgba(255,255,255,0)']]);
   readonly sparkTex = makeRadial([[0, 'rgba(255,255,255,1)'], [0.4, 'rgba(255,255,255,0.7)'], [1, 'rgba(255,255,255,0)']]);
   readonly dustTex = makeRadial([[0, 'rgba(255,240,205,0.62)'], [0.6, 'rgba(240,215,160,0.3)'], [1, 'rgba(240,215,160,0)']]);
 

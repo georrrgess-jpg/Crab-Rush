@@ -60,6 +60,7 @@ void main() {
   float fres = pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);
   col = mix(col, uSky, fres * 0.55);
   // sun glints from procedural ripple normals (skipped on Low)
+  vec3 sunPath = vec3(0.0);
   if (uDetail > 0.5) {
     vec2 q = vec2(vWorld.x * 1.3, vWorld.y * 0.9) + vec2(uTime * 0.4, -uTime * 0.6);
     float h0 = noise(q);
@@ -69,6 +70,16 @@ void main() {
     vec3 R = reflect(-V, N);
     float glint = pow(max(dot(R, normalize(uSunDir)), 0.0), 160.0);
     col += uSunColor * glint * 1.6 * (1.0 - depth * 0.3);
+    // Update 7: sun path. A broad sheen where the calm surface mirrors the sun, broken into
+    // glitter by the ripple noise; it is kept through some of the haze (added after the fog below).
+    vec3 Rf = reflect(-V, vec3(0.0, 1.0, 0.0));
+    float path = pow(max(dot(Rf, normalize(uSunDir)), 0.0), 7.0);
+    float glitter = smoothstep(0.6, 0.95, noise(q * 2.3 + vec2(0.0, uTime * 0.9))) * pow(max(dot(R, normalize(uSunDir)), 0.0), 22.0);
+    sunPath = uSunColor * (path * 0.16 + glitter * 1.1) * smoothstep(0.0, 3.0, x);
+    // shallow-water caustics: a thin, drifting light web over the sand just past the shore
+    vec2 cq = vWorld * vec2(0.9, 0.7);
+    float cw = abs(noise(cq + vec2(uTime * 0.35, uTime * 0.2)) - noise(cq * 1.3 - vec2(uTime * 0.25, -uTime * 0.3) + 5.2));
+    col += vec3(1.0, 1.0, 0.92) * (1.0 - smoothstep(0.0, 0.07, cw)) * 0.2 * (1.0 - smoothstep(1.0, 9.0, x));
   }
   // shoreline wash: the water's edge advances and recedes, a trailing foam line follows it
   float wash = sin(uTime * 0.55) * 0.9 + sin(uTime * 0.23 + 1.3) * 0.45;
@@ -79,6 +90,7 @@ void main() {
   float alpha = smoothstep(-0.3, 0.35, edge + 0.3);
   float f = clamp((vViewZ - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
   col = mix(col, uFog, f);
+  col += sunPath * (1.0 - f * 0.55);
   gl_FragColor = vec4(col, alpha);
 }`;
 

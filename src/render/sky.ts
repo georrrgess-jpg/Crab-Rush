@@ -26,7 +26,13 @@ void main() {
   float h = clamp(d.y, 0.0, 1.0);
   vec3 col = mix(uHorizon, uMid, smoothstep(0.0, 0.18, h));
   col = mix(col, uTop, smoothstep(0.12, 0.8, h));
-  float s = max(0.0, dot(d, normalize(uSunDir)));
+  vec3 sd = normalize(uSunDir);
+  float s = max(0.0, dot(d, sd));
+  // Update 7: aerial glow. The horizon brightens toward the sun's bearing (forward scattering) and
+  // a thin bright band sits right on the horizon line, so the sky reads deep rather than painted.
+  float facing = max(0.0, dot(normalize(d.xz + vec2(1e-4)), normalize(sd.xz + vec2(1e-4))));
+  float low = 1.0 - h;
+  col += uSunColor * (pow(low, 7.0) * (0.06 + 0.2 * facing * facing * facing) + pow(low, 40.0) * 0.08);
   // sun disk with a soft bloom halo
   col += uSunColor * (smoothstep(0.9975, 0.999, s) * 0.9 + pow(s, 220.0) * 0.8 + pow(s, 24.0) * 0.28 + pow(s, 5.0) * 0.1);
   // high cirrus streaks: stretched noise on a plane above the camera, drifting slowly

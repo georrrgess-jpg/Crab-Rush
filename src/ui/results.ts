@@ -78,9 +78,18 @@ export class ResultsScreen {
     const p = this.panel;
     p.innerHTML = '';
     p.classList.toggle('best', d.newBest);
-    const head = el('div', 'res-head', `<span class="rh-title">${d.title}</span>${d.newBest ? `<span class="rh-badge">${ICON.trophy}New best!</span>` : ''}`);
+    p.classList.remove('best-hit'); // the panel is reused: no rays left over from an earlier new best
+    // a new best keeps its badge back until the count passes the old best (the "new best" moment)
+    const head = el('div', 'res-head', `<span class="rh-title">${d.title}</span>${d.newBest ? `<span class="rh-badge wait">${ICON.trophy}New best!</span>` : ''}`);
+    const badge = head.querySelector('.rh-badge') as HTMLElement | null;
     const dist = el('div', 'res-big', `<b>0</b><span class="unit"> m</span>`);
     const distB = dist.querySelector('b') as HTMLElement;
+    // distance against the best: the fill grows with the count (scaleX), the flag marks the old best
+    const span = Math.max(1, d.distance, d.best);
+    const meter = d.best > 0 ? el('div', 'res-meter', `<i></i><em style="left:${((d.best / span) * 100).toFixed(1)}%"></em>`) : null;
+    meter?.setAttribute('aria-hidden', 'true');
+    const meterFill = meter?.querySelector('i') as HTMLElement | null;
+    let passed = !d.newBest;
     const sub = el('div', 'res-sub2', [d.newBest && d.best > 0 ? `Previous best ${fmt(d.best)} m` : d.best > d.distance ? `${fmt(d.best - d.distance)} m short of your best` : '', d.zone].filter(Boolean).join(' · '));
     const rows = el('div', 'res-list');
     const xp = el('div', 'res-xp', `<span class="xp-tier"><span class="sunico">${ICON.sun}</span><b></b></span><span class="xp-col"><span class="xp-lbl">Sunny Pass <span class="xp-gain"></span></span><span class="bar"><i></i></span></span>`);
@@ -99,6 +108,8 @@ export class ResultsScreen {
       btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()),
     );
     buttons.append(this.again, small);
+    // the meter lives inside the distance block so the landscape two-column grid keeps its rows
+    if (meter) dist.append(meter);
     p.append(head, dist, sub);
     if (d.banner) p.append(el('div', 'res-banner', d.banner));
     p.append(rows);
@@ -115,6 +126,15 @@ export class ResultsScreen {
       run: (k) => {
         const v = Math.round(d.distance * ease(k));
         distB.textContent = fmt(v);
+        if (meterFill) meterFill.style.transform = `scaleX(${(v / span).toFixed(4)})`;
+        // k >= 1 too: the count is rounded, so 512.3 m over a 512.1 m best still has to land the moment
+        if (!passed && (v >= d.best || k >= 1)) {
+          passed = true;
+          badge?.classList.remove('wait');
+          dist.classList.add('passed');
+          p.classList.add('best-hit');
+          this.h.pop();
+        }
         const bucket = Math.floor(k * 12);
         if (bucket !== lastTick && k < 1) {
           lastTick = bucket;
@@ -138,6 +158,8 @@ export class ResultsScreen {
             this.h.pop();
           }
           num.textContent = `${value > 0 && cls !== 'total' ? '+' : ''}${fmt(Math.round(value * ease(k)))}`;
+          // the number settles with a small bump once it has rolled up
+          if (k >= 1 && value > 0) r.classList.add('landed');
         },
       });
       at += 260;

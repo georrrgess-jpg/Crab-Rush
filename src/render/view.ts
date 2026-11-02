@@ -452,6 +452,7 @@ export class GameView {
     this.sun.position.set(sd.x * 14, 26, -16 + 6);
     this.catcherMat.color.copy(this.palette.lightShadow).multiplyScalar(0.35);
     this.shadows.setSun(sd.x, sd.z);
+    this.shadows.setTint(this.catcherMat.color);
     const fog = this.renderer.scene.fog as THREE.Fog;
     fog.color.copy(this.palette.fog);
   }

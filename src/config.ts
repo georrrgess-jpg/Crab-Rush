@@ -55,7 +55,9 @@ export const CFG = {
 
   // ---- speed ----
   // Update 4: a steeper climb to a higher top speed (28 m/s)
-  speed: { start: 11, gain: 17, tau: 1000, tutorialCap: 9, wiggle: 0 },
+  // Update 7: `warm` eases the climb in over the first few hundred metres (the curve starts flat, then
+  // joins the Update 4 ramp shifted back by `warm` m), so the first ~45 s build confidence
+  speed: { start: 11, gain: 17, tau: 1000, warm: 260, tutorialCap: 9, wiggle: 0 },
 
   // ---- Daily Tide modifiers (UPDATE2_PLAN.md §6.2) ----
   daily: {
@@ -115,10 +117,17 @@ export const CFG = {
   despawnBehind: 8,
   gapMin: 8,
   gapMax: 14,
-  /** gap range between patterns per tier (Update 4: tighter as the run goes on) */
-  gapByTier: [[8, 14], [7.5, 13], [6.5, 11], [6, 10], [5.5, 9], [5.5, 8.5]] as readonly (readonly [number, number])[],
-  /** patterns between breathers per tier */
-  breatherByTier: [[3, 4], [4, 5], [5, 6], [5, 6], [6, 7], [6, 8]] as readonly (readonly [number, number])[],
+  /** gap range between patterns per tier (Update 4: tighter as the run goes on). Update 7: the value
+   *  glides from one tier's entry to the next across the tier (no step at the boundary). */
+  gapByTier: [[9, 15], [8, 13.5], [7, 11.5], [6.5, 10.5], [6, 9.5], [5.5, 8.5]] as readonly (readonly [number, number])[],
+  /** patterns between breathers per tier (blended across the tier like the gaps) */
+  breatherByTier: [[3, 3], [3, 4], [4, 5], [5, 6], [5, 7], [6, 7]] as readonly (readonly [number, number])[],
+  /** Update 7: patterns new in this tier fade in, weight × lerp(a, b) over the first `newPatternRamp` of the tier */
+  newPatternWeight: [0.45, 1.5] as readonly number[],
+  newPatternRamp: 0.5,
+  /** Update 7: each hazard (block, log, wave, ball, gull, scuttler) first appears alone in its intro
+   *  pattern (`INTRO_PATTERNS`), at most one new hazard per `introGap` patterns */
+  introGap: 2,
   breatherLength: 25,
   breatherEvery: [3, 4] as readonly number[],
   patternNoRepeat: 4,
@@ -239,7 +248,19 @@ export const QUALITY: Record<QualityName, QualityPreset> = {
 
 /** Speed in m/s at distance d (metres). */
 export function speedAt(d: number): number {
-  return CFG.speed.start + CFG.speed.gain * (1 - Math.exp(-Math.max(0, d) / CFG.speed.tau));
+  const S = CFG.speed;
+  const x = Math.max(0, d);
+  // warm-up: the effective distance grows from 0 at slope 0 to (d − warm)
+  const e = x - S.warm * (1 - Math.exp(-x / S.warm));
+  return S.start + S.gain * (1 - Math.exp(-e / S.tau));
+}
+
+/** Update 7: how far through its tier d is (0 at the tier start, 1 at the next; 0 in the top tier). */
+export function tierProgress(d: number): number {
+  const t = tierAt(d);
+  const a = CFG.tierStarts[t] as number;
+  const b = CFG.tierStarts[t + 1];
+  return b === undefined ? 0 : Math.min(1, Math.max(0, (d - a) / (b - a)));
 }
 
 export function tierAt(d: number): number {

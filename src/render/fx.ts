@@ -13,7 +13,7 @@ export class BlobShadows {
   readonly mesh: THREE.InstancedMesh;
   private n = 0;
   constructor(mats: Materials, max = 96) {
-    const mat = new THREE.MeshBasicMaterial({ map: mats.shadowTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    const mat = new THREE.MeshBasicMaterial({ map: mats.shadowTex, color: 0x2a2440, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, max);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 1;
@@ -24,6 +24,10 @@ export class BlobShadows {
   private oz = 0;
   begin(): void {
     this.n = 0;
+  }
+  /** Shadow colour (the zone's shadow light, darkened) so blobs match the High-tier shadow catcher. */
+  setTint(c: THREE.Color): void {
+    (this.mesh.material as THREE.MeshBasicMaterial).color.copy(c).multiplyScalar(0.55);
   }
   /** Sun direction (world, normalised x/z components) for elongated, offset shadows. */
   setSun(dx: number, dz: number): void {

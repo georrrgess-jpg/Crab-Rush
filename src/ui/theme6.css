@@ -696,3 +696,111 @@ html[data-size='short'] .wd-filters .chip { min-height: 42px; min-width: 48px; }
 html[data-size='compact'] .best-pill > span:not(.bp-ico) { display: none; }
 html[data-size='compact'] .fever-meter .fv-bar { width: 50px; }
 html[data-size='compact'] .fever-meter .fv-lbl { font-size: 12px; }
+
+/* =================================================================== Update 7 polish (UPDATE7_PLAN.md, UI track):
+   one focus ring for keyboard users, hover lift on pointer devices, a springier toast, the results
+   "new best" moment, pause and level-end entrances, and the page chrome tightened to the theme6
+   language. Motion is transform / opacity only (hover lift uses the separate `translate` property so
+   it composes with the press spring); everything collapses under Reduce Motion. */
+
+/* ---- focus: a navy ring on cream, a white ring over the 3D scene; never a ring for mouse clicks */
+:focus-visible { outline: 3px solid var(--u-ink); outline-offset: 3px; }
+:focus:not(:focus-visible) { outline: none; }
+.btn:focus-visible { outline: 3px solid var(--u-ink); outline-offset: 3px; }
+#hud .btn:focus-visible, #home.h6 .h6-top .btn:focus-visible, .page-head .btn:focus-visible { outline-color: #fff; }
+.tabs button:focus-visible, .wtabs button:focus-visible { outline: 3px solid var(--u-teal); outline-offset: -4px; }
+.seg button:focus-visible { outline: 3px solid var(--u-ink); outline-offset: 1px; }
+.tile:focus-visible, .pt:focus-visible, .lv-node:focus-visible, .mode-card:focus-visible, .sheet-item:focus-visible, #home.h6 .h6-row:focus-visible { outline: 3px solid var(--u-teal); outline-offset: 3px; }
+input[type='range']:focus-visible, input[type='checkbox']:focus-visible { outline: 3px solid var(--u-teal); outline-offset: 2px; }
+
+/* ---- hover lift (mouse / trackpad only, so touch never sticks in the hover state) */
+@media (hover: hover) and (pointer: fine) {
+  .btn, .mode-card, .tile, .pt, .sheet-item, .stat, .trophy { transition: transform 0.08s ease-out, translate 0.18s var(--ease-out), filter 0.18s var(--ease-out); }
+  /* no movement on hover: a lift under a resting pointer can flicker in and out of :hover */
+  .btn:not(:disabled):hover { filter: brightness(1.06) saturate(1.04); }
+  .btn:not(:disabled):active { translate: 0 1px; }
+  .mode-card:hover, .tile:hover, .pt:hover, .sheet-item:hover, .trophy:hover { filter: brightness(1.04); }
+  #home.h6 .h6-row:hover { filter: brightness(1.04); }
+}
+
+/* ---- toasts: spring in with a little overshoot, drift out */
+.toast { animation: u7toast 0.44s var(--ease-back), toastOut 0.3s ease-in forwards; animation-delay: 0s, var(--life, 2s); box-shadow: 0 6px 16px rgba(20, 37, 79, 0.22); }
+@keyframes u7toast { 0% { transform: translateY(-16px) scale(0.72); opacity: 0; } 55% { opacity: 1; } 100% { transform: none; opacity: 1; } }
+
+/* ---- results: rays behind the distance on a new best, a best meter, rows that settle with a bump */
+.res-head { position: relative; z-index: 1; }
+.res-big { position: relative; isolation: isolate; }
+.res-big b { display: inline-block; transition: color 0.3s var(--ease-out); }
+.res-big.passed b { color: #ff7a12; }
+.res-big::before { content: ''; position: absolute; z-index: -1; left: 50%; top: 50%; width: 240px; height: 240px; margin: -120px 0 0 -120px; border-radius: 50%; background: repeating-conic-gradient(rgba(255, 190, 50, 0.34) 0 9deg, rgba(255, 190, 50, 0) 9deg 18deg); -webkit-mask: radial-gradient(closest-side, #000 28%, transparent); mask: radial-gradient(closest-side, #000 28%, transparent); opacity: 0; transform: scale(0.4); pointer-events: none; }
+.res-card.best-hit .res-big::before { animation: u7rays 1.1s var(--ease-out) forwards, u7spin 18s 1.1s linear infinite; }
+@keyframes u7rays { 0% { opacity: 0; transform: scale(0.4) rotate(-30deg); } 30% { opacity: 1; } 100% { opacity: 0.7; transform: none; } }
+@keyframes u7spin { from { opacity: 0.7; transform: rotate(0); } to { opacity: 0.7; transform: rotate(360deg); } }
+.res-card .rh-badge { animation: u7stamp 0.55s var(--ease-back) both; }
+.res-card .rh-badge.wait { visibility: hidden; animation: none; }
+@keyframes u7stamp { 0% { transform: scale(2.2) rotate(-14deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: none; opacity: 1; } }
+.res-sub2 { position: relative; color: var(--u-ink-2); font-weight: 600; }
+.res-meter { position: relative; height: 8px; margin: 2px 16% 0; border-radius: 999px; background: var(--u-track); }
+.res-meter i { position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(90deg, #46dbe0, #10a2b4); transform-origin: 0 50%; transform: scaleX(0); }
+.res-card.best .res-meter i { background: linear-gradient(90deg, #ffc84a, #ff8414); }
+.res-meter em { position: absolute; top: -5px; width: 4px; height: 18px; margin-left: -2px; border-radius: 2px; background: var(--u-ink); }
+.res-meter em::after { content: ''; position: absolute; left: 4px; top: 0; border-left: 9px solid #ff7a12; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.res-line { color: var(--u-ink); }
+.res-line.in { animation: u7line 0.34s var(--ease-back) both; }
+@keyframes u7line { from { transform: translateX(-14px) scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
+.res-line b span { display: inline-block; font-variant-numeric: tabular-nums; }
+.res-line.landed b span { animation: u7bump 0.32s var(--ease-back); }
+.res-line.total { border-top-color: var(--u-line); }
+.res-line.total.landed b { animation: u7bump 0.42s var(--ease-back); }
+.res-line.total.landed b span { animation: none; }
+@keyframes u7bump { 40% { transform: scale(1.18); } }
+.res-xp { background: linear-gradient(180deg, #2b4a8a, var(--u-ink)); box-shadow: var(--u-shadow-s); }
+.res-unlock { background: #fff; border-radius: 16px; box-shadow: var(--u-shadow-s); }
+.results2.done .res-buttons .btn.big { animation: u7nudge 0.5s var(--ease-back); }
+@keyframes u7nudge { 45% { transform: scale(1.04); } }
+@media (orientation: landscape) and (max-height: 520px) { .res-meter { margin-left: 10%; margin-right: 10%; } }
+
+/* ---- pause: cream sheet, navy title, the pieces rise in one after another */
+#pause .sheet { background: var(--u-cream); }
+#pause .sheet-head { color: var(--u-ink); font-size: clamp(28px, 4.4vmin, 40px); letter-spacing: 0.01em; }
+.pause-stats > div { background: #fff; border-radius: 16px; box-shadow: var(--u-shadow-s); }
+.pause-stats span { color: var(--u-muted); font-weight: 600; }
+.pause-stats b { color: var(--u-ink); }
+#pause.enter .sheet > :not(.grab) { animation: u7rise 0.3s var(--ease-out) both; }
+#pause.enter .sheet > :nth-child(3) { animation-delay: 0.04s; }
+#pause.enter .sheet > :nth-child(4) { animation-delay: 0.08s; }
+#pause.enter .sheet > :nth-child(5) { animation-delay: 0.12s; }
+#pause.enter .btn-row > .btn { animation: u7pop 0.3s var(--ease-back) both; }
+#pause.enter .btn-row > .btn:nth-child(1) { animation-delay: 0.1s; }
+#pause.enter .btn-row > .btn:nth-child(2) { animation-delay: 0.13s; }
+#pause.enter .btn-row > .btn:nth-child(3) { animation-delay: 0.16s; }
+@keyframes u7rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes u7pop { from { transform: scale(0.8); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ---- level end: rewards pop in after the stars land */
+.lv-end .lv-name { color: var(--u-ink-2); }
+.lv-end .lv-rewards .rw { background: #fff; box-shadow: var(--u-shadow-s); animation: u7pop 0.4s var(--ease-back) both; }
+.lv-end .lv-rewards .rw:nth-child(1) { animation-delay: 0.9s; }
+.lv-end .lv-rewards .rw:nth-child(2) { animation-delay: 1s; }
+.lv-end .lv-rewards .rw:nth-child(3) { animation-delay: 1.1s; }
+
+/* ---- pages (Pass, Cup, Island Hop, Settings, Stats, Trophies): one rhythm for sections and rows */
+.page-body { scroll-behavior: smooth; }
+.set-sec { border-radius: 20px; background: #fff; box-shadow: var(--u-shadow-s); }
+.set-sec .set-row + .set-row { border-top-color: var(--u-line); }
+.set-sec label small { color: var(--u-muted); }
+.set-sec h3 { color: var(--u-ink); letter-spacing: 0.01em; }
+.set-row { color: var(--u-ink); }
+.seg button { transition: background-color 0.18s var(--ease-out), color 0.18s var(--ease-out); }
+.page-card { scrollbar-width: thin; scrollbar-color: rgba(20, 37, 79, 0.25) transparent; }
+.page-dim { animation: rt-in var(--d-med) var(--ease-out) both; }
+
+/* ---- Reduce Motion: no rays, no stagger, no lift */
+.reduce-motion .res-big::before { display: none; }
+.reduce-motion .btn, .reduce-motion .mode-card, .reduce-motion .tile, .reduce-motion .pt, .reduce-motion .sheet-item, .reduce-motion .trophy, .reduce-motion .stat { translate: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .res-big::before { display: none; }
+  .btn, .mode-card, .tile, .pt, .sheet-item, .trophy, .stat, #home.h6 .h6-row { translate: none !important; }
+  .page-body { scroll-behavior: auto; }
+}
+.reduce-motion .page-body { scroll-behavior: auto; }

@@ -24,6 +24,28 @@ export interface Pattern {
   /** rows in arrival order (nearest first), each exactly 3 chars */
   rows: string[];
   hasPower: boolean;
+  /** Update 7: bit mask of the hazards it uses (see `HAZARDS`) */
+  hazards?: number;
+}
+
+/** Update 7: hazard kinds a run introduces one at a time; bit i of `Pattern.hazards` is HAZARDS[i]. */
+export const HAZARDS = ['block', 'low', 'sweep', 'roller', 'gull', 'scuttle'] as const;
+const HAZARD_CHARS = ['B', 'Ll', 'Ww', 'Rr', 'G', '<>'];
+
+/** The easy, isolated pattern each hazard debuts in, before any combo that uses it. */
+export const INTRO_PATTERNS: Record<(typeof HAZARDS)[number], string> = {
+  block: 'castle-left',
+  low: 'log-hop',
+  sweep: 'wave-1',
+  roller: 'ball-solo',
+  gull: 'gull-solo',
+  scuttle: 'scuttle-intro',
+};
+
+export function hazardMask(rows: readonly string[]): number {
+  let m = 0;
+  for (const r of rows) for (let i = 0; i < HAZARD_CHARS.length; i++) for (const c of HAZARD_CHARS[i] as string) if (r.includes(c)) m |= 1 << i;
+  return m;
 }
 
 function p(id: string, minTier: number, weight: number, spacing: number, template: string, maxTier?: number): PatternDef {
@@ -268,7 +290,7 @@ export function parseTemplate(def: PatternDef): Pattern {
     if ((r[0] === '<') || (r[r.length - 1] === '>')) throw new Error(`pattern ${def.id}: a scuttler can't leave the track (${r})`);
     if (/[Ww]/.test(r) && r !== 'WWW' && r !== 'www') throw new Error(`pattern ${def.id}: sweep rows must be whole (${r})`);
   }
-  return { def, rows, hasPower: rows.some((r) => r.includes('P')) };
+  return { def, rows, hasPower: rows.some((r) => r.includes('P')), hazards: hazardMask(rows) };
 }
 
 export const PATTERNS: Pattern[] = PATTERN_DEFS.map(parseTemplate);

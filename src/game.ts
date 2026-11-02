@@ -419,6 +419,7 @@ export class Game {
     if (this.flags.shots) this.reviveOn = false;
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
+    this.haptics.pad = () => this.input.activePad();
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
     if (this.flags.debug) this.debug = new DebugOverlay(app);
 
@@ -685,6 +686,7 @@ export class Game {
     this.ui.hideExtras();
     this.ui.setTouchButtons(this.touchButtonsWanted());
     this.input.setPointerEnabled(true);
+    this.dropMenuFocus();
     this.touchLayer.classList.add('active');
     this.crashClock = 0;
     this.hitStop = 0;
@@ -722,7 +724,7 @@ export class Game {
         const today = this.todayKey();
         return { streak: currentStreak(d.daily, today), playedToday: d.daily.lastDate === today, modifier: MODIFIERS.find((m) => m.id === modifierFor(today))!.name, msLeft: this.msToMidnight() };
       })(),
-      keyboard: this.input.lastDevice === 'keyboard',
+      keyboard: this.input.lastDevice === 'keyboard' || this.input.lastDevice === 'gamepad',
       boosts: d.boosts,
       boostOn: this.boostOn && d.boosts > 0,
       nextReward: this.nextRewardText(),
@@ -1073,7 +1075,7 @@ export class Game {
 
   /** Which control hints to show: touch on phones/tablets, keyboard on computers. */
   private promptDevice(): 'touch' | 'keyboard' | 'mouse' {
-    if (this.input.lastDevice === 'keyboard') return 'keyboard';
+    if (this.input.lastDevice === 'keyboard' || this.input.lastDevice === 'gamepad') return 'keyboard';
     if (this.input.usedTouch) return 'touch';
     const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
     return coarse ? 'touch' : 'keyboard';
@@ -1270,6 +1272,7 @@ export class Game {
     this.ui.hideExtras();
     this.ui.setTouchButtons(this.touchButtonsWanted());
     this.input.setPointerEnabled(true);
+    this.dropMenuFocus();
     this.touchLayer.classList.add('active');
     this.crashClock = 0;
     this.hitStop = 0;
@@ -1484,6 +1487,7 @@ export class Game {
     this.ui.hideExtras();
     this.ui.setTouchButtons(this.touchButtonsWanted());
     this.input.setPointerEnabled(true);
+    this.dropMenuFocus();
     this.touchLayer.classList.add('active');
     this.crashClock = 0;
     this.hitStop = 0;
@@ -1679,6 +1683,13 @@ export class Game {
     this.lastCount = 0;
     this.ui.showCountdown(3);
     this.input.setPointerEnabled(true);
+    this.dropMenuFocus();
+  }
+
+  /** A menu button must not keep focus into a run: Space / Enter would press it instead of hopping. */
+  private dropMenuFocus(): void {
+    const f = document.activeElement;
+    if (f instanceof HTMLElement && f !== document.body && !f.closest('#hud')) f.blur();
   }
 
   private skinOf(id: string) {
@@ -1871,7 +1882,31 @@ export class Game {
       this.world.act(a);
       return;
     }
-    if (s === 'countdown') return;
+    // the resume countdown can be paused again (Esc / P / Start)
+    if (s === 'countdown') {
+      if (a === 'pause' || a === 'back') this.pause();
+      return;
+    }
+    if (s === 'boot' || s === 'crashing' || s === 'finishing') return;
+    // an open sheet (Saved Outfits, Beach Goals, ...) closes before the screen under it
+    if (a === 'back' && this.closeTopSheet()) return;
+    if (s === 'title' && this.whatsNew.visible) {
+      if (a === 'back' || a === 'confirm' || alsoConfirm) this.whatsNew.close();
+      return;
+    }
+    const dir = !alsoConfirm && (a === 'left' || a === 'right' || a === 'hop' || a === 'slam');
+    if (s === 'title') {
+      // arrows (and the d-pad) walk the mode cards in every layout: up/left back, down/right on;
+      // Enter/Space/A plays the focused mode
+      if (a === 'confirm' || alsoConfirm) this.ui.home.activate();
+      else if (dir) this.ui.home.step(a === 'left' || a === 'hop' ? -1 : 1);
+      return;
+    }
+    // every other menu: arrows / d-pad move focus between the visible controls
+    if (dir) {
+      this.navFocus(a);
+      return;
+    }
     if (s === 'revive') {
       if (a === 'back') this.declineRevive();
       else if ((a === 'confirm' || alsoConfirm) && this.reviveCard.canContinue) this.acceptRevive();
@@ -1879,12 +1914,6 @@ export class Game {
     }
     if (s === 'paused') {
       if (a === 'back' || a === 'pause' || a === 'confirm' || alsoConfirm) this.resume();
-      return;
-    }
-    if (s === 'title') {
-      // arrows move the mode carousel; Enter/Space plays the focused mode
-      if (a === 'left' || a === 'right') this.ui.home.step(a === 'left' ? -1 : 1);
-      else if (a === 'confirm' || alsoConfirm) this.ui.home.activate();
       return;
     }
     if (s === 'results') {
@@ -1915,6 +1944,81 @@ export class Game {
       if (a === 'back') this.openMap();
       else if (a === 'confirm' || alsoConfirm) this.retryLevel();
     }
+  }
+
+  /** Close the topmost open bottom sheet (Escape / B); false when none is open. */
+  private closeTopSheet(): boolean {
+    const sheets = document.querySelectorAll<HTMLElement>('.kit-sheet:not(.hidden):not(.out)');
+    const top = sheets[sheets.length - 1];
+    const close = top?.querySelector<HTMLElement>('.ks-close');
+    if (!close) return false;
+    close.click();
+    return true;
+  }
+
+  /**
+   * Spatial menu navigation for arrows and the d-pad: focus the nearest visible control in that
+   * direction (on top at its centre, so screens and sheets underneath are skipped). A focused
+   * slider moves with left/right. Runs on presses only, never in the frame loop.
+   */
+  private navFocus(a: Action): void {
+    const dx = a === 'left' ? -1 : a === 'right' ? 1 : 0;
+    const dy = a === 'hop' ? -1 : a === 'slam' ? 1 : 0;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const shown = (e: HTMLElement): DOMRect | null => {
+      const r = e.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || (e as HTMLButtonElement).disabled) return null;
+      if (r.bottom < 0 || r.top > vh || r.right < 0 || r.left > vw) return null;
+      const cx = Math.min(vw - 1, Math.max(0, r.left + r.width / 2));
+      const cy = Math.min(vh - 1, Math.max(0, r.top + r.height / 2));
+      const hit = document.elementFromPoint(cx, cy);
+      return hit && (hit === e || e.contains(hit) || hit.contains(e)) ? r : null;
+    };
+    const cur = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const from = cur ? shown(cur) : null;
+    if (cur && from && dx !== 0 && cur instanceof HTMLInputElement && cur.type === 'range') {
+      if (dx > 0) cur.stepUp();
+      else cur.stepDown();
+      cur.dispatchEvent(new Event('input', { bubbles: true }));
+      cur.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+    const list = document.querySelectorAll<HTMLElement>('button, a[href], input, select, [tabindex]:not([tabindex="-1"])');
+    // nothing focused yet: start on the screen's primary action (or the first control on top)
+    const ox = from ? from.left + from.width / 2 : vw / 2;
+    const oy = from ? from.top + from.height / 2 : vh / 2;
+    let best: HTMLElement | null = null;
+    let bestScore = Infinity;
+    for (const e of list) {
+      if (e === cur || e.closest('[hidden], .hidden')) continue;
+      const r = shown(e);
+      if (!r) continue;
+      if (!from) {
+        const primary = e.matches('.primary, .big, .play-card, .btn.go');
+        const score = (primary ? 0 : 1e6) + r.top * 4 + r.left;
+        if (score < bestScore) {
+          bestScore = score;
+          best = e;
+        }
+        continue;
+      }
+      const ex = r.left + r.width / 2;
+      const ey = r.top + r.height / 2;
+      const along = dx !== 0 ? (ex - ox) * dx : (ey - oy) * dy;
+      if (along <= 4) continue;
+      // overlap on the cross axis counts as straight ahead
+      const across = dx !== 0 ? Math.max(0, Math.max(r.top, from.top) - Math.min(r.bottom, from.bottom)) : Math.max(0, Math.max(r.left, from.left) - Math.min(r.right, from.right));
+      const score = along + across * 3;
+      if (score < bestScore) {
+        bestScore = score;
+        best = e;
+      }
+    }
+    if (!best) return;
+    best.focus({ preventScroll: false });
+    best.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    this.audio.play('tap');
   }
 
   private currentLevelIntro(): string | null {
@@ -2111,6 +2215,8 @@ export class Game {
 
   // ------------------------------------------------------------------ render
   private render(alpha: number, frameDt: number): void {
+    // gamepads have no events: read them once per frame, ahead of the sim's next steps
+    this.input.pollPads(frameDt);
     if (this.skipRender) {
       // test-hook fast-forward: drop effects of skipped frames so they don't all fire at once
       this.world.events.length = 0;
@@ -2424,6 +2530,21 @@ export class Game {
       },
       act(a: Action) {
         g.onAction(a, false);
+      },
+      /**
+       * Fake gamepad for tests: `pad({ buttons: [0, 15], axes: [0, 0] })` holds those standard
+       * buttons (indexes) until the next call; `pad(null)` unplugs it. Read on the next frame.
+       */
+      pad(p: { buttons?: number[]; axes?: number[] } | null) {
+        if (!p) {
+          g.input.getPads = () => [];
+          return;
+        }
+        const buttons = Array.from({ length: 17 }, (_, i) => ({ pressed: !!p.buttons?.includes(i), touched: false, value: p.buttons?.includes(i) ? 1 : 0 }));
+        const fake = { id: 'test pad', index: 0, connected: true, mapping: 'standard', timestamp: 0, axes: p.axes ?? [0, 0, 0, 0], buttons, vibrationActuator: null } as unknown as Gamepad;
+        const list = [fake];
+        g.input.getPads = () => list;
+        g.input.padsLive = true;
       },
       /** start an Island Hop level directly (optionally autopiloted) */
       level(id: string, o: { autopilot?: boolean; intro?: boolean; rush?: boolean } = {}) {

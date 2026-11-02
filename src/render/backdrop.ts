@@ -21,6 +21,56 @@ void main() {
   gl_FragColor = vec4(mix(c, uHaze, uAmount), 1.0);
 }`;
 
+// Update 7: clouds get volume. Undersides sink toward the zone's shadow colour, sun-facing puffs
+// warm up, and edges seen against the light pick up a silver lining.
+const cloudVert = /* glsl */ `
+attribute vec3 color;
+varying vec3 vColor;
+varying vec3 vNormal;
+varying vec3 vWorld;
+void main() {
+  vColor = color;
+  vNormal = normalize(mat3(modelMatrix) * normal);
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vWorld = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+const cloudFrag = /* glsl */ `
+uniform vec3 uHaze; uniform float uAmount; uniform vec3 uSun; uniform vec3 uTint; uniform vec3 uShade; uniform vec3 uSunColor;
+varying vec3 vColor; varying vec3 vNormal; varying vec3 vWorld;
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 sd = normalize(uSun);
+  vec3 v = normalize(cameraPosition - vWorld);
+  vec3 base = vColor * uTint;
+  // underside shade: a soft gradient on the normal's height, not a hard terminator
+  vec3 c = mix(mix(base, uShade, 0.42), base, smoothstep(-0.75, 0.45, n.y));
+  float lit = max(0.0, dot(n, sd));
+  c *= 0.9 + 0.16 * lit;
+  c += uSunColor * pow(lit, 6.0) * 0.08;
+  // silver lining: grazing edges brighten, more so on the side toward the sun
+  float rim = pow(1.0 - abs(dot(n, v)), 3.0);
+  float back = 0.35 + 0.65 * max(0.0, dot(-v, sd));
+  c += mix(vec3(1.0), uSunColor, 0.5) * rim * back * 0.3;
+  gl_FragColor = vec4(mix(c, uHaze, uAmount), 1.0);
+}`;
+
+function cloudMat(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    vertexShader: cloudVert,
+    fragmentShader: cloudFrag,
+    fog: false,
+    uniforms: {
+      uHaze: { value: new THREE.Color(0xcdefff) },
+      uAmount: { value: 0.1 },
+      uSun: { value: new THREE.Vector3(0.4, 0.8, 0.5) },
+      uTint: { value: new THREE.Color(1, 1, 1) },
+      uShade: { value: new THREE.Color(0x9fb4dc) },
+      uSunColor: { value: new THREE.Color(1, 1, 1) },
+    },
+  });
+}
+
 function hazeMat(amount: number, amb = 0.72): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader: vert,
@@ -84,7 +134,7 @@ export class Backdrop {
   private hillsMesh: THREE.Mesh;
   private landMat = hazeMat(0.28);
   private farMat = hazeMat(0.5);
-  private cloudMat = hazeMat(0.1, 0.97);
+  private cloudMat = cloudMat();
   private zone = -1;
 
   constructor() {
@@ -130,6 +180,8 @@ export class Backdrop {
       (mat.uniforms.uSun as { value: THREE.Vector3 }).value.copy(p.sunDir);
     }
     (this.cloudMat.uniforms.uTint as { value: THREE.Color }).value.copy(p.cloud);
+    (this.cloudMat.uniforms.uShade as { value: THREE.Color }).value.copy(p.lightShadow).lerp(p.skyMid, 0.35);
+    (this.cloudMat.uniforms.uSunColor as { value: THREE.Color }).value.copy(p.sunColor);
     (this.landMat.uniforms.uTint as { value: THREE.Color }).value.copy(p.groundTint);
     if (zone !== this.zone) {
       this.zone = zone;
