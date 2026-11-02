@@ -1,6 +1,6 @@
 # Crab Dash: working rules
 
-Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is in **`UPDATE4_PLAN.md`**; Update 5 ("Treasure Tide") is in **`UPDATE5_PLAN.md`**; Update 6 ("Menu Makeover", the concept-art menus) is in **`UPDATE6_PLAN.md`**. The game is called **Crab Rush** (saves keep their `crabdash.*` keys). Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
+Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is in **`UPDATE4_PLAN.md`**; Update 5 ("Treasure Tide") is in **`UPDATE5_PLAN.md`**; Update 6 ("Menu Makeover", the concept-art menus) is in **`UPDATE6_PLAN.md`**; Update 7 ("Polish Pass") is in **`UPDATE7_PLAN.md`**. The game is called **Crab Rush** (saves keep their `crabdash.*` keys). Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
 
 ## Commands
 - `npm run dev`: dev server
