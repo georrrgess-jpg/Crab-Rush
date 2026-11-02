@@ -508,7 +508,9 @@ export class Game {
   boot(): void {
     this.view.smoothMenuCam = !this.flags.shots;
     this.toTitle();
-    this.maybeCinematic();
+    // Update 8.3: the opening splash leads straight to Home (no 3D fly-in); the crab greets the player
+    // as the splash's wave clears. The fly-in (`playCinematic`) stays for the screenshot/test hooks.
+    if (!this.flags.shots && !this.flags.autopilot) setTimeout(() => this.state === 'title' && this.view.crab.emote('wave'), 700);
     this.maybeWhatsNew();
     this.loop.manual = this.flags.shots;
     this.loop.start();
@@ -519,22 +521,9 @@ export class Game {
     if (this.flags.autopilot && !this.flags.shots) this.startRun(true);
     const hooks = (window as unknown as { __crab?: { ready: boolean } }).__crab;
     if (hooks) hooks.ready = true;
-    // Wardrobe thumbnails are GPU work on the main thread: wait until the boot cinematic has played so
-    // the opening never hitches (opening the Wardrobe or Pass builds them at once if needed)
-    setTimeout(() => this.prepareThumbs(), this.view.cinematicPlaying ? 6400 : 1200);
-  }
-
-  /** The boot cinematic: first open of each session, skippable, never with Reduce Motion. */
-  private maybeCinematic(): void {
-    let seen = false;
-    try {
-      seen = sessionStorage.getItem('crabdash.cine') === '1';
-      sessionStorage.setItem('crabdash.cine', '1');
-    } catch {
-      seen = false;
-    }
-    if (seen || this.flags.shots || this.flags.autopilot || this.reduceMotion) return;
-    this.playCinematic();
+    // Wardrobe thumbnails are GPU work on the main thread: wait until the splash's wave has cleared and the
+    // crab's greeting has played so the opening never hitches (the Wardrobe or Pass builds them at once if needed)
+    setTimeout(() => this.prepareThumbs(), 2600);
   }
 
   /** The "What's new" sheet: once, for players who already played before the update. */
