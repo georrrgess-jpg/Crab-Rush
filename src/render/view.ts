@@ -89,6 +89,10 @@ export class GameView {
   private chaseWave: THREE.Mesh | null = null;
   /** track distance of the last footprint */
   private footT = 0;
+  /** Update 8: fastest fall speed (m/s) since the crab left the ground (scales the landing puff) */
+  private airMax = 0;
+  /** Update 8: timer for the small foam splashes along the water's edge */
+  private foamT = 0;
   private time = 0;
   /** camera shake is trauma-based: offset = trauma², trauma decays (UPDATE2_PLAN.md §3.3) */
   private trauma = 0;
@@ -357,6 +361,7 @@ export class GameView {
     this.dust.clear();
     this.feet.clear();
     this.footT = 0;
+    this.airMax = 0;
     this.life.reset(0);
     this.sparks.clear();
     this.trail.clear();
@@ -483,7 +488,12 @@ export class GameView {
           break;
         case 'laneChange':
           this.crab.lane(ev.dir * this.faceSign);
-          this.puff(p.x - ev.dir * 0.5, w.dist, 4, 0.35);
+          this.puff(p.x - ev.dir * 0.5, w.dist, 3, 0.35);
+          if (p.grounded) this.sandSpray(p.x, w.dist, ev.dir, zoneAt(w.dist) === 1);
+          break;
+        case 'turn':
+          // Update 8: reversing mid-glide skids and kicks sand the other way
+          if (p.grounded) this.sandSpray(p.x, w.dist, ev.dir, zoneAt(w.dist) === 1);
           break;
         case 'hop':
           this.crab.hop();
@@ -493,7 +503,10 @@ export class GameView {
         case 'land':
           this.crab.land(ev.hard);
           if (!this.reduceMotion) this.camDip.impulse(ev.hard ? -3.4 : -1.1);
-          this.puff(p.x, w.dist, ev.hard ? 18 : 8, ev.hard ? 0.7 : 0.4);
+          if (ev.hard) this.puff(p.x, w.dist, 18, 0.7);
+          // impact speed from the sim, or the fastest fall seen since take-off
+          else this.landPuff(p.x, w.dist, Math.max(this.airMax, -ev.vy), ev.onTop ? p.y : 0);
+          this.airMax = 0;
           if (ev.hard) {
             // Sand Slam: shockwave, crater, a fountain of sand and a camera punch
             this.slamFx.spawn(p.x, w.dist);
@@ -616,6 +629,65 @@ export class GameView {
     }
   }
 
+  /**
+   * Update 8 landing puff: a ring of dust that rolls out low across the sand, bigger and faster the
+   * harder the crab came down (`fallV`, m/s), plus a few grains kicked up.
+   */
+  private landPuff(x: number, wz: number, fallV: number, y0 = 0): void {
+    const s = Math.min(CFG.fx.landPuffMax, Math.max(CFG.fx.landPuffMin, fallV / CFG.fx.landPuffRef));
+    const col = this.crab.skin.dust;
+    const lite = this.renderer.quality.name === 'low';
+    const n = Math.round((5 + 9 * s) * (lite ? 0.5 : 1));
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+      const sp = 1.1 + s * 1.7 + Math.random() * 0.6;
+      this.dust.spawn(x + Math.cos(a) * 0.35, y0 + 0.08, wz + Math.sin(a) * 0.3, Math.cos(a) * sp, 0.3 + s * 0.5 + Math.random() * 0.4, Math.sin(a) * sp * 0.7, 0.42 + s * 0.12 + Math.random() * 0.12, 0.26 + s * 0.16, col, 1.6, 1.5);
+    }
+    if (!lite) for (let i = 0, k = Math.round(3 + 5 * s); i < k; i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.dust.spawn(x + Math.cos(a) * 0.3, y0 + 0.1, wz + Math.sin(a) * 0.25, Math.cos(a) * (1 + s * 1.5), 1.5 + s * 1.8 + Math.random(), Math.sin(a) * 0.8, 0.5, 0.07 + Math.random() * 0.05, 0xe2c084, 9.8, 0, false, true);
+    }
+  }
+
+  /** Update 8 lane-change kick: sand thrown out to the side the crab pushes off from (splinter dust on the pier). */
+  private sandSpray(x: number, wz: number, dir: number, deck: boolean): void {
+    const lite = this.renderer.quality.name === 'low';
+    const n = lite ? 3 : CFG.fx.sprayGrains;
+    const col = deck ? 0xd8b98a : 0xe2c084;
+    for (let i = 0; i < n; i++) {
+      const up = deck ? 0.8 + Math.random() : 1.6 + Math.random() * 2.2;
+      this.dust.spawn(x - dir * (0.4 + Math.random() * 0.2), 0.1, wz + (Math.random() - 0.5) * 0.4, -dir * (1.8 + Math.random() * 2.6), up, (Math.random() - 0.3) * 1.4, 0.45 + Math.random() * 0.2, 0.06 + Math.random() * 0.07, col, 9.8, 0, false, true);
+    }
+    // a soft fan of dust trailing the kick
+    if (!deck && !lite) for (let i = 0; i < 2; i++) this.dust.spawn(x - dir * 0.6, 0.12, wz, -dir * (1 + Math.random()), 0.5, 0.3, 0.4, 0.3, this.crab.skin.dust, 1, 1.2);
+  }
+
+  /**
+   * Update 8: small foam splashes where the wash meets the sand, a little ahead of the crab (the
+   * pier gets them off both sides of the deck). Follows the ocean shader's wash so they land on
+   * the foam line. High/Medium only.
+   */
+  private foamSplashes(dt: number, dist: number, zone: number): void {
+    this.foamT -= dt;
+    if (this.foamT > 0) return;
+    this.foamT = CFG.fx.foamEvery * (0.6 + Math.random() * 0.8);
+    if (this.sparks.room < 30) return;
+    const t = this.time;
+    const wash = Math.sin(t * 0.55) * 0.9 + Math.sin(t * 0.23 + 1.3) * 0.45;
+    const ahead = 6 + Math.random() * 26;
+    const wz = dist + ahead;
+    let x: number;
+    if (zone === 1) x = (Math.random() < 0.5 ? -1 : 1) * (4.7 + Math.random() * 0.6);
+    else {
+      const shore = zone === 2 ? 7.4 : 8.4;
+      x = shore - wash + Math.sin(wz * 0.25 + t * 1.1) * 0.5 + 0.2 + Math.random() * 0.6;
+    }
+    const n = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      this.sparks.spawn(x + (Math.random() - 0.5) * 0.5, 0.05, wz + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.9, 1.2 + Math.random() * 1.4, (Math.random() - 0.5) * 0.6, 0.45 + Math.random() * 0.2, 0.14 + Math.random() * 0.12, 0xdff6ff, 6, 0.4);
+    }
+  }
+
   private puff(x: number, wz: number, n: number, size: number): void {
     const col = this.crab.skin.dust;
     for (let i = 0; i < n; i++) {
@@ -719,10 +791,13 @@ export class GameView {
     this.slamFx.update(dt, dist);
     // Shell Dash and Shell Fever: a golden trail
     if (running && (w.dashT > 0 || w.feverT > 0) && dt > 0 && Math.random() < 0.8) this.sparks.spawn(px + (Math.random() - 0.5) * 0.9, 0.25 + Math.random() * 0.6, dist - 0.4, 0, 0.6, 0, 0.35, 0.2, 0xffd23a, 1);
-    // shadow under the crab shrinks as it rises
-    const sh = 1 / (1 + py * 0.5);
-    if (!this.shadowMap) this.shadows.add(px, 0, 0, 1.7 * sh, 1.3 * sh, py);
+    // Update 8 contact shadow: tightens and darkens as the crab comes down; on High the shadow map
+    // draws the soft part, so only the dark contact core is added
+    this.shadows.contact(px, 0, 1.75, 1.35, Math.max(0, py), !this.shadowMap);
     this.shadows.end();
+    // track the fall speed for the landing puff
+    if (running && !p.grounded) this.airMax = Math.max(this.airMax, -p.vy);
+    if (running && dt > 0 && w.mode === 'running' && q.name !== 'low' && !this.reduceMotion) this.foamSplashes(dt, dist, zone);
 
     // power-up visuals
     const pk = running ? w.power.kind : null;

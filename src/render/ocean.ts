@@ -86,8 +86,23 @@ void main() {
   float edge = x + wash + sin(vWorld.y * 0.25 + uTime * 1.1) * 0.5 + sin(vWorld.y * 0.9 - uTime * 1.7) * 0.18 + (n - 0.5) * 0.6;
   float foam = 1.0 - smoothstep(0.0, 1.3, edge);
   float trail = (1.0 - smoothstep(0.0, 0.35, abs(edge - 1.9 - wash * 0.4))) * 0.45 * (0.6 + 0.4 * noise(vWorld * vec2(0.8, 0.3)));
-  col = mix(col, uFoam, clamp(foam + trail, 0.0, 1.0));
-  float alpha = smoothstep(-0.3, 0.35, edge + 0.3);
+  // Update 8: lacy foam. Bubbly patches with holes in them drift behind the wash, and a bright lip
+  // runs along the leading edge of the swash (High/Medium)
+  float lace = 0.0;
+  float glaze = 0.0;
+  if (uDetail > 0.5) {
+    vec2 lq = vWorld * vec2(2.4, 1.3) + vec2(-uTime * 0.25, uTime * 0.12);
+    float cells = noise(lq) * 0.65 + noise(lq * 2.7 + 3.1) * 0.35;
+    float holes = smoothstep(0.42, 0.5, cells) * (1.0 - smoothstep(0.62, 0.72, cells));
+    lace = holes * (1.0 - smoothstep(0.6, 3.4, edge)) * smoothstep(-0.1, 0.5, edge) * 0.8;
+    float lip = (1.0 - smoothstep(0.0, 0.16, abs(edge - 0.12))) * (0.7 + 0.3 * noise(vWorld * vec2(3.0, 0.8) + uTime));
+    lace = max(lace, lip);
+    // the sand the wash has just left stays glazed: a thin sky-tinted sheen past the water's edge
+    glaze = smoothstep(-1.6, -0.5, edge) * (1.0 - smoothstep(-0.5, -0.15, edge));
+  }
+  col = mix(col, uFoam, clamp(foam + trail + lace, 0.0, 1.0));
+  float alpha = max(smoothstep(-0.3, 0.35, edge + 0.3), glaze * 0.28);
+  col = mix(col, mix(uSky, uFoam, 0.25), glaze * (1.0 - smoothstep(-0.3, 0.35, edge + 0.3)));
   float f = clamp((vViewZ - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
   col = mix(col, uFog, f);
   col += sunPath * (1.0 - f * 0.55);

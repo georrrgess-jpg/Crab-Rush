@@ -26,6 +26,9 @@ try {
   // ---------------- desktop: keyboard + mouse
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   const page = await ctx.newPage();
+  // software GL (SwiftShader) compiles shaders and renders thumbnails slowly: allow long single frames
+  page.setDefaultTimeout(120000);
+  page.setDefaultNavigationTimeout(120000);
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(`${base}?shots&reset&notut&seed=99&god&quality=low`);
@@ -33,13 +36,17 @@ try {
   const st = () => page.evaluate(() => ({ state: window.__crab.game.state, lane: window.__crab.game.world.player.lane, y: window.__crab.game.world.player.y, grounded: window.__crab.game.world.player.grounded, dist: window.__crab.game.world.dist }));
   const fr = (n) => page.evaluate((k) => window.__crab.frames(k), n);
   check((await st()).state === 'title', 'boots to the title screen');
+  // Wardrobe thumbnails render in the background after boot; under software GL that batch can stall the
+  // page for tens of seconds, so let it finish before any click (perf.mjs does the same)
+  await page.waitForFunction(() => Object.keys(window.__crab.game.shop.thumbs?.hats ?? {}).length > 0, null, { timeout: 120000 }).catch(() => {});
   const shaders = await page.evaluate(() => window.__crab.shaderCheck());
   const badShaders = shaders.filter((x) => !x.ok);
   check(shaders.length >= 14 && badShaders.length === 0, `toy shader variants compile and draw (${shaders.length})${badShaders.length ? ': ' + badShaders.map((b) => b.name + ' ' + b.log).join(' | ') : ''}`);
   // synthesised music: the beach loop, three zone layers and the Island Hop / chase loops
   await page.evaluate(() => window.__crab.game.audio.unlock());
-  const loops = await page.waitForFunction(() => window.__crab.game.audio.loops.size === 6, null, { timeout: 30000 }).then(() => true).catch(() => false);
-  check(loops, 'all six music loops render');
+  // Update 8: a lookahead sequencer over synthesised instrument banks (no pre-rendered loops)
+  const loops = await page.waitForFunction(() => { const s = window.__crab.game.audio.stats; return s.banksReady >= 30 && s.players >= 1; }, null, { timeout: 30000 }).then(() => true).catch(() => false);
+  check(loops, 'music sequencer runs and the instrument banks build');
   await page.keyboard.press('Space');
   await fr(5);
   check(['intro', 'running'].includes((await st()).state), 'Space on the title starts a run');
@@ -112,7 +119,10 @@ try {
   await page.evaluate(() => { window.__crab.grant(1000); window.__crab.setState('shop'); });
   await fr(3);
   check((await st()).state === 'shop', 'shop opens');
-  await page.click('.tile:has-text("Chill")');
+  // the Wardrobe thumbnails render on first open; under software GL that can stall a frame for tens of seconds
+  await page.waitForFunction(() => Object.keys(window.__crab.game.shop.thumbs?.hats ?? {}).length > 0, null, { timeout: 90000 }).catch(() => {});
+  await fr(2);
+  await page.click('.tile:has-text("Chill")', { timeout: 60000 });
   await page.click('.crab-detail > .btn:not(.wd-random)');
   const afterBuy = await page.evaluate(() => window.__crab.game.save.data);
   check(afterBuy.crabs.owned.includes('chill') && afterBuy.crabs.selected === 'chill' && afterBuy.shells === 550, 'buying Chill spends 450 shells and wears it');

@@ -34,21 +34,51 @@ export const PALETTE = {
   logoOutline: 0x5a2a10,
 } as const;
 
+/** Update 8: an obstacle hitbox (see CFG.obstacle.shapes) */
+export interface HitShape {
+  shape: 'box' | 'drum' | 'ball';
+  w: number;
+  d: number;
+  h: number;
+  /** box only: x/z corner radius */
+  r?: number;
+}
+
 export const CFG = {
   // ---- lanes & player ----
   laneX: [-2.2, 0, 2.2] as readonly number[],
   laneCount: 3,
   /** Lane glide (a critically damped spring): ~95% of a lane change done in `laneChangeTime`. */
   laneChangeTime: 0.17,
-  player: { w: 0.9, d: 0.8, h: 0.9 },
+  /** Update 8 lane polish */
+  lane: {
+    /** a second same-way lane input made before the glide is this far along (0..1) waits, then chains on */
+    chainAt: 0.35,
+    /** a queued lane input (during a glide or a bump wobble) is dropped after this long (s) */
+    buffer: 0.25,
+    /** a reversal mid-glide keeps this share of the glide's speed (the spring turns it back from there) */
+    turnKeep: 0.5,
+  },
+  /** Update 8: the crab's shell (not its legs or claws); tests/hitbox.test.ts checks it against the model */
+  player: { w: 1.22, d: 0.96, h: 0.85 },
   hop: {
+    /** total airtime (s) and apex (m) of a hop; the arc below keeps both exact */
     airtime: 0.55,
     apex: 1.5,
+    /** Update 8 arc: gravity × fallMul on the way down (a snappier fall), and × hangMul while
+     * |vy| < hangSpeed (m/s) so the crab hangs at the top; the take-off speed is solved so the
+     * airtime and apex stay as above */
+    fallMul: 1.3,
+    hangSpeed: 1.8,
+    hangMul: 0.5,
     slamGravityMul: 3,
     slamKick: 11, // downward speed (m/s) given on slam
     /** Sand Slam shockwave: shells this far ahead (m) in the lane and its neighbours fly in */
     slamReach: 6,
+    /** a hop pressed this long (s) before landing fires on landing */
     buffer: 0.12,
+    /** a hop pressed this long (s) after dropping off something (an obstacle top, the Wave Rider) still fires */
+    coyote: 0.1,
   },
   bumpWobble: 0.25,
   trackHalfWidth: 3.4,
@@ -83,14 +113,52 @@ export const CFG = {
   nightFull: 5200,
 
   // ---- obstacles: hitbox w, d, h ----
+  // Update 8: each kind's w/d/h is the *solver box* the fairness solver, autopilot and spawner plan
+  // with; tests/hitbox.test.ts proves a hop timed anywhere in its window clears every real shape.
+  // The real hitboxes are `shapes` (per zone skin, per model variant), fitted to the models.
   obstacle: {
-    block: { w: 1.8, d: 1.2, h: 2.2 },
-    low: { w: 2.0, d: 0.6, h: 0.6 },
-    sweep: { w: 6.8, d: 1.4, h: 0.5 },
-    roller: { w: 1.0, d: 1.0, h: 0.9 },
-    gull: { w: 1.6, d: 1.0, h: 1.6 },
+    block: { w: 1.85, d: 1.18, h: 1.85 },
+    low: { w: 1.95, d: 0.62, h: 0.63 },
+    sweep: { w: 6.8, d: 1.45, h: 0.6 },
+    roller: { w: 1.02, d: 1.02, h: 1.0 },
+    gull: { w: 0.84, d: 1.42, h: 1.45 },
     /** Update 4: a rock crab that scuttles one lane sideways as it approaches (hop it or dodge) */
-    scuttle: { w: 1.4, d: 0.9, h: 0.65 },
+    scuttle: { w: 1.25, d: 0.9, h: 0.68 },
+    /**
+     * Update 8 hitboxes, measured against the models (tests/hitbox.test.ts: 75–100% of each model's
+     * bounds, ~93% here). shape 'box': a box whose x/z corners are rounded by r; 'drum': a cylinder
+     * lying along x (round in y/z: logs, the wave); 'ball': a sphere. h is the top (drum/ball: top of
+     * the circle, so the centre is h − d/2). Indexed [skin][variant]: skin 0 shore (and sunset), 1
+     * boardwalk, 2 tide pools; variant = entity id % 2, the same pick the renderer makes.
+     */
+    shapes: {
+      block: [
+        [{ shape: 'box', w: 1.65, d: 1.15, h: 1.85, r: 0.2 }, { shape: 'box', w: 1.65, d: 1.15, h: 1.85, r: 0.2 }],
+        [{ shape: 'box', w: 1.85, d: 1.12, h: 2.0, r: 0.08 }, { shape: 'box', w: 1.85, d: 1.12, h: 2.0, r: 0.08 }],
+        [{ shape: 'box', w: 1.65, d: 1.18, h: 2.0, r: 0.2 }, { shape: 'box', w: 1.65, d: 1.18, h: 2.0, r: 0.2 }],
+      ],
+      low: [
+        [{ shape: 'drum', w: 1.95, d: 0.58, h: 0.6 }, { shape: 'drum', w: 1.95, d: 0.62, h: 0.63 }],
+        [{ shape: 'box', w: 1.9, d: 0.55, h: 0.57, r: 0.05 }, { shape: 'box', w: 1.9, d: 0.55, h: 0.57, r: 0.05 }],
+        [{ shape: 'box', w: 1.8, d: 0.6, h: 0.48, r: 0.12 }, { shape: 'box', w: 1.8, d: 0.6, h: 0.48, r: 0.12 }],
+      ],
+      /** the wave (skin 0/2) and the boardwalk gap (skin 1: fall in once you are over the hole) */
+      sweep: [
+        [{ shape: 'drum', w: 6.8, d: 1.45, h: 0.6 }, { shape: 'drum', w: 6.8, d: 1.45, h: 0.6 }],
+        [{ shape: 'box', w: 6.8, d: 0.75, h: 0.45, r: 0 }, { shape: 'box', w: 6.8, d: 0.75, h: 0.45, r: 0 }],
+        [{ shape: 'drum', w: 6.8, d: 1.45, h: 0.6 }, { shape: 'drum', w: 6.8, d: 1.45, h: 0.6 }],
+      ],
+      roller: [[{ shape: 'ball', w: 1.02, d: 1.02, h: 1.06 }, { shape: 'ball', w: 1.02, d: 1.02, h: 1.06 }]],
+      /** a landed gull, wings folded */
+      gull: [[{ shape: 'box', w: 0.84, d: 1.42, h: 1.45, r: 0.2 }, { shape: 'box', w: 0.84, d: 1.42, h: 1.45, r: 0.2 }]],
+      /** a landed coconut (gull alt 1) */
+      coconut: [[{ shape: 'ball', w: 0.76, d: 0.76, h: 0.8 }, { shape: 'ball', w: 0.76, d: 0.76, h: 0.8 }]],
+      scuttle: [[{ shape: 'box', w: 1.25, d: 0.88, h: 0.68, r: 0.15 }, { shape: 'box', w: 1.25, d: 0.88, h: 0.68, r: 0.15 }]],
+    } as Record<string, readonly (readonly HitShape[])[]>,
+    /** coming down onto an obstacle's top from at most this far below it lands on it (no lip snag) */
+    lip: 0.06,
+    /** a side contact that overlaps this little (m) while the crab heads for another lane is a bump, not a crash */
+    graze: 0.1,
   },
   /** Crab Cup races (UPDATE4_PLAN.md §5.2) */
   race: {
@@ -220,6 +288,15 @@ export const CFG = {
 
   // ---- camera ----
   camera: { fov: 55, fovMaxSpeed: 62, height: 4.6, back: 7.0, lookAhead: 10, lookY: 0.6, portraitFovMax: 75 },
+
+  // ---- Update 8 map detail and run FX ----
+  /** ripple groups per track side on near tiles (High; Medium half), gull-track trails per near tile,
+   *  and how far up the beach the dried-foam line sits from the water's edge (m) */
+  scenery: { rippleGroups: 5, trackTrails: 3, tideLine: 2.75 },
+  /** contact shadow: height where the blob is widest/faintest, height below which the dark core shows,
+   *  core opacity. Landing puff scales with fall speed / landPuffRef, clamped; grains per lane change;
+   *  mean seconds between shoreline foam splashes */
+  fx: { contactFadeH: 2.2, contactCoreH: 0.6, contactCoreAlpha: 0.9, landPuffRef: 9, landPuffMin: 0.35, landPuffMax: 1.6, sprayGrains: 8, foamEvery: 0.22 },
 
   // ---- fixed step ----
   simHz: 120,

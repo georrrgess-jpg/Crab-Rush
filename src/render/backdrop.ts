@@ -95,6 +95,10 @@ function island(scale: number): THREE.BufferGeometry {
   // lighthouse
   for (let i = 0; i < 5; i++) b.cyl(i % 2 ? 0xe53935 : 0xffffff, 1.5 - i * 0.12, 1.62 - i * 0.12, 2.6, [2, 11.3 + i * 2.6, 0], [0, 0, 0], 12);
   b.cyl(0x2c3e66, 1.4, 1.4, 0.4, [2, 24.3, 0], [0, 0, 0], 12);
+  // Update 8: a gallery rail round the lantern room and a few windows up the tower
+  b.torus(0x2c3e66, 1.75, 0.08, [2, 25.0, 0], [Math.PI / 2, 0, 0], 14, [1, 1, 1], 3);
+  for (let i = 0; i < 6; i++) b.cyl(0x2c3e66, 0.06, 0.06, 0.7, [2 + Math.cos((i / 6) * Math.PI * 2) * 1.75, 24.65, Math.sin((i / 6) * Math.PI * 2) * 1.75], [0, 0, 0], 3);
+  for (let i = 0; i < 3; i++) b.box(0x2c3e66, 0.5, 0.8, 0.1, [2, 13.5 + i * 4.2, 1.45 - i * 0.12]);
   b.cyl(0xfff3c4, 1.0, 1.0, 1.6, [2, 25.3, 0], [0, 0, 0], 12);
   b.cone(0xe53935, 1.5, 1.6, [2, 26.9, 0], [0, 0, 0], 12);
   b.box(0xfff4dc, 4, 2.6, 3, [-3, 10.6, 1]);

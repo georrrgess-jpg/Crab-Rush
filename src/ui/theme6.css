@@ -56,9 +56,7 @@
 .u-pill { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border-radius: var(--r-pill); background: #fff; box-shadow: var(--u-shadow-s); color: var(--u-ink); font-family: var(--font-display); font-size: 16px; white-space: nowrap; }
 .u-pill svg { width: 22px; height: 22px; flex: none; }
 /* section headings */
-.set-sec h3::before, .dt-sec::before, .w-count::before { background: linear-gradient(180deg, #46dbe0, #10a2b4); }
-.stat { background: #fff; box-shadow: var(--u-shadow-s); }
-.stat .si { background: linear-gradient(180deg, #62c6ff, #1a84dc); }
+.dt-sec::before, .w-count::before { background: linear-gradient(180deg, #46dbe0, #10a2b4); }
 /* sheets */
 .ks-panel { border-radius: 28px 28px 0 0; }
 .ks-title { color: var(--u-ink); }
@@ -804,3 +802,51 @@ input[type='range']:focus-visible, input[type='checkbox']:focus-visible { outlin
   .page-body { scroll-behavior: auto; }
 }
 .reduce-motion .page-body { scroll-behavior: auto; }
+
+/* =================================================================== Update 8 (Fine Sand), UI track (UPDATE8_PLAN.md):
+   Pass, Cup, Island Hop, Settings, Stats, Trophies, results, pause and the Second Chance card on the
+   same cream cards, navy type, teal secondaries and cream chips as Home. Most of it lives in the
+   screens' own rules (screens.css, cup.css, u5.css); this block holds the shared pieces. */
+
+/* ---- page cards never scroll themselves: focus() on a control inside a clipped card used to nudge
+   the whole card (and its header) out of view on short landscape screens */
+.page-card { overflow: clip; }
+/* the header keeps its height: a long body used to squeeze it on short screens and push the back button out the top */
+.page-card > .page-head, .page-card > .page-actions { flex: none; }
+
+/* ---- secondary actions next to an orange primary are teal (the concept's Customize / Museum pills) */
+.page-actions .btn.blue, .res-buttons .btn.blue, #pause .btn-row .btn.blue { background: linear-gradient(180deg, #46dbe0 0%, #1cbcc8 55%, #10a2b4 100%); box-shadow: inset 0 -5px 0 #0a7d8e, inset 0 2px 0 rgba(255, 255, 255, 0.55), 0 6px 14px rgba(16, 162, 180, 0.28); }
+.page-actions .btn.blue:active, .res-buttons .btn.blue:active, #pause .btn-row .btn.blue:active { box-shadow: inset 0 -2px 0 #0a7d8e, 0 2px 6px rgba(16, 162, 180, 0.25); }
+
+/* ---- pause: goals on a white card like the rest of the sheet */
+#pause .goals-card { background: #fff; border: 0; border-radius: 20px; box-shadow: var(--u-shadow-s); padding: 10px 14px 8px; }
+#pause .goals-card h3 { position: relative; padding-left: 12px; color: var(--u-ink); font-size: 17px; }
+#pause .goals-card h3::before { content: ''; position: absolute; left: 0; top: 15%; bottom: 15%; width: 5px; border-radius: 3px; background: linear-gradient(180deg, #46dbe0, #10a2b4); }
+#pause .goal { color: var(--u-ink); font-weight: 600; }
+#pause .goal + .goal { border-top: 2px solid var(--u-line); }
+#pause .goal .chk { background: var(--u-track); }
+#pause .goal.done .chk { background: #3fbf55; }
+#pause .goal .bar { background: var(--u-track); }
+#pause .goal .rw { color: #e0780a; }
+
+/* ---- race results: cream reward chips that pop in after the podium, like the level end */
+.race-end .lv-rewards .rw { background: #fff; box-shadow: var(--u-shadow-s); color: var(--u-ink); animation: u7pop 0.4s var(--ease-back) both; }
+.race-end .lv-rewards .rw:nth-child(1) { animation-delay: 0.75s; }
+.race-end .lv-rewards .rw:nth-child(2) { animation-delay: 0.85s; }
+.race-end .cup-tbl, .race-end .cup-out { animation: u7rise 0.3s 0.9s var(--ease-out) both; }
+
+/* ---- level intro: the objectives and the course preview rise in one after another */
+#level-intro.rt-enter .obj, #level-intro.rt-enter .lv-preview .pv { animation: u7rise 0.3s var(--ease-out) both; }
+#level-intro.rt-enter .obj:nth-child(2), #level-intro.rt-enter .pv:nth-child(2) { animation-delay: 0.05s; }
+#level-intro.rt-enter .obj:nth-child(3), #level-intro.rt-enter .pv:nth-child(3) { animation-delay: 0.1s; }
+#level-intro.rt-enter .pv:nth-child(n + 4) { animation-delay: 0.15s; }
+
+/* ---- Trophies: the shelf starts under the summary card */
+.tr-body .trophy-shelf { margin-top: 2px; }
+.trophy.fresh .tr-medals { opacity: 0.8; }
+
+/* ---- Reduce Motion */
+.reduce-motion .race-end .lv-rewards .rw, .reduce-motion .race-end .cup-tbl, .reduce-motion .race-end .cup-out, .reduce-motion #level-intro .obj, .reduce-motion #level-intro .pv { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .race-end .lv-rewards .rw, .race-end .cup-tbl, .race-end .cup-out, #level-intro .obj, #level-intro .pv { animation: none !important; }
+}

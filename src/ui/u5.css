@@ -22,8 +22,14 @@
 
 /* ---- Second Chance card */
 .revive { align-items: center; justify-content: center; pointer-events: auto; padding: calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l)); }
-.rv-dim { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, rgba(255, 120, 80, 0.25), rgba(30, 10, 50, 0.7)); animation: rt-in 0.3s both; }
-.rv-card { position: relative; width: min(100%, 360px); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 20px 14px; border-radius: 28px; background: linear-gradient(180deg, #fffaf0, #fff0d8); border: 4px solid #fff; box-shadow: 0 18px 40px rgba(60, 20, 0, 0.35); animation: rvin 0.4s var(--ease-back) both; }
+.rv-dim { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, rgba(255, 150, 60, 0.18), rgba(20, 37, 79, 0.62)); animation: rt-in 0.3s both; }
+.rv-card { position: relative; width: min(100%, 360px); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px 20px 14px; border-radius: 28px; background: var(--u-cream); border: 3px solid #fff; box-shadow: 0 18px 44px rgba(20, 37, 79, 0.3), inset 0 2px 0 #fff; animation: rvin 0.4s var(--ease-back) both; }
+.rv-card > :not(.rv-ring) { animation: u7rise 0.3s var(--ease-out) both; }
+.rv-card > .rv-title { animation-delay: 0.08s; }
+.rv-card > .rv-sub { animation-delay: 0.12s; }
+.rv-card > .rv-go { animation: u7pop 0.34s 0.16s var(--ease-back) both, rvpulse 1s 0.6s ease-in-out infinite; }
+.rv-card > .rv-no { animation-delay: 0.2s; }
+.rv-card > .rv-foot { animation-delay: 0.24s; }
 @keyframes rvin { from { transform: scale(0.7) translateY(30px); opacity: 0; } }
 .rv-ring { position: relative; width: 96px; height: 96px; margin-top: -60px; border-radius: 50%; background: linear-gradient(180deg, #ff9a3a, #ff5a7a); box-shadow: 0 6px 16px rgba(255, 90, 90, 0.5), inset 0 3px 0 rgba(255, 255, 255, 0.4); }
 .rv-ring svg { position: absolute; inset: 4px; transform: rotate(-90deg); }
@@ -32,22 +38,24 @@
 .rv-num { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-family: var(--font-display); font-weight: 400; font-size: 44px; text-shadow: 0 3px 0 rgba(150, 30, 30, 0.4); }
 .rv-num.tick { animation: rvtick 0.35s var(--ease-back); }
 @keyframes rvtick { from { transform: scale(1.35); } }
-.rv-title { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 32px; color: var(--c-navy-800); }
-.rv-sub { margin: -6px 0 0; display: flex; flex-direction: column; align-items: center; color: var(--c-teal-700); font-size: 15px; }
+.rv-title { margin: 0; font-family: var(--font-display); font-weight: 400; font-size: 34px; color: var(--u-ink); }
+.rv-sub { margin: -6px 0 0; display: flex; flex-direction: column; align-items: center; color: var(--u-muted); font-weight: 600; font-size: 15px; }
 .rv-sub b { font-family: var(--font-display); font-weight: 400; font-size: 26px; color: #ff6a2a; }
-.rv-go { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; animation: rvpulse 1s ease-in-out infinite; }
+.rv-go { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; }
 @keyframes rvpulse { 50% { transform: scale(1.04); } }
 .rv-cost { display: inline-flex; align-items: center; gap: 3px; padding: 2px 10px; border-radius: var(--r-pill); background: rgba(0, 0, 0, 0.18); font-size: 0.75em; }
 .rv-cost svg { width: 22px; height: 22px; }
 .rv-cost.free { background: #fff; color: #2f9e4a; text-shadow: none; }
 .rv-no { min-height: 44px; width: 70%; }
-.rv-foot { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--c-teal-700); }
+.rv-foot { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 12px; border-radius: 999px; background: #fff; box-shadow: var(--u-shadow-s); font-size: 13px; font-weight: 600; color: var(--u-ink-2); }
 .rv-foot svg { width: 18px; height: 18px; }
 html[data-size='short'] .rv-card { flex-direction: row; flex-wrap: wrap; width: min(100%, 560px); justify-content: center; padding-top: 14px; }
 html[data-size='short'] .rv-ring { margin-top: 0; width: 76px; height: 76px; }
 html[data-size='short'] .rv-num { font-size: 34px; }
 html[data-size='short'] .rv-go { width: auto; flex: 1 1 60%; }
 html[data-size='short'] .rv-no { width: auto; flex: 1 1 30%; }
+.reduce-motion .rv-card, .reduce-motion .rv-card > *, .reduce-motion .rv-num.tick { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .rv-card, .rv-card > *, .rv-num.tick { animation: none !important; } }
 
 /* ---- Treasure Dig */
 .dig .page-card { max-height: 100%; }

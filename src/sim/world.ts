@@ -1,4 +1,4 @@
-import { CFG, speedAt, tierAt, zoneAt } from '../config';
+import { CFG, speedAt, tierAt, zoneAt, type HitShape } from '../config';
 import type { Modifier } from '../meta/daily';
 import { Rng } from '../core/rng';
 import type { Entity, EntityKind, PlayerState, Shell } from './types';
@@ -58,13 +58,108 @@ export interface TutorialStep {
   done: boolean;
 }
 
+/** symmetric-parabola gravity for the hop's apex and airtime (Sand Slam and the crash tumble use it) */
 const HOP_G = (8 * CFG.hop.apex) / (CFG.hop.airtime * CFG.hop.airtime);
-const HOP_V0 = (4 * CFG.hop.apex) / CFG.hop.airtime;
+
+/**
+ * Update 8 hop arc: gravity `g` going up, × hangMul while |vy| < hangSpeed (the hang at the top),
+ * × fallMul coming down. The take-off speed and `g` are solved once so the hop still reaches
+ * `apex` and lands after `airtime`. Its windows contain the symmetric parabola's (tests/hitbox).
+ */
+export interface HopArc {
+  v0: number;
+  g: number;
+  gHang: number;
+  gFall: number;
+  hang: number;
+  /** take-off to apex, apex to touchdown (s) */
+  rise: number;
+  fall: number;
+}
+
+export function solveArc(apex: number, airtime: number, fallMul: number, hangSpeed: number, hangMul: number): HopArc {
+  const at = (g: number): HopArc => {
+    const gHang = g * hangMul;
+    const gFall = g * fallMul;
+    // the hang band can't be taller than the hop
+    const hv = Math.min(hangSpeed, Math.sqrt(apex * gHang));
+    const hangH = (hv * hv) / (2 * gHang);
+    const v0 = Math.sqrt(2 * g * (apex - hangH) + hv * hv);
+    const rise = (v0 - hv) / g + hv / gHang;
+    const drop = apex - hangH;
+    const fall = hv / gHang + (-hv + Math.sqrt(hv * hv + 2 * gFall * drop)) / gFall;
+    return { v0, g, gHang, gFall, hang: hv, rise, fall };
+  };
+  let lo = 1;
+  let hi = 2000;
+  for (let i = 0; i < 90; i++) {
+    const m = (lo + hi) / 2;
+    const a = at(m);
+    if (a.rise + a.fall > airtime) lo = m;
+    else hi = m;
+  }
+  return at((lo + hi) / 2);
+}
+
+export const HOP_ARC: HopArc = solveArc(CFG.hop.apex, CFG.hop.airtime, CFG.hop.fallMul, CFG.hop.hangSpeed, CFG.hop.hangMul);
+
+/** gravity on the hop arc at vertical speed vy */
+function arcGravity(vy: number): number {
+  const A = HOP_ARC;
+  return vy > A.hang ? A.g : vy > -A.hang ? A.gHang : A.gFall;
+}
+
 /** critically damped lane spring: ~95% of a lane change done in `laneChangeTime` */
 const LANE_W = 4.74 / CFG.laneChangeTime;
-/** bounce pad launch speed (apex CFG.island.padApex) and time to apex */
-export const PAD_V0 = Math.sqrt(2 * HOP_G * CFG.island.padApex);
-export const PAD_APEX_T = PAD_V0 / HOP_G;
+const LANE_GAP = (CFG.laneX[1] as number) - (CFG.laneX[0] as number);
+/** bounce pad launch speed (apex CFG.island.padApex on the hop arc) and time to apex */
+export const PAD_V0 = Math.sqrt(2 * HOP_ARC.g * (CFG.island.padApex - (HOP_ARC.hang * HOP_ARC.hang) / (2 * HOP_ARC.gHang)) + HOP_ARC.hang * HOP_ARC.hang);
+export const PAD_APEX_T = (PAD_V0 - HOP_ARC.hang) / HOP_ARC.g + HOP_ARC.hang / HOP_ARC.gHang;
+
+/**
+ * Update 8 hitbox test: the height of an obstacle's surface over the crab's footprint (a pw × pd
+ * rectangle whose centre is dx, dz from the obstacle's), or -1 when the footprints don't overlap.
+ * The crab hits it when its feet (y) are below that height.
+ */
+export function topOver(s: HitShape, dx: number, dz: number, pw: number, pd: number): number {
+  const ax = Math.abs(dx);
+  const az = Math.abs(dz);
+  if (s.shape === 'box') {
+    const r = s.r ?? 0;
+    const gx = ax - (s.w / 2 - r) - pw / 2;
+    const gz = az - (s.d / 2 - r) - pd / 2;
+    const hit = (gx < 0 && gz < r) || (gz < 0 && gx < r) || (gx >= 0 && gz >= 0 && gx * gx + gz * gz < r * r);
+    return hit ? s.h : -1;
+  }
+  const R = s.d / 2;
+  const cy = s.h - R;
+  if (s.shape === 'drum') {
+    if (ax >= s.w / 2 + pw / 2) return -1;
+    const gz = Math.max(0, az - pd / 2);
+    if (gz >= R) return -1;
+    const t = cy + Math.sqrt(R * R - gz * gz);
+    return t > 0 ? t : -1;
+  }
+  // ball
+  const gx = Math.max(0, ax - pw / 2);
+  const gz = Math.max(0, az - pd / 2);
+  const q = gx * gx + gz * gz;
+  if (q >= R * R) return -1;
+  const t = cy + Math.sqrt(R * R - q);
+  return t > 0 ? t : -1;
+}
+
+/**
+ * The hitbox for an obstacle: by kind, zone skin (sunset reuses the shore's) and model variant
+ * (entity id % 2, the renderer's pick). Landed coconuts are gulls with alt 1. Null for non-obstacles.
+ */
+export function hitShapeFor(kind: EntityKind, skin: number, id: number, alt?: number): HitShape | null {
+  const key = kind === 'gull' && alt === 1 ? 'coconut' : kind;
+  const table = CFG.obstacle.shapes[key];
+  if (!table) return null;
+  const row = table[skin === 3 ? 0 : skin] ?? (table[0] as readonly HitShape[]);
+  return row[id % 2] ?? (row[0] as HitShape);
+}
 
 export function defaultRunOptions(): RunOptions {
   return {
@@ -109,6 +204,10 @@ function freshPlayer(): PlayerState {
     vy: 0,
     grounded: true,
     hopBuffer: 0,
+    coyote: 0,
+    onTop: 0,
+    laneQueue: 0,
+    laneQueueT: 0,
     bumpT: 0,
     prevLane: 1,
     laneChangeAt: -10,
@@ -252,7 +351,7 @@ export class World {
       kind === 'block' ? O.block : kind === 'low' ? O.low : kind === 'sweep' ? O.sweep : kind === 'roller' ? O.roller : kind === 'gull' ? O.gull : kind === 'scuttle' ? O.scuttle : { w: 1, d: 1, h: 1 };
     const e: Entity =
       this.pool.pop() ??
-      ({ id: 0, kind, lane, x: 0, wz: 0, prevWz: 0, vz: 0, y: 0, w: 1, d: 1, h: 1, skin: 0, state: 0, passed: false, dead: false, knocked: 0, spin: 0 } as Entity);
+      ({ id: 0, kind, lane, x: 0, prevX: 0, wz: 0, prevWz: 0, vz: 0, y: 0, w: 1, d: 1, h: 1, hit: null, skin: 0, state: 0, passed: false, dead: false, knocked: 0, spin: 0 } as Entity);
     e.id = this.nextId++;
     e.kind = kind;
     e.lane = lane;
@@ -275,6 +374,14 @@ export class World {
     e.alt = undefined;
     e.toLane = undefined;
     Object.assign(e, extra);
+    e.prevX = e.x;
+    // Update 8: the hitbox fitted to the model this skin and variant draw (see CFG.obstacle.shapes)
+    e.hit = hitShapeFor(kind, e.skin, e.id, e.alt);
+    if (e.hit) {
+      e.w = e.hit.w;
+      e.d = e.hit.d;
+      e.h = e.hit.h;
+    }
     if (kind === 'roller' && e.meetWz !== undefined) e.wz = e.prevWz = this.rollerWz(e.meetWz);
     if (kind === 'gull') e.y = CFG.gull.height;
     if (kind === 'dollar' && extra.y === undefined) e.y = CFG.island.dollarY;
@@ -317,19 +424,28 @@ export class World {
       case 'left':
       case 'right': {
         const dir = a === 'left' ? -1 : 1;
+        const toward = Math.sign((CFG.laneX[p.lane] as number) - p.x);
+        const gliding = Math.abs((CFG.laneX[p.lane] as number) - p.x) > 0.05;
+        if (gliding && dir === -toward && p.laneQueue === toward) {
+          // the opposite way while a move is queued: just cancel the queued move
+          p.laneQueue = 0;
+          return;
+        }
         const lane = p.lane + dir;
         if (lane < 0 || lane >= CFG.laneCount) return;
-        p.prevLane = p.lane;
-        p.lane = lane;
-        p.laneChangeAt = this.time;
-        this.stats.laneChanges++;
-        this.events.push({ t: 'laneChange', dir: dir as -1 | 1 });
-        this.tutorialAction('move');
+        if (gliding && dir === toward && p.bumpT <= 0 && this.glideProgress() < CFG.lane.chainAt) {
+          // Update 8: a second move the same way waits for the glide to get going, then chains on
+          p.laneQueue = dir;
+          p.laneQueueT = CFG.lane.buffer;
+          return;
+        }
+        this.applyLane(dir as -1 | 1, gliding && dir === -toward);
         break;
       }
       case 'hop':
         if (this.power.kind === 'rider') return;
         if (p.grounded) this.startHop();
+        else if (p.coyote > 0 && !this.slamming && p.vy <= 0) this.startHop(HOP_ARC.v0, false, true);
         else p.hopBuffer = CFG.hop.buffer;
         break;
       case 'slam':
@@ -342,17 +458,63 @@ export class World {
     }
   }
 
-  private startHop(v0 = HOP_V0): void {
+  /** how far the current lane glide has come (0 = just left, 1 = there), measured over one lane */
+  glideProgress(): number {
+    const p = this.player;
+    return Math.max(0, Math.min(1, 1 - Math.abs((CFG.laneX[p.lane] as number) - p.x) / LANE_GAP));
+  }
+
+  private applyLane(dir: -1 | 1, turn: boolean): void {
+    const p = this.player;
+    p.prevLane = p.lane;
+    p.lane += dir;
+    p.laneChangeAt = this.time;
+    p.laneQueue = 0;
+    if (turn) {
+      // a reversal mid-glide: the spring turns the crab back; a little of its speed is shed (a skid)
+      p.laneV *= CFG.lane.turnKeep;
+      this.events.push({ t: 'turn', dir });
+    }
+    this.stats.laneChanges++;
+    this.events.push({ t: 'laneChange', dir });
+    this.tutorialAction('move');
+  }
+
+  private startHop(v0 = HOP_ARC.v0, buffered = false, coyote = false): void {
     const p = this.player;
     p.grounded = false;
+    p.onTop = 0;
+    p.coyote = 0;
     p.vy = v0;
     p.hopBuffer = 0;
     p.airTime = 0;
     this.slamming = false;
     this.stats.hops++;
     this.distSinceHop = 0;
-    this.events.push({ t: 'hop' });
+    this.events.push({ t: 'hop', buffered, coyote });
     this.tutorialAction('hop');
+  }
+
+  /** touch down on the sand (y 0) or on an obstacle's top (its id) */
+  private landed(y: number, onTop: number): void {
+    const p = this.player;
+    const hard = this.slamming;
+    const vy = p.vy;
+    p.y = y;
+    p.vy = 0;
+    p.grounded = true;
+    p.onTop = onTop;
+    p.coyote = 0;
+    this.slamming = false;
+    this.events.push({ t: 'land', hard, vy, onTop: onTop !== 0 });
+    // Sand Slam: the shockwave pulls in shells just ahead in this lane and its neighbours
+    if (hard) {
+      for (const s of this.shells) {
+        const rel = s.wz - this.dist;
+        if (rel > -0.5 && rel < CFG.hop.slamReach && Math.abs(s.x - p.x) < 3.4) this.pull(s);
+      }
+    }
+    if (p.hopBuffer > 0) this.startHop(HOP_ARC.v0, true, false);
   }
 
   private tutorialAction(kind: 'move' | 'hop'): void {
@@ -478,6 +640,14 @@ export class World {
     const p = this.player;
     p.prevX = p.x;
     p.prevY = p.y;
+    // a queued lane move chains on once the glide is far enough along (or is dropped when stale)
+    if (p.laneQueue !== 0) {
+      p.laneQueueT -= dt;
+      const lane = p.lane + p.laneQueue;
+      if (p.laneQueueT <= 0 || lane < 0 || lane >= CFG.laneCount) p.laneQueue = 0;
+      else if (p.bumpT <= 0 && this.glideProgress() >= CFG.lane.chainAt) this.applyLane(p.laneQueue as -1 | 1, false);
+    }
+    if (p.coyote > 0) p.coyote = Math.max(0, p.coyote - dt);
     // lane glide: a critically damped spring, so a move eases in and out (no snap at the start)
     const tx = CFG.laneX[p.lane] as number;
     p.laneV += (LANE_W * LANE_W * (tx - p.x) - 2 * LANE_W * p.laneV) * dt;
@@ -491,6 +661,7 @@ export class World {
     if (p.invuln > 0) p.invuln = Math.max(0, p.invuln - dt);
 
     if (this.power.kind === 'rider') {
+      p.onTop = 0;
       const ty = CFG.riderHeight;
       p.y += (ty - p.y) * Math.min(1, 9 * dt);
       p.vy = 0;
@@ -500,25 +671,12 @@ export class World {
 
     if (!p.grounded) {
       p.airTime += dt;
-      const g = this.slamming ? HOP_G * CFG.hop.slamGravityMul : HOP_G;
+      const g = this.slamming ? HOP_G * CFG.hop.slamGravityMul : arcGravity(p.vy);
+      const vy0 = p.vy;
+      p.y += p.vy * dt - 0.5 * g * dt * dt;
       p.vy -= g * dt;
-      p.y += p.vy * dt;
-      if (p.y <= 0) {
-        const hard = this.slamming;
-        p.y = 0;
-        p.vy = 0;
-        p.grounded = true;
-        this.slamming = false;
-        this.events.push({ t: 'land', hard });
-        // Sand Slam: the shockwave pulls in shells just ahead in this lane and its neighbours
-        if (hard) {
-          for (const s of this.shells) {
-            const rel = s.wz - this.dist;
-            if (rel > -0.5 && rel < CFG.hop.slamReach && Math.abs(s.x - p.x) < 3.4) this.pull(s);
-          }
-        }
-        if (p.hopBuffer > 0) this.startHop();
-      }
+      if (vy0 > 0 && p.vy <= 0 && !this.slamming) this.events.push({ t: 'apex' });
+      if (p.y <= 0) this.landed(0, 0);
     }
     if (p.hopBuffer > 0) p.hopBuffer = Math.max(0, p.hopBuffer - dt);
   }
@@ -534,6 +692,7 @@ export class World {
   private updateEntities(dt: number): void {
     for (const e of this.entities) {
       e.prevWz = e.wz;
+      e.prevX = e.x;
       if (e.kind === 'roller' && e.meetWz !== undefined) e.wz = this.rollerWz(e.meetWz);
       else if (e.vz !== 0) e.wz += e.vz * dt;
       if (e.kind === 'roller') e.spin += dt * (this.speed + CFG.rollerSpeed) * 1.2;
@@ -623,7 +782,10 @@ export class World {
     if (k === 'rider') {
       this.player.invuln = 1.0;
       this.player.grounded = false;
+      this.player.onTop = 0;
       this.player.vy = 0;
+      // stepping off the board: a hop pressed in the next moment still fires
+      this.player.coyote = CFG.hop.coyote;
       this.slamming = false;
       // clear the track just ahead so the landing is safe
       for (const e of this.entities) {
@@ -678,23 +840,68 @@ export class World {
   }
 
   // ---------------------------------------------------------------- collisions
+  /**
+   * Update 8 collisions. Each obstacle has a hitbox fitted to its model (`Entity.hit`: a rounded
+   * box, a drum or a ball) tested against the crab's shell box. The test is swept: the step from the
+   * previous state to this one is sampled finely enough that no fast step can pass through, and the
+   * first touching sample decides what happened: came down from above → land on it; entered from
+   * the side, or a shallow corner graze while heading for another lane → bump; anything else → hit.
+   */
   private collide(): void {
     const p = this.player;
     const P = CFG.player;
+    const pw = P.w;
+    const pd = P.d;
     const rider = this.power.kind === 'rider';
+    if (p.onTop !== 0) this.keepOnTop();
     for (const e of this.entities) {
-      if (e.dead) continue;
-      if (e.kind === 'arch' || e.kind === 'banner' || e.kind === 'powerup') continue;
-      if (e.kind === 'dollar' || e.kind === 'hourglass' || e.kind === 'pad' || e.kind === 'tidepool' || e.kind === 'flag' || e.kind === 'ring') continue;
-      const rel = e.wz - this.dist;
-      const halfZ = (e.d + P.d) / 2;
-      if (Math.abs(rel) >= halfZ) continue;
+      if (e.dead || !e.hit || e.id === p.onTop) continue;
       if (e.kind === 'gull' && e.state < 2) continue;
-      if (p.y >= e.h) continue;
-      const halfX = (e.w + P.w) / 2;
+      const s = e.hit;
+      // broad phase: the step's start and end both off the same side means no contact
+      const rel = e.wz - this.dist;
+      const rel0 = e.prevWz - this.prevDist;
+      const halfZ = s.d / 2 + pd / 2;
+      if ((rel >= halfZ && rel0 >= halfZ) || (rel <= -halfZ && rel0 <= -halfZ)) continue;
       const dx = p.x - e.x;
-      if (Math.abs(dx) >= halfX) continue;
+      const dx0 = p.prevX - e.prevX;
+      const halfX = s.w / 2 + pw / 2;
+      if ((dx >= halfX && dx0 >= halfX) || (dx <= -halfX && dx0 <= -halfX)) continue;
+      if (p.y >= s.h && p.prevY >= s.h) continue;
       if (rider || p.invuln > 0 || this.opts.god) continue;
+
+      // narrow phase: the first touching sample along the step
+      const n = Math.min(8, Math.max(1, Math.ceil(Math.max(Math.abs(rel - rel0), Math.abs(dx - dx0), Math.abs(p.y - p.prevY)) / 0.08)));
+      let k = -1;
+      let top = -1;
+      for (let i = 0; i <= n; i++) {
+        const u = i / n;
+        const t = topOver(s, dx0 + (dx - dx0) * u, rel0 + (rel - rel0) * u, pw, pd);
+        if (t > 0 && p.prevY + (p.y - p.prevY) * u < t) {
+          k = i;
+          top = t;
+          break;
+        }
+      }
+      if (k < 0) continue;
+      const u = k / n;
+      const cx = dx0 + (dx - dx0) * u;
+      const cz = rel0 + (rel - rel0) * u;
+
+      // came down from above it (or clipped its lip from just below): land on top, no snag
+      if (k > 0 && (e.kind === 'low' || e.kind === 'scuttle')) {
+        const u0 = (k - 1) / n;
+        const t0 = topOver(s, dx0 + (dx - dx0) * u0, rel0 + (rel - rel0) * u0, pw, pd);
+        const y0 = p.prevY + (p.y - p.prevY) * u0;
+        if (y0 >= (t0 > 0 ? t0 : s.h) - CFG.obstacle.lip) {
+          const now = topOver(s, dx, rel, pw, pd);
+          const ty = now > 0 ? now : top;
+          if (p.vy <= 0) this.landed(ty, e.id);
+          else p.y = Math.max(p.y, ty);
+          continue;
+        }
+      }
+
       // Shell Dash smashes straight through
       if (this.dashT > 0) {
         e.dead = true;
@@ -703,17 +910,32 @@ export class World {
         continue;
       }
 
-      const prevRel = e.prevWz - this.prevDist;
-      const prevOx = Math.abs(p.prevX - e.x) < halfX;
-      const prevOz = Math.abs(prevRel) < halfZ;
-      const prevOy = p.prevY < e.h;
-      let lateral: boolean;
-      if (e.kind === 'sweep') lateral = false;
-      else if (!prevOx && prevOz && prevOy) lateral = true;
-      else if (!prevOx && !prevOz) lateral = halfX - Math.abs(dx) < halfZ - Math.abs(rel);
-      else lateral = false;
+      // side or front? the axis entered last is the face that was touched
+      const px = halfX - Math.abs(cx);
+      const pz = halfZ - Math.abs(cz);
+      let lateral = false;
+      if (e.kind !== 'sweep') {
+        if (k === 0) lateral = px < pz;
+        else {
+          const u0 = (k - 1) / n;
+          const sepX = Math.abs(dx0 + (dx - dx0) * u0) >= halfX;
+          const sepZ = Math.abs(rel0 + (rel - rel0) * u0) >= halfZ;
+          if (sepX && !sepZ) lateral = true;
+          else if (sepZ && !sepX) lateral = false;
+          else if (sepX && sepZ) lateral = px / Math.max(1e-6, Math.abs(dx - dx0)) < pz / Math.max(1e-6, Math.abs(rel - rel0));
+          else {
+            // a rounded corner: compare how far into each straight side the contact is
+            const r = s.shape === 'box' ? (s.r ?? 0) : 0;
+            lateral = Math.abs(cx) - (s.w / 2 - r) - pw / 2 > Math.abs(cz) - (s.d / 2 - r) - pd / 2;
+          }
+        }
+      }
+      // a graze: barely overlapping while the crab is already heading for another lane
+      const leaving = p.lane !== e.lane && e.kind !== 'sweep';
+      if (!lateral && leaving && px <= CFG.obstacle.graze) lateral = true;
 
       if (lateral) {
+        if (leaving) this.events.push({ t: 'graze', x: p.x, side: p.prevX - e.x >= 0 ? 1 : -1 });
         this.bump(e, halfX);
         continue;
       }
@@ -731,6 +953,29 @@ export class World {
       }
       this.crash(e.kind);
       return;
+    }
+  }
+
+  /** standing on an obstacle's top: follow its surface, and drop off (with coyote time) once it has passed */
+  private keepOnTop(): void {
+    const p = this.player;
+    let top = -1;
+    for (const e of this.entities) {
+      if (e.id !== p.onTop) continue;
+      if (!e.dead && e.hit) top = topOver(e.hit, p.x - e.x, e.wz - this.dist, CFG.player.w, CFG.player.d);
+      break;
+    }
+    if (top > 0 && p.grounded) {
+      p.y = top;
+      p.vy = 0;
+      return;
+    }
+    p.onTop = 0;
+    if (p.grounded && p.y > 0 && this.power.kind !== 'rider') {
+      p.grounded = false;
+      p.vy = 0;
+      p.airTime = 0;
+      p.coyote = CFG.hop.coyote;
     }
   }
 
@@ -843,6 +1088,9 @@ export class World {
     p.y = 0;
     p.vy = 0;
     p.grounded = true;
+    p.onTop = 0;
+    p.coyote = 0;
+    p.laneQueue = 0;
     p.invuln = CFG.revive.invuln;
     this.slamming = false;
     for (const e of this.entities) {

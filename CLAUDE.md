@@ -1,6 +1,6 @@
 # Crab Dash: working rules
 
-Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is in **`UPDATE4_PLAN.md`**; Update 5 ("Treasure Tide") is in **`UPDATE5_PLAN.md`**; Update 6 ("Menu Makeover", the concept-art menus) is in **`UPDATE6_PLAN.md`**; Update 7 ("Polish Pass") is in **`UPDATE7_PLAN.md`**. The game is called **Crab Rush** (saves keep their `crabdash.*` keys). Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
+Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). The v1 design is in **`PLAN.md`**; Update 2 ("Sunny Season") is in **`UPDATE2_PLAN.md`**; Update 3 ("Shell Shock") is in **`UPDATE3_PLAN.md`**; Update 4 ("Race Day") is in **`UPDATE4_PLAN.md`**; Update 5 ("Treasure Tide") is in **`UPDATE5_PLAN.md`**; Update 6 ("Menu Makeover", the concept-art menus) is in **`UPDATE6_PLAN.md`**; Update 7 ("Polish Pass") is in **`UPDATE7_PLAN.md`**; Update 8 ("Fine Sand") is in **`UPDATE8_PLAN.md`**. The game is called **Crab Rush** (saves keep their `crabdash.*` keys). Read them before doing any work. Concept art: `docs/concept/crab-dash-concept.webp`.
 
 ## Commands
 - `npm run dev`: dev server
@@ -47,6 +47,14 @@ Three-lane endless beach runner for the browser (Three.js + TypeScript + Vite). 
 - HUD: distance + best pill at the top centre (`.hud-mid`, `ui.setRunBest`), power-up badge bottom left with seconds; `ui.setRacing` hides it in Crab Cup.
 - Wardrobe: All / Owned / Locked filters, drag to rotate (`ShopHandlers.spin`, `Game.shopHold`), Reset View, Saved Outfits, Randomize Owned. Daily Tide and Treasure Dig follow the concept layouts.
 - Save format is v5 (`src/core/save.ts`); any new field needs a default, sanitising, and a migration test.
+
+## Where things live (Update 8)
+- Hitboxes: `CFG.obstacle.shapes` holds per-skin/variant hit shapes (box with rounded corners, drum, ball) fitted to `obstacleModel()` in `src/render/models/obstacles.ts`; `CFG.obstacle.{block,low,...}` stay the solver boxes. `World.collide` is swept (sub-stepped) and classifies land-on-top / graze-bump / crash. `tests/hitbox.test.ts` checks every hit shape against its mesh (`HITBOX=1` prints the table); a re-sculpt that changes a model's bounds must keep it passing. Hitbox variant = `entity.id % 2`, same as `entities.ts`.
+- Hop arc is solved from `CFG.hop` (`fallMul`, `hang*`) to keep 0.55 s airtime; jump buffer, coyote time, lane queue (`CFG.lane`). New sim events: `turn`, `apex`, `graze`; `land` carries `vy`/`onTop`.
+- Obstacles have `lo` / `hi` / `rich` (High, near) geometry; zone 1/2 blocks and lows are `crateBlock`, `rockBlock`, `lowBarrier`.
+- Audio is a lookahead sequencer over synthesised instrument banks (32-bar forms per track), a beach ambience bed (`setAmbience`), and layered SFX (`play(name, {intensity, kind, pan, streak})`).
+- Map detail and run FX knobs: `CFG.scenery`, `CFG.fx`.
+- Smoke runs under SwiftShader: first-open thumbnail renders can stall a frame for tens of seconds, so the script waits for them and uses long timeouts. Run smoke alone and kill stray `vite` servers first.
 
 ## Rules
 - `src/sim/` never imports `three`. Rendering reads sim state; the sim emits events.

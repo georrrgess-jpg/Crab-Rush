@@ -157,6 +157,29 @@ const arc = (t: number): number => (t <= 0 || t >= 1 ? 0 : Math.sin(t * Math.PI)
 /** vertical speed range (m/s) the air pose blends over: twice the hop's take-off speed (4·apex/airtime), so 0.5 - vy/AIR_V runs 0 → 1 from take-off to touchdown */
 const AIR_V = (8 * CFG.hop.apex) / CFG.hop.airtime;
 
+// ---- gait (Update 8) ---------------------------------------------------------------------------
+// An alternating tetrapod: legs move in three contralateral pairs (L3+R1, L2+R3, L1+R2) a third of a
+// cycle apart, each foot on the ground for GAIT_DUTY of the cycle. In stance the hip sweeps the foot
+// backwards in a straight line, so the cadence follows ground speed: stance travel (2·LEG_R·sin A)
+// over stance time (GAIT_DUTY / f) matches the speed until the cadence cap, past which a faster
+// stride would only strobe at 60 fps.
+const GAIT_DUTY = 0.6;
+/** horizontal reach of a foot tip from its hip pivot (m), see buildCrab */
+const LEG_R = 0.64;
+/** foot-tip offset in the foot bone's frame (x mirrored per side, z scaled by the leg's LEG_Z) */
+const TIP_DY = -0.23;
+/** foot tips rest this high in root space (the tip tube's radius) */
+const TIP_Y = 0.012;
+/** stride amplitude (rad of hip swing) at the start / top speed */
+const GAIT_A0 = 0.46;
+const GAIT_A1 = 0.56;
+/** cadence cap (Hz) = GAIT_CAP0 + GAIT_CAP1 · speed */
+const GAIT_CAP0 = 2.1;
+const GAIT_CAP1 = 0.1;
+/** leg phase offsets (fraction of a cycle) for legs 0..5 (left front, mid, rear, right front, mid, rear) */
+const GAIT_OFF = [2 / 3, 1 / 3, 0, 0, 2 / 3, 1 / 3];
+const frac = (x: number): number => x - Math.floor(x);
+
 /** Hash noise for paint jobs. */
 const hash3 = (x: number, y: number, z: number): number => {
   const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
@@ -201,6 +224,37 @@ export class CrabModel {
   private readonly hatZ = new Spring(0, { freq: 11, damping: 0.25 });
   private readonly antX = [new Spring(0, { freq: 14, damping: 0.18 }), new Spring(0, { freq: 14, damping: 0.18 })];
   private readonly antZ = [new Spring(0, { freq: 14, damping: 0.18 }), new Spring(0, { freq: 14, damping: 0.18 })];
+  // Update 8: eye stalks (pitch, roll) and claws (raise, swing) lag behind the body and follow through
+  private readonly eyeP = [new Spring(0, { freq: 15, damping: 0.3 }), new Spring(0, { freq: 16.5, damping: 0.3 })];
+  private readonly eyeR = [new Spring(0, { freq: 15, damping: 0.3 }), new Spring(0, { freq: 16.5, damping: 0.3 })];
+  private readonly clawLagR = [new Spring(0, { freq: 13, damping: 0.35 }), new Spring(0, { freq: 12, damping: 0.35 })];
+  private readonly clawLagS = [new Spring(0, { freq: 13, damping: 0.35 }), new Spring(0, { freq: 12, damping: 0.35 })];
+  /** drive and body values last frame, for the accelerations that kick the springs */
+  private prevVx = 0;
+  private prevVy = 0;
+  private prevSpeed = 0;
+  private prevBodyVy = 0;
+  private prevRz = 0;
+  private prevRzV = 0;
+  private prevRx = 0;
+  private prevRxV = 0;
+  /** false for the frame after a reset: the pose may have jumped, so it only records */
+  private kickArmed = false;
+  /** seconds since the hop event (take-off squash), and since a lane reversal (skid) */
+  private hopT = 9;
+  private reverseT = 9;
+  /** gait: stride amplitude this frame, and how much of each leg's hip raise is a step lift (not planted) */
+  private gaitA = GAIT_A0;
+  private gaitIn = 0;
+  private readonly liftRaise = new Float32Array(6);
+  /** lane-change overlay this frame, and what an interrupted one still holds as it fades */
+  private readonly laneOff: Pose = new Float32Array(P_N);
+  private readonly laneLift = new Float32Array(6);
+  private readonly laneCarry: Pose = new Float32Array(P_N);
+  private readonly laneCarryLift = new Float32Array(6);
+  private carryT = 9;
+  /** foot planting weight (0..1): run state on the ground */
+  private plantK = 0;
   private laneT = 9;
   private laneDir = 0;
   private laneSettled = true;
@@ -425,27 +479,47 @@ export class CrabModel {
 
   // ---- triggers (from sim events) ----
   hop(): void {
-    // a quick crouch-and-spring (impulses, not snaps, so feet never teleport)
-    this.squash.velocity = Math.min(this.squash.velocity, 0) - 9;
+    // a quick crouch-and-spring (impulses, not snaps, so feet never teleport); the air pose takes the
+    // squash from here through the stretch, the tuck and the reach (see poseAir)
+    this.hopT = 0;
+    this.squash.velocity = Math.min(this.squash.velocity, 0) - 8;
     this.hatX.impulse(-2.5);
     for (const s of this.antX) s.impulse(-6);
   }
   land(hard: boolean): void {
     this.landT = 0;
     this.landHard = hard;
-    this.squash.velocity = hard ? -16 : -6;
+    // the squash spring is underdamped: the landing squash rebounds into a little bounce; a soft
+    // landing squashes as hard as the fall was fast (prevVy: the drive's vy before touchdown)
+    const fall = clamp(-this.prevVy / (AIR_V * 0.5), 0, 1.2);
+    this.squash.velocity = Math.min(0, this.squash.velocity) * 0.5 + (hard ? -16 : -2 - 4 * fall);
     this.hatX.impulse(hard ? 5 : 3);
     for (const s of this.antX) s.impulse(hard ? 9 : 5);
     if (this.state === 'slam') this.setState('run');
   }
   lane(dir: number): void {
+    // reversing mid-glide: a quick counter-lean and a skid on the legs that were leading
+    const reverse = this.laneT < 0.24 && dir !== 0 && dir === -this.laneDir;
+    if (reverse) {
+      this.reverseT = 0;
+      this.lean.velocity += dir * 5;
+      this.squash.velocity -= 3;
+      this.hatZ.impulse(dir * 5);
+      for (const s of this.antZ) s.impulse(dir * 9);
+    } else {
+      // Update 8: lean into the turn at once (the drive's lateral speed then carries the lean)
+      this.lean.velocity += dir * 3;
+      this.hatZ.impulse(dir * 3);
+      for (const s of this.antZ) s.impulse(dir * 7);
+    }
+    // whatever the last lane change still holds fades out from here
+    const cf = this.carryT < 0.14 ? 1 - smooth01(this.carryT / 0.14) : 0;
+    for (let i = 0; i < P_N; i++) this.laneCarry[i] = (this.laneOff[i] as number) + (this.laneCarry[i] as number) * cf;
+    for (let l = 0; l < 6; l++) this.laneCarryLift[l] = (this.laneLift[l] as number) + (this.laneCarryLift[l] as number) * cf;
+    this.carryT = 0;
     this.laneT = 0;
     this.laneSettled = false;
     this.laneDir = dir;
-    // anticipation: lean away first, the spring then swings into the move
-    this.lean.velocity -= dir * 4.5;
-    this.hatZ.impulse(dir * 3);
-    for (const s of this.antZ) s.impulse(dir * 7);
   }
   slam(): void {
     this.setState('slam', 0.06);
@@ -514,6 +588,26 @@ export class CrabModel {
     this.lean.snap(0);
     this.bumpT = 9;
     this.landT = 9;
+    this.hopT = 9;
+    this.reverseT = 9;
+    this.plantK = 0;
+    this.laneT = 9;
+    this.carryT = 9;
+    this.laneOff.fill(0);
+    this.laneLift.fill(0);
+    for (let s = 0; s < 2; s++) {
+      (this.eyeP[s] as Spring).snap(0);
+      (this.eyeR[s] as Spring).snap(0);
+      (this.clawLagR[s] as Spring).snap(0);
+      (this.clawLagS[s] as Spring).snap(0);
+    }
+    this.prevVx = 0;
+    this.prevVy = 0;
+    this.prevSpeed = 0;
+    this.prevBodyVy = 0;
+    this.prevRzV = 0;
+    this.prevRxV = 0;
+    this.kickArmed = false;
   }
   get currentState(): CrabState {
     return this.state;
@@ -538,6 +632,8 @@ export class CrabModel {
     this.laneT += dt;
     this.landT += dt;
     this.bumpT += dt;
+    this.hopT += dt;
+    this.reverseT += dt;
 
     // state selection from the drive (event-driven states end on their own)
     if (d.crashT >= 0) {
@@ -572,12 +668,20 @@ export class CrabModel {
     }
     this.wasGrounded = d.grounded;
 
-    // gait phase: faster with speed, doubled briefly during a lane change
+    // gait phase (radians): the cadence follows ground speed (see GAIT_DUTY), a little quicker
+    // through a lane change while the legs scramble sideways
+    const v = d.running ? Math.max(0, d.speed) : 0;
+    const vk = clamp((v - 11) / 17, 0, 1);
+    // the stride opens up over the first steps of a run (a standing start, not a snap to full stride)
+    this.gaitIn = d.running ? Math.min(1, this.gaitIn + dt / 0.3) : 0;
+    this.gaitA = (GAIT_A0 + (GAIT_A1 - GAIT_A0) * vk) * (0.55 + 0.45 * smooth01(this.gaitIn));
+    const stride = 2 * LEG_R * Math.sin(this.gaitA);
+    const hz = Math.min((GAIT_DUTY * v) / stride, GAIT_CAP0 + GAIT_CAP1 * v);
     const laneBoost = this.laneT < 0.25 ? 1 - this.laneT / 0.25 : 0;
-    const rate = d.running ? (6 + d.speed * 1.05) * (1 + laneBoost) : 3.2;
+    const rate = d.running ? Math.PI * 2 * hz * (1 + 0.15 * laneBoost) : 3.2;
     this.phase += dt * rate;
-    // the claws keep the plain gait rhythm through a lane change (a doubled sway reads as jitter)
-    this.armPhase += dt * (d.running ? 6 + d.speed * 1.05 : 3.2);
+    // the claws sway at half the step rate (a sway at the full cadence reads as jitter)
+    this.armPhase += dt * (d.running ? Math.PI * hz : 3.2);
 
     // pose for the current state, cross-faded from the previous one
     this.mouth = 0;
@@ -595,6 +699,7 @@ export class CrabModel {
   /** Fill `p` with the pose of state `s`. */
   private poseFor(s: CrabState, p: Pose, d: CrabDrive): void {
     p.fill(0);
+    this.liftRaise.fill(0);
     const t = this.stateT;
     const ph = this.phase;
     // neutral stance shared by most states
@@ -630,27 +735,43 @@ export class CrabModel {
         break;
       }
       case 'run': {
-        // tripod gait: legs alternate in two triangles
+        // Update 8: an alternating tetrapod (GAIT_OFF). In stance the foot sweeps straight back
+        // (asin keeps the foot's travel linear in time, so it moves with the sand); in swing it lifts
+        // (sin^1.5: no snap off or onto the ground) and swings forward, the foot flicking a beat
+        // after the knee. The lift is kept apart (liftRaise) so foot planting leaves it alone.
+        const A = this.gaitA;
+        const sinA = Math.sin(A);
+        const cyc = ph / (Math.PI * 2);
         for (let l = 0; l < 6; l++) {
-          const side = l < 3 ? 0 : 1;
-          const g = ((l % 3) % 2) ^ side;
-          const lp = ph + g * Math.PI;
-          // Update 7: the lift eases off the ground (c^1.5: zero slope at touchdown, never faster than
-          // the old ramp) instead of snapping, and the foot flicks a beat after the knee for a rolling step
-          const c = Math.cos(lp);
-          const lift = c > 0 ? c * Math.sqrt(c) : 0;
-          const flick = Math.max(0, Math.cos(lp - 0.5));
-          // a faster, wider stride with speed keeps the feet closer to the ground speed
-          p[P_LEG + l * 4] = Math.sin(lp) * 0.5;
-          p[P_LEG + l * 4 + 1] = 0.1 + lift * 0.46;
-          p[P_LEG + l * 4 + 2] = -lift * 0.5;
-          p[P_LEG + l * 4 + 3] = flick * flick * 0.3;
+          const c = frac(cyc + (GAIT_OFF[l] as number));
+          let swing: number;
+          let lift = 0;
+          let flick = 0;
+          if (c < GAIT_DUTY) {
+            const q = 1 - (2 * c) / GAIT_DUTY;
+            swing = -Math.asin(q * sinA);
+          } else {
+            const s2 = (c - GAIT_DUTY) / (1 - GAIT_DUTY);
+            // a near-even swing forward (eased only a little): the return is twice the stance speed
+            swing = A * (1 - 2 * (0.8 * s2 + 0.2 * smooth01(s2)));
+            const sn = Math.sin(Math.PI * s2);
+            lift = sn * Math.sqrt(sn);
+            const fl = Math.max(0, Math.sin(Math.PI * clamp((s2 - 0.15) / 0.85, 0, 1)));
+            flick = fl * fl;
+          }
+          p[P_LEG + l * 4] = swing;
+          p[P_LEG + l * 4 + 1] = 0.06 + lift * 0.28;
+          p[P_LEG + l * 4 + 2] = 0.05 - lift * 0.36;
+          p[P_LEG + l * 4 + 3] = flick * 0.3;
+          this.liftRaise[l] = lift * 0.28;
         }
-        // a rounded bob (sin²: no kink at each footfall) with the roll trailing it slightly
-        const bob = Math.sin(ph);
-        p[P_BODY_Y] = bob * bob * 0.05;
-        p[P_BODY_RZ] = Math.sin(ph - 0.35) * 0.045;
-        p[P_BODY_RX] = 0.06 + Math.sin(ph * 2) * 0.012;
+        // a small bob as each pair lifts (three a cycle), a slower waddle and yaw once a cycle; the
+        // planted feet stay put (plantFeet), so only the shell rides it
+        const bob = 0.5 - 0.5 * Math.cos(ph * 3);
+        p[P_BODY_Y] = bob * 0.016;
+        p[P_BODY_RZ] = Math.sin(ph - 0.4) * 0.035;
+        p[P_BODY_RY] = Math.sin(ph) * 0.03;
+        p[P_BODY_RX] = 0.06 + Math.sin(ph * 3 - 0.6) * 0.01;
         const ap = this.armPhase;
         for (let s2 = 0; s2 < 2; s2++) {
           const sg = s2 === 0 ? 1 : -1;
@@ -663,28 +784,9 @@ export class CrabModel {
         break;
       }
       case 'hopRise':
-      case 'hopFall': {
-        // Update 7: one continuous air pose driven by vertical speed, so the tuck at take-off flows
-        // through the apex into the reach for the ground instead of switching between two holds
-        const u = smooth01(0.5 - d.vy / AIR_V);
-        const rise = 1 - u;
-        for (let l = 0; l < 6; l++) {
-          p[P_LEG + l * 4] = (l % 3 === 0 ? 0.2 : l % 3 === 2 ? -0.2 : 0) * (l < 3 ? 1 : -1) * rise;
-          p[P_LEG + l * 4 + 1] = 0.75 * rise - 0.12 * u;
-          p[P_LEG + l * 4 + 2] = -0.95 * rise + 0.35 * u;
-          p[P_LEG + l * 4 + 3] = 0.6 * rise - 0.1 * u;
-        }
-        for (let s2 = 0; s2 < 2; s2++) {
-          p[P_CLAW + s2 * 4] = 0.95 * rise + 0.5 * u;
-          p[P_CLAW + s2 * 4 + 1] = (s2 === 0 ? -1 : 1) * 0.25 * u;
-          p[P_CLAW + s2 * 4 + 2] = 0.55 * rise;
-          p[P_CLAW + s2 * 4 + 3] = 0.6 * rise + 0.35 * u;
-        }
-        p[P_LOOK_Y] = 0.3 * rise - 0.45 * u;
-        p[P_BODY_RX] = -0.12 * rise + 0.12 * u;
-        this.mouth = 1;
+      case 'hopFall':
+        this.poseAir(p, d);
         break;
-      }
       case 'slam': {
         // half spin into a dive
         const k = smooth01(t / 0.22);
@@ -747,6 +849,46 @@ export class CrabModel {
     }
     void d;
   }
+
+  /**
+   * Update 8: the air pose, one continuous pass driven by vertical speed (u: 0 at take-off, 0.5 at
+   * the apex, 1 at touchdown speed) through three keys: push-off and stretch (legs extended down and
+   * back, nose up), the tuck at the apex (legs drawn in, claws up) and the reach for the ground (legs
+   * extended a little forward, claws out for balance, eyes on the sand).
+   */
+  private poseAir(p: Pose, d: CrabDrive): void {
+    const u = clamp(0.5 - d.vy / AIR_V, 0, 1);
+    this.airA1 = smooth01((u - 0.06) / 0.36);
+    this.airA2 = smooth01((u - 0.6) / 0.3);
+    const key = this.airKey;
+    for (let l = 0; l < 6; l++) {
+      const k = l % 3;
+      const i = P_LEG + l * 4;
+      p[i] = key(0.22, k === 0 ? 0.25 : k === 2 ? -0.25 : 0, k === 0 ? -0.22 : k === 2 ? 0.12 : -0.05);
+      p[i + 1] = key(-0.04, 0.85, 0.02);
+      p[i + 2] = key(0.25, -1.0, 0.18);
+      p[i + 3] = key(0.4, 0.55, -0.05);
+    }
+    for (let s2 = 0; s2 < 2; s2++) {
+      const out = s2 === 0 ? -1 : 1;
+      const i = P_CLAW + s2 * 4;
+      p[i] = key(0.05, 1.0, 0.42);
+      p[i + 1] = out * key(0, 0.12, 0.4);
+      p[i + 2] = key(0.05, 0.55, 0.15);
+      p[i + 3] = key(0.15, 0.55, 0.35);
+    }
+    p[P_BODY_RX] = key(-0.12, -0.04, 0.12);
+    p[P_LOOK_Y] = key(0.25, 0.12, -0.45);
+    this.mouth = 1;
+  }
+
+  private airA1 = 0;
+  private airA2 = 0;
+  /** blend the three air keys at this frame's weights (a bound method: no closure per frame) */
+  private readonly airKey = (k0: number, k1: number, k2: number): number => {
+    const m = k0 + (k1 - k0) * this.airA1;
+    return m + (k2 - m) * this.airA2;
+  };
 
   /** Victory dances (Wardrobe, UPDATE2_PLAN.md §6.3); each lasts about 2.4 s. */
   private poseDance(p: Pose, t: number): void {
@@ -978,44 +1120,80 @@ export class CrabModel {
     const lean = this.lean.update(dt);
     o[P_BODY_RZ] = (o[P_BODY_RZ] as number) - lean * 0.38;
     o[P_BODY_RY] = (o[P_BODY_RY] as number) + lean * 0.2;
+    // lane change, written as offsets (laneOff, laneLift) so a new lane change mid-move can fade the
+    // old one out (laneCarry) instead of cutting it
+    const lo = this.laneOff;
+    const ll = this.laneLift;
+    lo.fill(0);
+    ll.fill(0);
     if (this.laneT < 0.32) {
-      // lane change: the lead claw reaches into the move, the other tucks, the body lifts a little
-      const k = Math.min(1, this.laneT / 0.05) * (1 - smooth01((this.laneT - 0.12) / 0.2));
+      // lane change: the lead claw reaches into the move, the other tucks, the eyes lead
+      const k = smooth01(this.laneT / 0.1) * (1 - smooth01((this.laneT - 0.13) / 0.2));
       const lead = this.laneDir < 0 ? 0 : 1;
       const trail = 1 - lead;
-      o[P_CLAW + lead * 4] = (o[P_CLAW + lead * 4] as number) + 0.55 * k;
-      o[P_CLAW + lead * 4 + 1] = (o[P_CLAW + lead * 4 + 1] as number) + (lead === 0 ? -1 : 1) * 0.45 * k;
-      o[P_CLAW + lead * 4 + 3] = (o[P_CLAW + lead * 4 + 3] as number) + 0.4 * k;
-      o[P_CLAW + trail * 4] = (o[P_CLAW + trail * 4] as number) - 0.15 * k;
-      o[P_BODY_Y] = (o[P_BODY_Y] as number) + 0.05 * k;
-      o[P_BODY_RX] = (o[P_BODY_RX] as number) - 0.08 * k;
-      o[P_LOOK_X] = (o[P_LOOK_X] as number) + this.laneDir * 0.5 * k;
-    }
-    if (!this.laneSettled && this.laneT > 0.2) {
-      // arrival: a little squash and the hat sways on
-      this.laneSettled = true;
-      this.squash.velocity -= 4;
-      this.hatZ.impulse(-this.laneDir * 2);
-    }
-    if (this.laneT < 0.25) {
-      // legs on the leading side splay out during the scuttle
-      const k = Math.min(1, this.laneT / 0.04) * (1 - this.laneT / 0.25);
+      lo[P_CLAW + lead * 4] = 0.55 * k;
+      lo[P_CLAW + lead * 4 + 1] = (lead === 0 ? -1 : 1) * 0.45 * k;
+      lo[P_CLAW + lead * 4 + 3] = 0.4 * k;
+      lo[P_CLAW + trail * 4] = -0.15 * k;
+      lo[P_BODY_Y] = 0.04 * k;
+      lo[P_BODY_RX] = -0.08 * k;
+      lo[P_LOOK_X] = this.laneDir * 0.5 * k;
+      // Update 8 legs: the leading legs lift and reach into the move, then plant; the trailing legs
+      // stay planted and straighten (the push-off), flick their toes, then lift and gather in
+      const t = this.laneT;
+      const reach = smooth01(t / 0.05) * (1 - smooth01((t - 0.1) / 0.09));
+      const push = smooth01(t / 0.06) * (1 - smooth01((t - 0.09) / 0.07));
+      const gather = arc((t - 0.12) / 0.18);
       for (let l = 0; l < 6; l++) {
-        const leading = (l < 3 ? -1 : 1) === this.laneDir;
-        o[P_LEG + l * 4 + 1] = (o[P_LEG + l * 4 + 1] as number) + (leading ? 0.25 : -0.1) * k;
+        const i = P_LEG + l * 4;
+        if ((l < 3 ? -1 : 1) === this.laneDir) {
+          lo[i] = (l % 3 === 0 ? -0.15 : l % 3 === 2 ? 0.15 : 0) * reach;
+          lo[i + 1] = 0.34 * reach;
+          lo[i + 2] = -0.2 * reach;
+          ll[l] = 0.34 * reach;
+        } else {
+          lo[i + 2] = 0.35 * push - 0.3 * gather;
+          lo[i + 3] = 0.45 * push;
+          lo[i + 1] = 0.28 * gather;
+          ll[l] = 0.28 * gather;
+        }
       }
     }
-    // landing: leg splay
+    this.carryT += dt;
+    const cf = this.carryT < 0.14 ? 1 - smooth01(this.carryT / 0.14) : 0;
+    for (let i = 0; i < P_N; i++) o[i] = (o[i] as number) + (lo[i] as number) + (this.laneCarry[i] as number) * cf;
+    for (let l = 0; l < 6; l++) this.liftRaise[l] = (this.liftRaise[l] as number) + (ll[l] as number) + (this.laneCarryLift[l] as number) * cf;
+    if (!this.laneSettled && this.laneT > 0.18) {
+      // arrival: a little squash as the leading legs take the weight, and the hat sways on
+      this.laneSettled = true;
+      this.squash.velocity -= 3.5;
+      this.hatZ.impulse(-this.laneDir * 2);
+    }
+    if (this.reverseT < 0.24) {
+      // reversal: the legs that were leading (now trailing) brace and dig in, the shell yaws into the
+      // new direction and dips (the lean spring does the counter-lean)
+      const k = smooth01(this.reverseT / 0.07) * (1 - smooth01((this.reverseT - 0.08) / 0.16));
+      for (let l = 0; l < 6; l++) {
+        if ((l < 3 ? -1 : 1) !== -this.laneDir) continue;
+        const i = P_LEG + l * 4;
+        o[i + 2] = (o[i + 2] as number) + 0.25 * k;
+        o[i + 3] = (o[i + 3] as number) - 0.35 * k;
+      }
+      o[P_BODY_RY] = (o[P_BODY_RY] as number) + this.laneDir * 0.16 * k;
+      o[P_BODY_Y] = (o[P_BODY_Y] as number) - 0.03 * k;
+      if (k > 0.3) this.mouth = 2;
+    }
+    // landing: the shell gives at the knees (the feet stay planted, see plantFeet)
     if (this.landT < (this.landHard ? 0.4 : 0.3)) {
       // Update 7: eased in and out (no linear ramp), and even a soft landing gives with the knees:
       // the body dips a little and rises with the legs
       const dur = this.landHard ? 0.4 : 0.3;
       const k = smooth01(this.landT / 0.06) * (1 - smooth01(this.landT / dur)) * (this.landHard ? 1.4 : 1);
       for (let l = 0; l < 6; l++) {
-        o[P_LEG + l * 4 + 1] = (o[P_LEG + l * 4 + 1] as number) - 0.35 * k;
+        o[P_LEG + l * 4 + 1] = (o[P_LEG + l * 4 + 1] as number) - 0.35 * k * (1 - this.plantK);
         o[P_LEG + l * 4 + 2] = (o[P_LEG + l * 4 + 2] as number) + 0.3 * k;
       }
-      if (!this.landHard) o[P_BODY_Y] = (o[P_BODY_Y] as number) - 0.04 * k;
+      if (!this.landHard) o[P_BODY_Y] = (o[P_BODY_Y] as number) - 0.05 * k;
       this.mouth = this.landHard ? 2 : this.mouth;
       // Sand Slam: a superhero landing, body punched low and claws flung wide
       if (this.landHard) {
@@ -1076,9 +1254,22 @@ export class CrabModel {
       }
     }
     if (d.shield && this.state === 'run') o[P_BODY_Y] = (o[P_BODY_Y] as number) + Math.sin(this.time * 5) * 0.03;
-    // squash spring: stretch while rising, a slight squash as it falls
-    this.squash.target = this.airborne && this.state !== 'slam' ? 1 + clamp(d.vy * 0.016, -0.06, 0.1) : 1;
+    // squash spring (Update 8): a squash on the take-off, a stretch on the rise, a slight
+    // compression in the apex tuck and a lengthening reach on the fall; landing kicks it (land())
+    if (this.airborne && this.state !== 'slam') {
+      const u = clamp(0.5 - d.vy / AIR_V, 0, 1);
+      const takeoff = this.hopT < 0.05 ? 1 - this.hopT / 0.05 : 0;
+      this.squash.target = 1 - 0.14 * takeoff + 0.15 * (1 - smooth01(u / 0.42)) * (1 - takeoff) - 0.035 * arc((u - 0.3) / 0.4) + 0.04 * smooth01((u - 0.65) / 0.3);
+    } else this.squash.target = 1;
     this.squash.update(dt);
+    // foot planting follows the gait on the ground, and lets go in the air
+    const plantTo = this.state === 'run' && d.grounded && d.running ? 1 : 0;
+    this.plantK += (plantTo - this.plantK) * (1 - Math.exp(-dt * (plantTo > this.plantK ? 12 : 40)));
+    // lift amounts only count as far as the run pose has faded in
+    if (this.state === 'run') {
+      const w = this.blendDur > 0 ? smooth01(this.blendT / this.blendDur) : 1;
+      if (w < 1) for (let l = 0; l < 6; l++) this.liftRaise[l] = (this.liftRaise[l] as number) * w;
+    }
     // secondary motion: hat and antennae react to body acceleration
     const by = o[P_BODY_Y] as number;
     const vy = (by - this.prevBodyY) / Math.max(dt, 1e-4);
@@ -1100,6 +1291,109 @@ export class CrabModel {
       ax.update(dt);
       az.update(dt);
     }
+    this.followThrough(dt, d, vy);
+  }
+
+  /**
+   * Update 8: eye stalks and claws spring-lag behind the body. They are kicked by changes in the
+   * drive (take-off and touchdown in vy, lane glides in vx, stops in speed) and by the shell's own
+   * bob, roll and pitch, so they follow through on hops, lane changes and stops with no wiring.
+   */
+  private followThrough(dt: number, d: CrabDrive, bodyVy: number): void {
+    const o = this.out;
+    const inv = 1 / Math.max(dt, 1e-4);
+    const sp = d.running ? d.speed : 0;
+    const dvx = clamp(d.vx - this.prevVx, -30, 30);
+    const dvy = clamp(d.vy - this.prevVy, -25, 25);
+    const dsp = clamp(sp - this.prevSpeed, -30, 30);
+    this.prevVx = d.vx;
+    this.prevVy = d.vy;
+    this.prevSpeed = sp;
+    // the shell's angular speeds; their changes swing the stalks the other way
+    const rz = o[P_BODY_RZ] as number;
+    const rx = o[P_BODY_RX] as number;
+    const rzV = (rz - this.prevRz) * inv;
+    const rxV = (rx - this.prevRx) * inv;
+    const dRzV = clamp(rzV - this.prevRzV, -20, 20);
+    const dRxV = clamp(rxV - this.prevRxV, -20, 20);
+    const dBy = clamp(bodyVy - this.prevBodyVy, -8, 8);
+    this.prevRz = rz;
+    this.prevRx = rx;
+    this.prevRzV = rzV;
+    this.prevRxV = rxV;
+    this.prevBodyVy = bodyVy;
+    const crashed = this.state === 'crash';
+    const kick = this.kickArmed ? 1 : 0;
+    this.kickArmed = true;
+    for (let s = 0; s < 2; s++) {
+      const ep = this.eyeP[s] as Spring;
+      const er = this.eyeR[s] as Spring;
+      // pushed up (take-off, touchdown, the bob) the stalks nod; a stop throws them forward; a
+      // glide sideways leaves them behind; a rolling shell whips them
+      ep.impulse((0.22 * dvy + 0.9 * dBy - 0.18 * dsp - 0.5 * dRxV) * kick);
+      er.impulse((0.16 * dvx - 0.55 * dRzV) * kick);
+      ep.update(dt);
+      er.update(dt);
+      if (crashed) {
+        ep.snap(0);
+        er.snap(0);
+      }
+      ep.value = clamp(ep.value, -0.3, 0.45);
+      er.value = clamp(er.value, -0.35, 0.35);
+      // claws: heavy pincers sag on a push up and swing out behind a glide
+      const cr = this.clawLagR[s] as Spring;
+      const cs = this.clawLagS[s] as Spring;
+      cr.impulse((-0.22 * dvy - 2.4 * dBy) * kick);
+      cs.impulse((-0.08 * dvx - 0.5 * dRzV) * kick);
+      cr.update(dt);
+      cs.update(dt);
+      cr.value = clamp(cr.value, -0.35, 0.35);
+      cs.value = clamp(cs.value, -0.3, 0.3);
+      if (d.running && !crashed) {
+        o[P_CLAW + s * 4] = (o[P_CLAW + s * 4] as number) + cr.value;
+        o[P_CLAW + s * 4 + 1] = (o[P_CLAW + s * 4 + 1] as number) + cs.value;
+      }
+    }
+  }
+
+  /**
+   * Update 8 foot planting: on the ground, each leg's hip raise is corrected so its foot tip (less
+   * any step lift) sits on the sand whatever the shell does above it: the bob, the lean into a lane
+   * change (the trailing legs extend to push off), the landing dip. One secant step on the raise.
+   */
+  private plantFeet(): void {
+    const o = this.out;
+    const body = this.bones[B_BODY] as THREE.Bone;
+    body.updateMatrix();
+    for (let l = 0; l < 6; l++) {
+      const sg = l < 3 ? -1 : 1;
+      const z = LEG_Z[l % 3] as number;
+      const hip = this.bones[B_HIP(l)] as THREE.Bone;
+      const knee = this.bones[B_KNEE(l)] as THREE.Bone;
+      const foot = this.bones[B_FOOT(l)] as THREE.Bone;
+      knee.updateMatrix();
+      foot.updateMatrix();
+      // the tip in the hip's frame (independent of the hip's rotation)
+      _pv.set(sg * 0.05, TIP_DY, z * 0.1).applyMatrix4(foot.matrix).applyMatrix4(knee.matrix);
+      _ph.copy(_pv);
+      const swing = (o[P_LEG + l * 4] as number) * sg;
+      const raise = o[P_LEG + l * 4 + 1] as number;
+      const base = raise - (this.liftRaise[l] as number);
+      const y0 = this.tipY(hip, swing, sg, base);
+      const y1 = this.tipY(hip, swing, sg, base + 0.08);
+      const slope = (y1 - y0) / 0.08;
+      let c = 0;
+      if (slope > 0.05) c = clamp((TIP_Y - y0) / slope, -0.75, 0.9);
+      hip.rotation.set(0, swing, sg * (raise + c * this.plantK) * 0.9);
+    }
+  }
+
+  /** root-space height of a foot tip (in _ph, hip frame) with the hip at raise r */
+  private tipY(hip: THREE.Bone, swing: number, sg: number, r: number): number {
+    hip.rotation.set(0, swing, sg * r * 0.9);
+    hip.updateMatrix();
+    _pv.copy(_ph).applyMatrix4(hip.matrix).applyMatrix4((this.bones[B_BODY] as THREE.Bone).matrix);
+    return _pv.y;
   }
 
   /** write the final pose into the bones */
@@ -1278,7 +1572,9 @@ export class CrabModel {
     for (let s = 0; s < 2; s++) {
       const e = bone(B_EYE[s] as number);
       // looking up tips the eyeballs back toward the hat brim: allow only a little of it
-      e.rotation.set(-clamp(o[P_LOOK_Y] as number, -1, 0.3) * 0.45, (o[P_LOOK_X] as number) * 0.55, 0);
+      // Update 8: plus the stalk's follow-through (never tipped further back than the look allows)
+      const pitch = -clamp(o[P_LOOK_Y] as number, -1, 0.3) * 0.45 + (this.eyeP[s] as Spring).value;
+      e.rotation.set(Math.max(-0.135, pitch), (o[P_LOOK_X] as number) * 0.55, (this.eyeR[s] as Spring).value);
       const lid = bone(B_LID[s] as number);
       lid.rotation.x = clamp(o[P_LID] as number, 0, 1) * 2.2;
       const a = bone(B_ANT[s] as number);
@@ -1319,6 +1615,7 @@ export class CrabModel {
       bone(B_KNEE(l)).rotation.set(0, 0, sg * knee);
       bone(B_FOOT(l)).rotation.set(0, 0, sg * foot);
     }
+    if (this.plantK > 1e-3) this.plantFeet();
     if (this.spinner.visible) this.spinner.rotation.y += dt * (d.running ? 10 + d.speed * 0.6 : 5);
 
     // flying hat after a crash
@@ -1342,6 +1639,8 @@ export class CrabModel {
 /** eyeball and stalk spheres in the eye bone's frame (x mirrored per side), see buildCrab */
 const EYE_SPHERES: [number, number, number, number][] = [[0.06, 0.28, 0.07, 0.17], [0.03, 0.13, 0.035, 0.07]];
 const _gv = new THREE.Vector3();
+const _pv = new THREE.Vector3();
+const _ph = new THREE.Vector3();
 const _gm = new THREE.Matrix4();
 const _gEl = new THREE.Matrix4();
 const _gJaw = new THREE.Matrix4();

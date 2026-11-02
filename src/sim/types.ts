@@ -1,3 +1,4 @@
+import type { HitShape } from '../config';
 import type { PowerKind } from './events';
 
 export type EntityKind = 'block' | 'low' | 'sweep' | 'roller' | 'gull' | 'powerup' | 'arch' | 'banner'
@@ -17,6 +18,8 @@ export interface Entity {
   /** position along the track in metres; relative distance to the player is wz - world.dist */
   wz: number;
   prevWz: number;
+  /** x at the previous step (scuttlers move sideways): swept collision */
+  prevX: number;
   /** world velocity along the track (rollers roll back toward the player) */
   vz: number;
   /** vertical offset (gulls fall, power-ups float) */
@@ -24,6 +27,8 @@ export interface Entity {
   w: number;
   d: number;
   h: number;
+  /** Update 8: the real hitbox (fitted to this skin's model); w/d/h above mirror its extents */
+  hit: HitShape | null;
   /** variant: zone skin for obstacles, power-up kind index, zone index for arches */
   skin: number;
   power?: PowerKind;
@@ -68,6 +73,13 @@ export interface PlayerState {
   vy: number;
   grounded: boolean;
   hopBuffer: number;
+  /** Update 8: time left to still hop after dropping off something without hopping */
+  coyote: number;
+  /** Update 8: standing on an obstacle's top (its id, 0 = on the sand) */
+  onTop: number;
+  /** Update 8: one queued lane input (-1/1, 0 = none) and how long it stays valid */
+  laneQueue: number;
+  laneQueueT: number;
   bumpT: number;
   /** last lane the player left, and when (for close-shave detection) */
   prevLane: number;

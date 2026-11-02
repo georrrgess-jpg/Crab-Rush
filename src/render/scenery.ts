@@ -14,6 +14,8 @@ const SUN = new THREE.Vector3(-0.4, 0.8, 0.45).normalize();
 
 interface Variant {
   ground: THREE.BufferGeometry;
+  /** the same ground with sand ripples and tracks near the track edges (near tiles, High/Medium) */
+  groundNear: THREE.BufferGeometry;
   props: THREE.BufferGeometry;
   /** the same layout with low-detail palms and no small props, for tiles far ahead (budget, UPDATE4_PLAN.md §4.1) */
   propsFar: THREE.BufferGeometry;
@@ -49,10 +51,14 @@ function bakeShade(g: THREE.BufferGeometry, amb = 0.78, diff = 0.3): void {
 }
 
 /** Beach cross-section: dunes, berms at the track edges, lane ridges, wet slope into the sea. */
-function beachGround(seed: number, opts: { shore: number; base: number; track: number; wet: number }): THREE.BufferGeometry {
+function beachGround(seed: number, opts: { shore: number; base: number; track: number; wet: number; shoreDetail: boolean }, marks = 0): THREE.BufferGeometry {
   const r = P.prng(seed);
   const hw = CFG.trackHalfWidth;
-  const xs = [-70, -30, -16, -9, -5.6, -hw - 0.75, -hw - 0.35, -hw, -2.6, -1.5, -1.35, -1.22, -1.1, -0.98, -0.85, -0.7, 0, 0.7, 0.85, 0.98, 1.1, 1.22, 1.35, 1.5, 2.6, hw, hw + 0.35, hw + 0.75, 5.6, opts.shore - 2.4, opts.shore - 0.6, opts.shore + 0.8, opts.shore + 3];
+  // Update 8: extra columns by the water carry a dried-foam tide line and a dark wet-sand band
+  const sh = opts.shore;
+  // (High/Medium; Low keeps the plain gradient)
+  const shoreCols = opts.shoreDetail ? [sh - CFG.scenery.tideLine - 0.3, sh - CFG.scenery.tideLine, sh - CFG.scenery.tideLine + 0.25, sh - 1.5] : [sh - 2.4];
+  const xs = [-70, -30, -16, -9, -5.6, -hw - 0.75, -hw - 0.35, -hw, -2.6, -1.5, -1.35, -1.22, -1.1, -0.98, -0.85, -0.7, 0, 0.7, 0.85, 0.98, 1.1, 1.22, 1.35, 1.5, 2.6, hw, hw + 0.35, hw + 0.75, 5.6, ...shoreCols, sh - 0.6, sh + 0.8, sh + 3].filter((x, i, a) => i === 0 || x > (a[i - 1] as number) + 0.05);
   const height = (x: number): number => {
     const ax = Math.abs(x);
     if (ax <= hw + 0.75 && ax >= hw - 0.2) {
@@ -73,6 +79,8 @@ function beachGround(seed: number, opts: { shore: number; base: number; track: n
   const cTrack = new THREE.Color(opts.track);
   const cWet = new THREE.Color(opts.wet);
   const cBerm = new THREE.Color(PALETTE.sandLight);
+  const cTide = new THREE.Color(0xfff2d6);
+  const cSoak = new THREE.Color(opts.wet).lerp(new THREE.Color(0x8a7a6a), 0.35);
   const c = new THREE.Color();
   for (let j = 0; j < zs.length; j++) {
     const z = zs[j] as number;
@@ -83,8 +91,19 @@ function beachGround(seed: number, opts: { shore: number; base: number; track: n
       pos.push(x, y, z);
       uv.push(x / TEX_REPEAT, z / TEX_REPEAT);
       const ax = Math.abs(x);
-      if (x > opts.shore - 2.6) c.copy(cBase).lerp(cWet, Math.min(1, (x - (opts.shore - 2.6)) / 2.2));
-      else if (ax < CFG.trackHalfWidth) c.copy(cTrack);
+      const tide = sh - CFG.scenery.tideLine;
+      if (!opts.shoreDetail) {
+        if (x > sh - 2.6) c.copy(cBase).lerp(cWet, Math.min(1, (x - (sh - 2.6)) / 2.2));
+        else if (ax < CFG.trackHalfWidth) c.copy(cTrack);
+        else if (ax < CFG.trackHalfWidth + 0.8) c.copy(cBerm);
+        else c.copy(cBase);
+      } else if (Math.abs(x - tide) < 0.01) c.copy(cTide).lerp(cBase, edge ? 0.3 : (r() * 0.4));
+      else if (x > tide) {
+        // damp sand darkening to a soaked band where the wash runs, then wet under the water
+        const k = Math.min(1, (x - tide) / (CFG.scenery.tideLine - 0.6));
+        c.copy(cBase).lerp(cWet, k);
+        if (x >= sh - 0.61) c.copy(cSoak);
+      } else if (ax < CFG.trackHalfWidth) c.copy(cTrack);
       else if (ax < CFG.trackHalfWidth + 0.8) c.copy(cBerm);
       else c.copy(cBase);
       col.push(c.r, c.g, c.b);
@@ -100,6 +119,7 @@ function beachGround(seed: number, opts: { shore: number; base: number; track: n
       idx.push(a, b, cc, b, d, cc);
     }
   }
+  if (marks > 0) groundMarks(pos, col, uv, idx, seed, marks, opts.shore, cBase);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
@@ -107,6 +127,83 @@ function beachGround(seed: number, opts: { shore: number; base: number; track: n
   g.setIndex(idx);
   bakeShade(g, 0.9, 0.12);
   return g;
+}
+
+/**
+ * Update 8: flat decals laid into the near ground: groups of wind ripples beside the berms (a
+ * light crest and a shaded lee per ripple) and trails of gull tracks. `marks` is 1 on High, 0.5 on
+ * Medium. All on flat sand (between the berm foot and the dunes / the damp sand).
+ */
+function groundMarks(pos: number[], col: number[], uv: number[], idx: number[], seed: number, marks: number, shore: number, base: THREE.Color): void {
+  const r = P.prng(seed + 77);
+  const hw = CFG.trackHalfWidth;
+  const crest = base.clone().lerp(new THREE.Color(0xfff8e8), 0.6);
+  const lee = base.clone().multiplyScalar(0.76);
+  const track = base.clone().multiplyScalar(0.62);
+  const quad = (a: number[], b: number[], c: number[], d: number[], color: THREE.Color): void => {
+    const s = pos.length / 3;
+    for (const v of [a, b, c, d]) {
+      pos.push(v[0] as number, 0.012, v[1] as number);
+      uv.push((v[0] as number) / TEX_REPEAT, (v[1] as number) / TEX_REPEAT);
+      col.push(color.r, color.g, color.b);
+    }
+    idx.push(s, s + 1, s + 2, s, s + 2, s + 3);
+  };
+  const groups = Math.round(CFG.scenery.rippleGroups * marks);
+  for (let gI = 0; gI < groups * 2; gI++) {
+    const side = gI % 2 ? 1 : -1;
+    // flat sand: left from the berm foot to the dunes, right from the berm foot to the damp sand
+    const x0 = side < 0 ? -(hw + 0.95 + r() * 1.0) : hw + 0.95 + r() * Math.max(0.2, shore - CFG.scenery.tideLine - hw - 2.4);
+    const z0 = -(1.5 + r() * (TILE_LEN - 4));
+    const len = 1.3 + r() * 1.4;
+    const ang = (r() - 0.5) * 0.5;
+    const count = 3 + Math.floor(r() * 3);
+    for (let k = 0; k < count; k++) {
+      // ripples are wavy lines across the beach, ~0.22 m apart
+      const zc = z0 - k * 0.3;
+      const segs = 4;
+      for (let i = 0; i < segs; i++) {
+        const t0 = i / segs - 0.5;
+        const t1 = (i + 1) / segs - 0.5;
+        const xa = x0 + t0 * len;
+        const xb = x0 + t1 * len;
+        const za = zc + Math.sin(t0 * 5 + k) * 0.05 + t0 * len * ang;
+        const zb = zc + Math.sin(t1 * 5 + k) * 0.05 + t1 * len * ang;
+        const w0 = 0.075 * Math.sin((t0 + 0.5) * Math.PI) + 0.01;
+        const w1 = 0.075 * Math.sin((t1 + 0.5) * Math.PI) + 0.01;
+        quad([xa, za + w0], [xb, zb + w1], [xb, zb], [xa, za], crest);
+        quad([xa, za], [xb, zb], [xb, zb - w1 * 1.4], [xa, za - w0 * 1.4], lee);
+      }
+    }
+  }
+  // gull tracks: a wandering line of little three-toed prints
+  const trails = Math.max(1, Math.round(CFG.scenery.trackTrails * marks));
+  for (let tI = 0; tI < trails; tI++) {
+    const side = r() < 0.5 ? -1 : 1;
+    let x = side * (hw + 1.1 + r() * 1.2);
+    let z = -(2 + r() * 8);
+    let h = (r() - 0.5) * 1.2 + (side < 0 ? Math.PI : 0);
+    for (let i = 0; i < 12; i++) {
+      h += (r() - 0.5) * 0.5;
+      const dx = Math.cos(h) * 0.16;
+      const dz = Math.sin(h) * 0.16 - 0.3;
+      x += dx;
+      z += dz;
+      if (Math.abs(x) < hw + 0.85 || x > shore - CFG.scenery.tideLine - 0.4 || z < -TILE_LEN + 0.6) break;
+      const a = Math.atan2(dz, dx);
+      const o = (i % 2 ? 1 : -1) * 0.08;
+      const px = x - Math.sin(a) * o;
+      const pz = z + Math.cos(a) * o;
+      for (const spread of [-0.5, 0, 0.5]) {
+        const ta = a + spread;
+        const tx = px + Math.cos(ta) * 0.15;
+        const tz = pz + Math.sin(ta) * 0.15;
+        const nx = -Math.sin(ta) * 0.022;
+        const nz = Math.cos(ta) * 0.022;
+        quad([px + nx, pz + nz], [tx + nx, tz + nz], [tx - nx, tz - nz], [px - nx, pz - nz], track);
+      }
+    }
+  }
 }
 
 /** Boardwalk deck: plank top surface + darker sides. */
@@ -210,6 +307,25 @@ class PropKit {
   hammock = P.hammock();
   bonfire = P.bonfireLogs();
   bonfireFlame = P.bonfireFlame();
+  // Update 8 hero scenery: each zone gets its own set (High/Medium; far tiles get the lo copies)
+  cabanas = [0xff5a3a, 0x22a8e0, 0xffb020].map((c) => P.cabana(c));
+  jetty = P.jetty(12);
+  jettyLo = P.jetty(12, true);
+  seaStacks = [0, 1, 2].map((i) => P.seaStack(500 + i * 13));
+  seaStacksLo = [0, 1, 2].map((i) => P.seaStack(500 + i * 13, true));
+  mossRocks = [0, 1, 2].map((i) => P.rock(30 + i, 0.7 + i * 0.35, 0x9a948a, true));
+  driftwood = [0, 1, 2].map((i) => P.driftwood(510 + i));
+  sandcastle = P.sandcastle();
+  floatLine = P.floatLine();
+  crabPots = P.crabPots();
+  hangingBuoys = P.hangingBuoys();
+  tikiBars = [0xff7a1a, 0xff4a8a].map((c) => P.tikiBar(c));
+  outriggers = [0xe53935, 0x22a8e0].map((c) => P.outrigger(c));
+  braces = P.pilingBraces((CFG.trackHalfWidth + 0.8) * 2);
+  torchLo = P.tikiTorch(true);
+  lifeguardLo = P.lifeguardTower(true);
+  umbrellaRedLo = P.umbrella(PALETTE.umbrellaRed, PALETTE.umbrellaCream, 0.12, true);
+  umbrellaBlueLo = P.umbrella(PALETTE.umbrellaBlue, PALETTE.umbrellaCream, -0.1, true);
   /** far tiles: palms swap to their low-detail versions, small ground props are dropped */
   farMap = new Map<THREE.BufferGeometry, THREE.BufferGeometry | null>();
   constructor() {
@@ -219,6 +335,13 @@ class PropKit {
     this.log = b.build();
     this.palms.forEach((g, i) => this.farMap.set(g, this.palmsFar[i] as THREE.BufferGeometry));
     this.palmsDusk.forEach((g, i) => this.farMap.set(g, this.palmsDuskFar[i] as THREE.BufferGeometry));
+    this.seaStacks.forEach((g, i) => this.farMap.set(g, this.seaStacksLo[i] as THREE.BufferGeometry));
+    this.farMap.set(this.jetty, this.jettyLo);
+    this.farMap.set(this.torch, this.torchLo);
+    this.farMap.set(this.lifeguard, this.lifeguardLo);
+    this.farMap.set(this.umbrellaRed, this.umbrellaRedLo);
+    this.farMap.set(this.umbrellaBlue, this.umbrellaBlueLo);
+    for (const g of [...this.driftwood, this.sandcastle, this.floatLine, this.crabPots, this.hangingBuoys, ...this.outriggers, this.braces]) this.farMap.set(g, null);
     for (const g of [this.starfish, this.starfishPurple, this.pinkShell, this.tinyCrab, this.seaweed, this.towelA, this.towelB, this.miniCastle, ...this.buckets, ...this.burrows, ...this.starClusters, ...this.corals, this.urchins, this.postGull, this.net, this.bench, this.buoy, ...this.grass, this.lifeRing, ...this.planters, ...this.anemones, this.barrels, this.windsock, ...this.flowerBushes, ...this.kayaks, ...this.sailboats]) this.farMap.set(g, null);
   }
 }
@@ -259,6 +382,7 @@ export class Scenery {
   setDensity(d: number): void {
     for (const zone of this.variants) for (const v of zone) {
       v.ground.dispose();
+      if (v.groundNear !== v.ground) v.groundNear.dispose();
       v.props.dispose();
       v.propsFar.dispose();
       v.glow?.dispose();
@@ -284,8 +408,12 @@ export class Scenery {
     const L = TILE_LEN;
     const rz = (a = 0, b = L): number => -(a + r() * (b - a));
     let ground: THREE.BufferGeometry;
+    let groundNear: THREE.BufferGeometry | null = null;
     /** Update 5 detail props: High and Medium tiers (Low keeps its triangle headroom) */
     const extras = density >= 0.7;
+    /** Update 8: the costliest extras (float lines, extra clumps) are High only */
+    const rich = density >= 0.95;
+    const marks = rich ? 1 : extras ? 0.5 : 0;
 
     if (zone === 1) {
       ground = deckGround();
@@ -344,6 +472,12 @@ export class Scenery {
         pl.add(K.lifeRing, (v % 2 === 0 ? 1 : -1) * (hw + 0.2), -11, v % 2 === 0 ? -Math.PI / 2 : Math.PI / 2);
         if (v % 2 === 0) pl.add(K.planters[v % 2] as THREE.BufferGeometry, -hw - 1.2, -16, Math.PI / 2);
         pl.add(K.sailboats[v % 3] as THREE.BufferGeometry, 26 + r() * 14, rz(), r() * 6, 1.4);
+        // Update 8: cross-braced pilings under the deck, crab pots on the platform, a post of
+        // fishing buoys by the rail
+        for (let i = 0; i < 4; i++) pl.add(K.braces, 0, -(i / 4) * L - 2, Math.PI / 2, 1, 0, true);
+        if (v % 2 === 0) pl.add(K.crabPots, -hw - 5.2, -16.5, 0.4, 1, 0, true);
+        else pl.add(K.crabPots, -hw - 1.5, -3.5, 1.2, 0.9, 0, true);
+        pl.add(K.hangingBuoys, (v % 2 === 0 ? 1 : -1) * (hw + 0.45), -22.5, r() * 6, 1, 0, true);
       }
       // bunting between lamps
       if (v % 2 === 1) {
@@ -370,7 +504,9 @@ export class Scenery {
       const shore = zone === 2 ? 7.4 : 8.4;
       const base = zone === 2 ? 0xd8b98a : PALETTE.sandMid;
       const track = zone === 2 ? 0xe3c798 : 0xf3d7a0;
-      ground = beachGround(seed, { shore, base, track, wet: zone === 2 ? 0xa9855a : PALETTE.sandWet });
+      const gOpts = { shore, base, track, wet: zone === 2 ? 0xa9855a : PALETTE.sandWet, shoreDetail: extras };
+      ground = beachGround(seed, gOpts);
+      if (marks > 0) groundNear = beachGround(seed, gOpts, marks);
 
       if (zone === 0 || zone === 3) {
         const dusk = zone === 3;
@@ -413,6 +549,30 @@ export class Scenery {
           if (dusk) for (let i = 0; i < 2; i++) pl.add(K.flowerBushes[Math.floor(r() * 3)] as THREE.BufferGeometry, -6.2 - r() * 4, rz(), r() * 6, 0.9 + r() * 0.4);
           if (r() < 0.45) pl.add(K.sailboats[Math.floor(r() * 3)] as THREE.BufferGeometry, 28 + r() * 16, rz(), r() * 6, 1.4);
         }
+        // Update 8 hero sets. Sunny Shore: cabanas, a jetty, a sandcastle, driftwood and a swim line;
+        // Sunset Lagoon: a tiki bar, outrigger canoes and driftwood seats round the bonfire
+        if (extras) {
+          if (!dusk) {
+            if (v === 0) pl.add(K.cabanas[0] as THREE.BufferGeometry, -9.2, -19.5, Math.PI / 2 + 0.15, 1, 0, true);
+            if (v === 2) {
+              pl.add(K.cabanas[1] as THREE.BufferGeometry, -8.6, -4.5, Math.PI / 2 - 0.1, 1, 0, true);
+              if (rich) pl.add(K.cabanas[2] as THREE.BufferGeometry, -9.4, -21, Math.PI / 2 + 0.2, 1, 0, true);
+            }
+            if (v === 1 || v === 3) pl.add(K.jetty, shore - 1.6, v === 1 ? -17 : -6, 0, 1, 0, true);
+            pl.add(K.buoy, 15 + r() * 6, rz(), r() * 6, 1, -0.1);
+            if (rich) pl.add(K.floatLine, 13.5 + r() * 2, -12.5, (r() - 0.5) * 0.3, 1, -0.05, true);
+          } else {
+            if (v === 2) pl.add(K.tikiBars[v % 2] as THREE.BufferGeometry, -11.2, -6, Math.PI / 2, 1, 0, true);
+            if (v === 0 || v === 3) pl.add(K.outriggers[v % 2] as THREE.BufferGeometry, shore - 1.4, rz(5, 20), 0.15 + r() * 0.3, 1, 0, true);
+            if (v === 1) {
+              pl.add(K.driftwood[0] as THREE.BufferGeometry, -7.4, -11.6, 0.1, 0.8, 0, true);
+              pl.add(K.driftwood[1] as THREE.BufferGeometry, -8.9, -9.6, Math.PI / 2 + 0.3, 0.75, 0, true);
+            }
+          }
+          if (r() < 0.55) pl.add(K.sandcastle, -5.3 - r() * 1.6, rz(2, 22), r() * 6, 0.9 + r() * 0.3);
+          if (r() < 0.55) pl.add(K.driftwood[Math.floor(r() * 3)] as THREE.BufferGeometry, -6.5 - r() * 4, rz(), r() * 6, 0.9 + r() * 0.3);
+          if (rich) for (let i = 0; i < 3; i++) pl.add(K.grass[Math.floor(r() * 3)] as THREE.BufferGeometry, -8 - r() * 9, rz(), r() * 6, 1 + r() * 0.5);
+        }
         if (dusk && (v === 0 || v === 3)) pl.add(K.hammock, -10.5, rz(4, 20), 0.2 + r() * 0.4, 1, 0, true);
         if (dusk && v === 1) {
           pl.add(K.bonfire, -7.4, -10, r() * 6, 1, 0, true);
@@ -443,6 +603,15 @@ export class Scenery {
         pl.add(K.seaweed, 6.4, rz(), r() * 6);
         for (let i = 0; i < 2; i++) pl.add(K.burrows[Math.floor(r() * 2)] as THREE.BufferGeometry, (r() < 0.6 ? -1 : 1) * (4.7 + r() * 2.2), rz(), r() * 6);
         if (r() < 0.6) pl.add(K.starClusters[Math.floor(r() * 2)] as THREE.BufferGeometry, -5.5 - r() * 3, rz(), r() * 6);
+        // Update 8: sea stacks with strata and moss offshore and among the cliffs, driftwood, mossy
+        // rocks, dune grass at the foot of the cliffs
+        if (extras) {
+          pl.add(K.seaStacks[v % 3] as THREE.BufferGeometry, 15 + r() * 7, rz(), r() * 6, 1 + r() * 0.4, -0.35, true);
+          if (rich && v % 2 === 0) pl.add(K.seaStacks[(v + 1) % 3] as THREE.BufferGeometry, -10.5 - r() * 2, rz(4, 21), r() * 6, 0.8, 0, true);
+          for (let i = 0; i < 2; i++) pl.add(K.mossRocks[Math.floor(r() * 3)] as THREE.BufferGeometry, -6.5 - r() * 5, rz(), r() * 6, 1 + r() * 0.4);
+          if (r() < 0.6) pl.add(K.driftwood[Math.floor(r() * 3)] as THREE.BufferGeometry, -6 - r() * 4, rz(), r() * 6);
+          for (let i = 0; i < (rich ? 3 : 1); i++) pl.add(K.grass[Math.floor(r() * 3)] as THREE.BufferGeometry, -9 - r() * 4, rz(), r() * 6, 1 + r() * 0.4);
+        }
         // Update 5: anemones in the shallows
         if (extras) for (let i = 0; i < 2; i++) pl.add(K.anemones[Math.floor(r() * 2)] as THREE.BufferGeometry, (r() < 0.6 ? -1 : 1) * (4.9 + r() * 2), rz(), r() * 6);
       }
@@ -450,6 +619,7 @@ export class Scenery {
 
     return {
       ground,
+      groundNear: groundNear ?? ground,
       props: pl.list.length ? mergeAll(pl.list) : EMPTY,
       propsFar: pl.far.length ? mergeAll(pl.far) : EMPTY,
       glow: pl.glow.length ? mergeAll(pl.glow) : null,
@@ -469,11 +639,11 @@ export class Scenery {
         const zone = zoneAt(k * TILE_LEN + 0.5);
         const vi = ((k * 2654435761) >>> 0) % VARIANTS;
         const v = (this.variants[zone] as Variant[])[vi] as Variant;
-        t.ground.geometry = v.ground;
         t.ground.material = this.groundMats[zone] as THREE.ShaderMaterial;
         t.v = v;
         t.far = t.k * TILE_LEN - dist > FAR_FROM;
         t.props.geometry = t.far ? v.propsFar : v.props;
+        t.ground.geometry = t.far ? v.ground : v.groundNear;
         t.glow.geometry = v.glow ?? EMPTY;
         t.glow.visible = !!v.glow && this.glowOn;
       }
@@ -483,6 +653,7 @@ export class Scenery {
       if (far !== t.far && t.v) {
         t.far = far;
         t.props.geometry = far ? t.v.propsFar : t.v.props;
+        t.ground.geometry = far ? t.v.ground : t.v.groundNear;
       }
       // tiles that start beyond the fog are invisible anyway: skip their draw calls
       t.group.visible = t.k * TILE_LEN - dist < viewDist;

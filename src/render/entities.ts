@@ -5,7 +5,6 @@ import type { BlobShadows } from './fx';
 import { GeoBuilder } from './geo';
 import type { Materials } from './materials';
 import * as O from './models/obstacles';
-import * as P from './props';
 import { makeOutline } from './shaders/toy';
 
 /** Iridescent soap-bubble shell for power-ups: hue shifts with the view angle and time. */
@@ -48,7 +47,7 @@ interface View {
   casters?: THREE.Object3D[];
   casting?: boolean;
   /** distance LOD: the mesh swaps to `lo` beyond CFG LOD distance (UPDATE2_PLAN.md §2.4) */
-  lod?: { mesh: THREE.Mesh; hi: THREE.BufferGeometry; lo: THREE.BufferGeometry; outline?: THREE.Mesh; olHi?: THREE.BufferGeometry; olLo?: THREE.BufferGeometry };
+  lod?: { mesh: THREE.Mesh; hi: THREE.BufferGeometry; lo: THREE.BufferGeometry; rich?: THREE.BufferGeometry; outline?: THREE.Mesh; olHi?: THREE.BufferGeometry; olLo?: THREE.BufferGeometry };
   /** inverted-hull outlines (High/Medium) */
   outlines?: THREE.Object3D[];
   /** seconds since the entity came within the entrance distance (<0: not yet) */
@@ -58,6 +57,8 @@ interface View {
 }
 
 const LOD_DIST = 50;
+/** High tier: the extra-detail obstacle models are drawn this close (m) */
+const RICH_DIST = 35;
 const ENTER_DIST = 60;
 const easeOutBack = (t: number): number => {
   const c = 1.9;
@@ -182,26 +183,21 @@ export class EntityViews {
     const mesh = (geo: THREE.BufferGeometry, mat: THREE.Material = M.clay): THREE.Mesh => new THREE.Mesh(geo, mat);
     let v: View;
     switch (e.kind) {
-      case 'block': {
-        const vr = e.id % 2;
-        const [hi, lo] =
-          e.skin === 1
-            ? [g.get(`crates${vr}`, () => P.crateStack(vr)), g.get(`crates${vr}lo`, () => P.crateStack(vr, true))]
-            : e.skin === 2
-              ? [g.get(`boulder${vr}`, () => P.boulder(17 + vr * 6)), g.get(`boulder${vr}lo`, () => P.boulder(17 + vr * 6, true))]
-              : [g.get(`castle${vr}`, () => O.sandcastle(vr)), g.get(`castle${vr}lo`, () => O.sandcastle(vr, true))];
-        v = this.lodView(key, hi, lo, e.skin === 1 || e.skin === 2 ? M.clay : M.clayWind, [2.3, 1.9]);
-        break;
-      }
+      case 'block':
       case 'low': {
+        // Update 8: one model per (kind, zone skin, variant) with three detail levels: `lo` (Low tier and
+        // beyond LOD_DIST), `hi` (Medium) and `rich` (High: extra props, same silhouette)
         const vr = e.id % 2;
-        const [hi, lo] =
-          e.skin === 1
-            ? [g.get(`chair${vr}`, () => P.deckChair(vr)), g.get(`chair${vr}lo`, () => P.deckChair(vr, true))]
-            : e.skin === 2
-              ? [g.get(`urchins${vr}`, () => P.urchins(vr)), g.get(`urchins${vr}lo`, () => P.urchins(vr, true))]
-              : [g.get(`log${vr}`, () => O.driftwoodLog(vr)), g.get(`log${vr}lo`, () => O.driftwoodLog(vr, true))];
-        v = this.lodView(key, hi, lo, e.skin === 2 ? M.clayWind : M.clay, [2.4, 1.0]);
+        const sk = e.skin === 3 ? 0 : e.skin;
+        const k = `${e.kind}${sk}.${vr}`;
+        const kind = e.kind;
+        const hi = g.get(k, () => O.obstacleModel(kind, sk, vr));
+        const lo = g.get(`${k}lo`, () => O.obstacleModel(kind, sk, vr, true));
+        const rich = g.get(`${k}rich`, () => O.obstacleModel(kind, sk, vr, false, true));
+        // castles fly a flag and zone 2 spines/coral sway: those take the wind material
+        const windy = (kind === 'block' && sk === 0) || (kind === 'low' && sk === 2);
+        v = this.lodView(key, hi, lo, windy ? M.clayWind : M.clay, kind === 'block' ? [2.3, 1.7] : [2.4, 0.9], true, rich);
+        if (kind === 'block') break;
         // it rocks for a moment after the crab scuttles over (a function of distance: no state to reset)
         v.anim = (vv, ee) => {
           const rel = ee.wz - this.dist;
@@ -210,32 +206,37 @@ export class EntityViews {
         break;
       }
       case 'scuttle': {
-        const body = mesh(g.get('scut', () => O.scuttlerBody()), M.clay);
+        // Update 8: modelled at hitbox size (no extra scale); claws reach forward from the shoulders
+        const bodyHi = g.get('scut', () => O.scuttlerBody());
+        const body = mesh(bodyHi, M.clay);
         const clawG = g.get('scutclaw', () => O.scuttlerClaw());
         const cl = mesh(clawG, M.clay);
         const cr = mesh(clawG, M.clay);
-        cl.position.set(-0.45, 0.5, 0.25);
+        const [sx, sy, sz] = O.SCUTTLE_SHOULDER;
+        cl.position.set(-sx, sy, sz);
         cl.scale.x = -1;
-        cr.position.set(0.45, 0.5, 0.25);
+        cr.position.set(sx, sy, sz);
         const arrow = new THREE.Mesh(g.get('scutarrow', () => O.scuttleArrow()), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false }));
         arrow.position.set(0, 0.02, 0.9);
         const inner = new THREE.Group();
         inner.add(body, cl, cr);
-        inner.scale.setScalar(1.15);
         arrow.scale.setScalar(1.5);
         const grp = new THREE.Group();
         grp.add(inner, arrow);
-        v = { obj: grp, key, stamp: 0, shadow: [1.6, 1.2], parts: [inner, cl, cr, arrow], enter: -1, memo: { landed: -1, squawk: 0 } };
-        this.addOutline(v, body);
+        v = { obj: grp, key, stamp: 0, shadow: [1.5, 1.1], parts: [inner, cl, cr, arrow], enter: -1, memo: { landed: -1, squawk: 0 } };
+        const bodyLo = g.get('scutlo', () => O.scuttlerBody(true));
+        const ol = this.addOutline(v, body, bodyLo);
+        v.lod = { mesh: body, hi: bodyHi, lo: bodyLo, rich: g.get('scutrich', () => O.scuttlerBody(false, true)), outline: ol, olHi: ol.geometry, olLo: ol.geometry };
         v.anim = (vv, ee, t) => {
           const [inn, l, r, ar] = vv.parts as THREE.Object3D[];
           const dir = ee.toLane !== undefined ? Math.sign(ee.toLane - ee.lane) || 1 : 1;
           const moving = ee.state === 1 && Math.abs(ee.x - (CFG.laneX[ee.lane] as number)) > 0.02;
-          // warning: claws up and snapping; while crossing: a quick sideways scuttle bob and tilt
+          // warning: claws pitched up and snapping; while crossing: a quick sideways scuttle bob and tilt
           const up = ee.state >= 1 ? 1 : 0;
-          const snap = Math.sin(t * 16) * 0.25 * up;
-          l!.rotation.set(0, 0, -0.2 - up * 0.9 - snap);
-          r!.rotation.set(0, 0, 0.2 + up * 0.9 + snap);
+          const snap = Math.sin(t * 16) * 0.22 * up;
+          const idle = Math.sin(t * 2.3 + ee.id) * 0.06;
+          l!.rotation.set(-up * 0.95 - snap + idle, 0, up * 0.35);
+          r!.rotation.set(-up * 0.95 + snap - idle, 0, -up * 0.35);
           inn!.position.y = moving ? Math.abs(Math.sin(t * 28)) * 0.08 : 0;
           inn!.rotation.z = moving ? -dir * 0.12 : 0;
           ar!.visible = ee.state === 1;
@@ -261,8 +262,9 @@ export class EntityViews {
         break;
       }
       case 'roller': {
+        const R = O.BALL_R;
         const ball = mesh(g.get('ball', () => O.beachBall()), M.gloss);
-        ball.position.y = 0.58;
+        ball.position.y = R;
         const grp = new THREE.Group();
         grp.add(ball);
         v = { obj: grp, key, stamp: 0, shadow: [1.3, 1.0], parts: [ball], enter: -1, memo: { landed: -1, squawk: 0 } };
@@ -273,11 +275,11 @@ export class EntityViews {
           b.rotation.x = ee.spin;
           // bounce with a squash at each contact
           const ph = Math.abs(Math.sin(ee.spin * 0.5));
-          b.position.y = 0.58 + ph * 0.22;
+          b.position.y = R + ph * 0.22;
           const sq = 1 - Math.pow(1 - ph, 6) * 0.16;
           const sx = 1 / Math.sqrt(sq);
           b.scale.set(sx, sq, sx);
-          b.position.y -= (1 - sq) * 0.58;
+          b.position.y -= (1 - sq) * R;
         };
         break;
       }
@@ -348,7 +350,9 @@ export class EntityViews {
         const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 6, 24), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 }));
         const kind = e.power ?? 'magnet';
         const icon = mesh(g.get(`pu-${kind}`, () => O.powerupIcon(kind)));
-        icon.scale.setScalar(1.25);
+        // the surfboard is slim: it gets a bigger scale to fill the bubble like the others
+        icon.scale.setScalar(kind === 'rider' ? 1.6 : 1.25);
+        if (kind === 'rider') icon.rotation.z = 0.5;
         const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({ map: M.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }));
         if (this.lite) grp.add(icon, bubble);
         else grp.add(glow, icon, bubble, ring);
@@ -438,10 +442,10 @@ export class EntityViews {
   }
 
   /** single-mesh view with a low-detail geometry beyond LOD_DIST and an outline hull */
-  private lodView(key: string, hi: THREE.BufferGeometry, lo: THREE.BufferGeometry, mat: THREE.Material, shadow: [number, number], outline = true): View {
+  private lodView(key: string, hi: THREE.BufferGeometry, lo: THREE.BufferGeometry, mat: THREE.Material, shadow: [number, number], outline = true, rich?: THREE.BufferGeometry): View {
     const m = new THREE.Mesh(hi, mat);
     const v: View = { obj: m, key, stamp: 0, shadow, enter: -1, memo: { landed: -1, squawk: 0 } };
-    v.lod = { mesh: m, hi, lo };
+    v.lod = { mesh: m, hi, lo, rich };
     if (outline) {
       // the hull always uses the low-detail silhouette: outlines are thick enough to hide the difference
       const ol = this.addOutline(v, m, lo);
@@ -527,8 +531,9 @@ export class EntityViews {
       // distance LOD
       if (v.lod) {
         // Low tier always uses the low-detail models
+        // High tier (the one that casts shadows) shows the rich model within RICH_DIST
         const far = this.lite || rel > LOD_DIST;
-        const want = far ? v.lod.lo : v.lod.hi;
+        const want = far ? v.lod.lo : this.castShadows && v.lod.rich && rel < RICH_DIST ? v.lod.rich : v.lod.hi;
         if (v.lod.mesh.geometry !== want) {
           v.lod.mesh.geometry = want;
           if (v.lod.outline) v.lod.outline.geometry = (far ? v.lod.olLo : v.lod.olHi) as THREE.BufferGeometry;

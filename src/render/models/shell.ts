@@ -2,13 +2,15 @@ import * as THREE from 'three';
 import { PALETTE } from '../../config';
 
 /**
- * A scallop (Update 4 v2): a domed fan with rounded ribs that bulge toward the rim, a wavy edge,
- * two ears at the hinge and a nacre sheen on the rib crests. Upright, hinge at the bottom.
+ * A scallop (Update 8 v3): a domed fan with rounded ribs that bulge toward the rim, a wavy edge, a
+ * pale lip that closes the edge (so it reads as a solid shell with a bevel, not a fan of paper), two
+ * ears at the hinge and a nacre sheen on the rib crests. Upright, hinge at the bottom. One ring fewer
+ * than v2 pays for the lip: 148 triangles either way (the shells are instanced by the hundred).
  */
 export function scallopGeometry(): THREE.BufferGeometry {
   const ribs = 9;
   const RU = ribs * 2; // samples across the fan: crest and groove per rib (smooth normals round them)
-  const RV = 3; // rings from hinge to rim (the back is a single ring)
+  const RV = 2; // rings from hinge to rim (the back is a single ring)
   const spread = Math.PI * 0.86;
   const R = 0.36;
   const hy = -R * 0.55;
@@ -26,7 +28,8 @@ export function scallopGeometry(): THREE.BufferGeometry {
     const rr = R * (0.12 + v * 1.0) * (1 + (v > 0.9 ? Math.sin(u * ribs * Math.PI * 2) * 0.02 : 0));
     const x = Math.sin(a) * rr * 1.05;
     const y = hy + Math.cos(a) * rr * 1.25;
-    const dome = Math.sin(v * Math.PI * 0.92) * 0.13 * Math.cos((u - 0.5) * 1.6);
+    // the middle ring sits a little past halfway so the dome's crown lands on it
+    const dome = Math.sin(Math.min(1, v) * Math.PI * 0.92) * 0.13 * Math.cos((u - 0.5) * 1.6);
     const z = back ? -0.02 - dome * 0.25 : dome + rib * 0.03 * v;
     pos.push(x, y, z);
     if (back) c.copy(edge);
@@ -46,6 +49,26 @@ export function scallopGeometry(): THREE.BufferGeometry {
       }
     }
   }
+  // the lip: a strip joining the front rim to the back rim, pale and slightly flared
+  {
+    const fo = (RV) * (RU + 1); // front rim ring
+    const bo = (RV + 1) * (RU + 1) + (RU + 1); // back rim ring (the back starts after the front grid)
+    const lip = new THREE.Color(0xfff2e0);
+    for (const o of [fo, bo]) {
+      for (let i = 0; i <= RU; i++) {
+        const k = (o + i) * 3;
+        pos.push((pos[k] as number) * 1.03, (pos[k + 1] as number) + ((pos[k + 1] as number) - hy) * 0.03, pos[k + 2] as number);
+        c.copy(edge).lerp(lip, 0.55);
+        col.push(c.r, c.g, c.b);
+      }
+    }
+    const l0 = pos.length / 3 - 2 * (RU + 1);
+    for (let i = 0; i < RU; i++) {
+      const a = l0 + i;
+      const b2 = a + RU + 1;
+      idx.push(a, a + 1, b2, a + 1, b2 + 1, b2);
+    }
+  }
   // ears at the hinge
   for (const s of [-1, 1]) {
     const o = pos.length / 3;
@@ -54,7 +77,7 @@ export function scallopGeometry(): THREE.BufferGeometry {
       pos.push(...p);
       col.push(base.r * 0.9, base.g * 0.9, base.b * 0.9);
     }
-    if (s < 0) idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+    if (s > 0) idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
     else idx.push(o, o + 2, o + 1, o, o + 3, o + 2);
   }
   const g = new THREE.BufferGeometry();

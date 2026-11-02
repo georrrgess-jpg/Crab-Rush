@@ -75,30 +75,186 @@ function frond(base: V3, yaw: number, len: number, droop: number, width: number,
   return g;
 }
 
-/** `lo`: background palms (fewer trunk rings, coarser fronds, no coconuts). */
+/**
+ * Free-form triangle soup with vertex colours: thin double-sided parts (leaflets, blades, awning
+ * stripes, flaps) cost two triangles a face instead of a box's twelve.
+ */
+class Poly {
+  private pos: number[] = [];
+  private col: number[] = [];
+  private static c = new THREE.Color();
+  tri(a: V3, b: V3, c: V3, color: number | THREE.Color, back = 0.78): this {
+    const k = Poly.c.set(color as THREE.ColorRepresentation);
+    this.pos.push(...a, ...b, ...c);
+    for (let i = 0; i < 3; i++) this.col.push(k.r, k.g, k.b);
+    if (back > 0) {
+      this.pos.push(...a, ...c, ...b);
+      for (let i = 0; i < 3; i++) this.col.push(k.r * back, k.g * back, k.b * back);
+    }
+    return this;
+  }
+  quad(a: V3, b: V3, c: V3, d: V3, color: number | THREE.Color, back = 0.78): this {
+    return this.tri(a, b, c, color, back).tri(a, c, d, color, back);
+  }
+  get empty(): boolean {
+    return this.pos.length === 0;
+  }
+  build(): THREE.BufferGeometry {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
+    g.computeVertexNormals();
+    return g;
+  }
+}
+
+const lerp3 = (a: V3, b: V3, t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+const shade = (c: number, k: number): number => new THREE.Color(c).multiplyScalar(k).getHex();
+
+/**
+ * Ringed palm trunk (Update 8): each segment flares into a lip and steps in to the next, so the
+ * trunk reads as stacked leaf scars; dark at each step, light at each lip. Rings sit square to the
+ * curve. Indexed per band, so shading is smooth inside a band and crisp at each ring.
+ */
+function ringedTrunk(curve: (t: number) => V3, segs: number, radial: number, rBase: number, rTop: number, col: number): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const colr: number[] = [];
+  const idx: number[] = [];
+  const base = new THREE.Color(col);
+  const tmp = new THREE.Color();
+  const T = new THREE.Vector3();
+  const U = new THREE.Vector3();
+  const W = new THREE.Vector3();
+  const ring = (t: number, rad: number, k: number): number => {
+    const a = curve(Math.max(0, t - 0.01));
+    const b = curve(Math.min(1, t + 0.01));
+    T.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize();
+    U.set(1, 0, 0).addScaledVector(T, -T.x).normalize();
+    W.crossVectors(T, U);
+    const p = curve(t);
+    const start = pos.length / 3;
+    tmp.copy(base).multiplyScalar(k);
+    for (let j = 0; j < radial; j++) {
+      const ang = (j / radial) * Math.PI * 2;
+      // a slightly fibrous, uneven rim
+      const rr = rad * (1 + Math.sin(ang * 3 + t * 40) * 0.04);
+      pos.push(p[0] + (U.x * Math.cos(ang) + W.x * Math.sin(ang)) * rr, p[1] + (U.y * Math.cos(ang) + W.y * Math.sin(ang)) * rr, p[2] + (U.z * Math.cos(ang) + W.z * Math.sin(ang)) * rr);
+      colr.push(tmp.r, tmp.g, tmp.b);
+    }
+    return start;
+  };
+  const band = (a: number, b: number): void => {
+    for (let j = 0; j < radial; j++) {
+      const j1 = (j + 1) % radial;
+      idx.push(a + j, a + j1, b + j, a + j1, b + j1, b + j);
+    }
+  };
+  const radius = (t: number): number => rBase + (rTop - rBase) * t + Math.max(0, 0.25 - t) * 0.35; // a flared foot
+  for (let i = 0; i < segs; i++) {
+    const t0 = i / segs;
+    const t1 = (i + 1) / segs;
+    // body of the segment: tucked at the bottom, flaring to a lip at the top
+    const a = ring(t0, radius(t0) * 0.86, 0.74);
+    const m = ring(t0 + (t1 - t0) * 0.55, radius(t0) * 0.95, 0.98);
+    const l = ring(t1 - 0.004, radius(t1) * 1.06, 1.16);
+    band(a, m);
+    band(m, l);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * A split palm frond (Update 8): a curved rachis with separate leaflets fanning off both sides,
+ * gaps between them, tips drooping more toward the end of the frond.
+ */
+function splitFrond(p: Poly, base: V3, yaw: number, pitch: number, len: number, droop: number, width: number, colA: number, colB: number, n = 8): void {
+  const dir: V3 = [Math.cos(yaw), 0, Math.sin(yaw)];
+  const side: V3 = [-dir[2], 0, dir[0]];
+  const spine = (t: number): V3 => {
+    const rise = Math.sin(t * Math.PI * 0.55) * len * pitch - t * t * droop;
+    return [base[0] + dir[0] * t * len, base[1] + rise, base[2] + dir[2] * t * len];
+  };
+  const ca = new THREE.Color(colA);
+  const cb = new THREE.Color(colB);
+  const c = new THREE.Color();
+  // rachis: a thin vertical ribbon so the stem reads from the side
+  const rs = Math.max(2, n >> 1);
+  for (let i = 0; i < rs; i++) {
+    const a = spine(i / rs);
+    const b = spine((i + 1) / rs);
+    const th = 0.05 * (1 - i / rs);
+    p.quad(a, b, [b[0], b[1] - th * 0.6, b[2]], [a[0], a[1] - th, a[2]], shade(colB, 0.9), 0.8);
+  }
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    const w = width * Math.sin(Math.min(1, t * 1.1) * Math.PI) * (1.05 - t * 0.3);
+    if (w < 0.04) continue;
+    const r0 = spine(t - 0.92 / n);
+    const r1 = spine(t);
+    const tipT = Math.min(1, t + 0.4 / n);
+    const sp = spine(tipT);
+    for (const s of [-1, 1]) {
+      // leaflets sweep forward and hang down at the edges, more at the tip
+      const hang = w * (0.35 + t * 0.6);
+      const tip: V3 = [sp[0] + side[0] * s * w, sp[1] - hang, sp[2] + side[2] * s * w];
+      c.copy(s > 0 ? ca : cb).lerp(new THREE.Color(0xd8e070), Math.max(0, t - 0.7) * 0.35);
+      p.tri(r0, r1, tip, c, 0.72);
+    }
+  }
+}
+
+/** `lo`: background palms (fewer trunk rings, coarse unsplit fronds, no coconuts). */
 export function palm(seed: number, h = 6, lean = 1.2, trunkCol: number = PALETTE.palmTrunk, leafA: number = PALETTE.palmLeaf, leafB: number = PALETTE.palmLeafDark, lo = false): THREE.BufferGeometry {
   const r = prng(seed);
   const b = new GeoBuilder();
-  const segs = lo ? 4 : 7;
-  let prev: V3 = [0, 0, 0];
-  const curve = (t: number): V3 => [lean * t * t, h * t, lean * 0.3 * t * t];
-  for (let i = 1; i <= segs; i++) {
-    const t = i / segs;
-    const p = curve(t);
-    const light = new THREE.Color(trunkCol).multiplyScalar(i % 2 === 0 ? 1.12 : 0.92).getHex();
-    b.seg(light, prev, p, 0.24 - t * 0.08, 0.26 - (t - 1 / segs) * 0.08, lo ? 5 : 6);
-    prev = p;
+  // a gentle S: the trunk leans out, then turns back up toward the light
+  const bend = (r() - 0.5) * 0.6;
+  const curve = (t: number): V3 => [lean * t * t - Math.sin(t * Math.PI) * bend * 0.4, h * t, lean * 0.3 * t * t + Math.sin(t * Math.PI) * bend * 0.3];
+  if (lo) {
+    const segs = 4;
+    let prev: V3 = [0, 0, 0];
+    for (let i = 1; i <= segs; i++) {
+      const t = i / segs;
+      const q = curve(t);
+      b.seg(shade(trunkCol, i % 2 === 0 ? 1.12 : 0.92), prev, q, 0.24 - t * 0.08, 0.26 - (t - 1 / segs) * 0.08, 5);
+      prev = q;
+    }
+  } else {
+    b.raw(ringedTrunk(curve, 9, 6, 0.25, 0.16, trunkCol));
   }
   const top = curve(1);
-  if (!lo) b.sphere(0x8a5a2b, 0.22, top, [1, 0.7, 1], 7);
-  const n = 7 + Math.floor(r() * 2);
-  for (let i = 0; i < n; i++) {
-    const yaw = (i / n) * Math.PI * 2 + r() * 0.4;
-    b.raw(frond([top[0], top[1] + 0.05, top[2]], yaw, 2.2 + r() * 0.8, 1.4 + r() * 0.6, 0.42, i % 2 ? leafA : leafB, i % 2 ? leafB : leafA, lo ? 3 : 6));
-  }
-  for (let i = 0; i < (lo ? 0 : 3); i++) {
-    const a = (i / 3) * Math.PI * 2 + 0.4;
-    b.sphere(0x6b4423, 0.16, [top[0] + Math.cos(a) * 0.22, top[1] - 0.18, top[2] + Math.sin(a) * 0.22], [1, 1, 1], 6);
+  const n = (lo ? 7 : 8) + Math.floor(r() * 2);
+  if (lo) {
+    for (let i = 0; i < n; i++) {
+      const yaw = (i / n) * Math.PI * 2 + r() * 0.4;
+      b.raw(frond([top[0], top[1] + 0.05, top[2]], yaw, 2.2 + r() * 0.8, 1.4 + r() * 0.6, 0.42, i % 2 ? leafA : leafB, i % 2 ? leafB : leafA, 3));
+    }
+  } else {
+    // crown: a fibrous boot where the fronds spring from
+    b.ico(0x8a5a2b, 0.24, [top[0], top[1] - 0.02, top[2]], [1, 0.8, 1], 0, 0.15, seed);
+    const p = new Poly();
+    for (let i = 0; i < n; i++) {
+      const yaw = (i / n) * Math.PI * 2 + r() * 0.4;
+      const up = i % 3 === 0 ? 0.4 : 0.22;
+      splitFrond(p, [top[0], top[1] + 0.08, top[2]], yaw, up, 2.6 + r() * 0.8, 1.3 + r() * 0.7, 0.62, i % 2 ? leafA : leafB, i % 2 ? leafB : leafA, 8);
+    }
+    // one or two dead fronds hang down against the trunk
+    for (let i = 0; i < 1 + Math.floor(r() * 2); i++) {
+      const yaw = r() * Math.PI * 2;
+      splitFrond(p, [top[0], top[1] - 0.05, top[2]], yaw, -0.25, 1.5, 1.6, 0.32, 0xb08a4a, 0x8a6a3a, 5);
+    }
+    b.raw(p.build());
+    // a cluster of coconuts under the crown, one green
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.4;
+      const rr = 0.2 + (i % 2) * 0.06;
+      b.ico(i === 3 ? 0x7a8a2a : 0x5a3a1c, 0.15, [top[0] + Math.cos(a) * rr, top[1] - 0.2 - (i % 2) * 0.1, top[2] + Math.sin(a) * rr], [1, 1.12, 1], 0, 0.08, seed + i);
+    }
   }
   // sway grows up the trunk; fronds hang off the top so they swing furthest
   return addWind(b.build(), (x, y) => Math.pow(Math.max(0, y) / h, 2) * 0.2);
@@ -135,7 +291,7 @@ function canopy(colA: number, colB: number, r: number, h: number, panels = 8): T
   return g;
 }
 
-export function umbrella(colA: number, colB: number, tilt = 0.15): THREE.BufferGeometry {
+export function umbrella(colA: number, colB: number, tilt = 0.15, lo = false): THREE.BufferGeometry {
   const b = new GeoBuilder();
   const top: V3 = [Math.sin(tilt) * 2.4, Math.cos(tilt) * 2.4, 0];
   b.seg(0xf2efe6, [0, 0, 0], top, 0.04, 0.04, 6);
@@ -144,21 +300,65 @@ export function umbrella(colA: number, colB: number, tilt = 0.15): THREE.BufferG
   c.translate(top[0], top[1] - 0.25, top[2]);
   b.raw(c);
   b.sphere(colA, 0.08, [top[0] + Math.sin(tilt) * 0.35, top[1] + 0.32, 0], [1, 1, 1], 6);
+  // Update 8: a scalloped valance hanging off the rim and a collar on the pole
+  if (lo) return addWind(b.build(), (x, y, z) => (y > 1.9 && Math.hypot(x - top[0], z) > 0.9 ? -0.025 : 0));
+  const p = new Poly();
+  const rim = new THREE.Vector3();
+  const pt = (a: number, rr: number, dy: number): V3 => {
+    rim.set(Math.cos(a) * rr, dy, Math.sin(a) * rr).applyAxisAngle(new THREE.Vector3(0, 0, 1), -tilt);
+    return [rim.x + top[0], rim.y + top[1] - 0.25, rim.z + top[2]];
+  };
+  for (let i = 0; i < 8; i++) {
+    const a0 = (i / 8) * Math.PI * 2;
+    const a1 = ((i + 1) / 8) * Math.PI * 2;
+    const am = (a0 + a1) / 2;
+    p.quad(pt(a0, 1.5, 0), pt(a1, 1.5, 0), pt(a1, 1.47, -0.14), pt(a0, 1.47, -0.14), i % 2 ? colB : colA, 0.7);
+    p.tri(pt(a0, 1.47, -0.14), pt(a1, 1.47, -0.14), pt(am, 1.46, -0.24), i % 2 ? colB : colA, 0.7);
+  }
+  b.raw(p.build());
+  b.cyl(0xd8d0c0, 0.07, 0.07, 0.1, [top[0] * 0.55, top[1] * 0.55, 0], [0, 0, -tilt], 6);
+  b.cone(0xe9c37e, 0.22, 0.12, [0, 0.03, 0], [0, 0, 0], 6);
   // the canopy rim ripples in the breeze
   return addWind(b.build(), (x, y, z) => (y > 1.9 && Math.hypot(x - top[0], z) > 0.9 ? -0.025 : 0));
 }
 
 export function towel(colA: number, colB: number): THREE.BufferGeometry {
+  // Update 8: stripes that follow a soft drape over the sand, a fringe and a rolled pillow
   const b = new GeoBuilder();
-  for (let i = 0; i < 5; i++) b.box(i % 2 ? colA : colB, 1.0, 0.03, 0.36, [0, 0.02, -0.72 + i * 0.36]);
+  const p = new Poly();
+  const y = (x: number, z: number): number => 0.02 + Math.sin(x * 2.4 + z * 1.3) * 0.015 + Math.max(0, z - 0.6) * 0.05;
+  const n = 7;
+  for (let i = 0; i < n; i++) {
+    const z0 = -0.9 + (i / n) * 1.8;
+    const z1 = -0.9 + ((i + 1) / n) * 1.8;
+    p.quad([-0.5, y(-0.5, z0), z0], [-0.5, y(-0.5, z1), z1], [0.5, y(0.5, z1), z1], [0.5, y(0.5, z0), z0], i % 2 ? colA : colB, 0);
+  }
+  for (let i = 0; i < 6; i++) {
+    const x = -0.42 + i * 0.17;
+    p.quad([x, 0.02, -0.9], [x + 0.05, 0.02, -0.9], [x + 0.05, 0.015, -1.0], [x, 0.015, -1.0], 0xfff4dc, 0);
+  }
+  b.raw(p.build());
+  b.cyl(colB, 0.1, 0.1, 0.8, [0, 0.11, 0.72], [0, 0, Math.PI / 2], 6);
   return b.build();
 }
 
-export function rock(seed: number, size = 1, col = 0x9a948a): THREE.BufferGeometry {
+/** Strata bands, a wet dark foot and (optionally) moss on the top: paint only, no extra triangles. */
+function rockPaint(top: number, moss: boolean, seed: number): (x: number, y: number, z: number, c: THREE.Color) => void {
+  const mossC = new THREE.Color(0x5a9a46);
+  const wet = new THREE.Color(0x5a4e46);
+  return (x, y, z, c) => {
+    const band = Math.sin(y * 9 / Math.max(0.3, top) + Math.sin(x * 2.1 + z * 1.7 + seed) * 0.8);
+    c.multiplyScalar(0.9 + band * 0.09 + hash(Math.round(x * 9), Math.round(y * 9), Math.round(z * 9)) * 0.06);
+    if (y < top * 0.18) c.lerp(wet, 0.35);
+    if (moss && y > top * 0.72) c.lerp(mossC, sstep(top * 0.72, top * 0.95, y) * (0.55 + 0.35 * Math.sin(x * 5 + z * 4 + seed)));
+  };
+}
+
+export function rock(seed: number, size = 1, col = 0x9a948a, moss = false): THREE.BufferGeometry {
   const r = prng(seed);
   const b = new GeoBuilder();
-  b.ico(col, 0.6 * size, [0, 0.25 * size, 0], [1.2, 0.7, 1.0], 1, 0.22, seed);
-  if (r() > 0.4) b.ico(new THREE.Color(col).multiplyScalar(1.12).getHex(), 0.35 * size, [0.5 * size, 0.15 * size, 0.3 * size], [1, 0.7, 1], 0, 0.2, seed + 3);
+  b.ico(col, 0.6 * size, [0, 0.25 * size, 0], [1.2, 0.7, 1.0], 1, 0.22, seed).paint(rockPaint(0.67 * size, moss, seed));
+  if (r() > 0.4) b.ico(new THREE.Color(col).multiplyScalar(1.12).getHex(), 0.35 * size, [0.5 * size, 0.15 * size, 0.3 * size], [1, 0.7, 1], 0, 0.2, seed + 3).paint(rockPaint(0.67 * size, moss, seed));
   return b.build();
 }
 
@@ -326,9 +526,17 @@ export function boat(col: number): THREE.BufferGeometry {
 }
 
 export function buoy(): THREE.BufferGeometry {
+  // Update 8: a channel marker: a banded float, a lattice cage and a lamp on top
   const b = new GeoBuilder();
-  b.torus(0xe53935, 0.32, 0.12, [0, 0.12, 0], [Math.PI / 2, 0, 0], 12);
-  b.torus(0xffffff, 0.32, 0.125, [0, 0.12, 0], [Math.PI / 2, 0, Math.PI / 4], 4);
+  b.lathe(0xe53935, [[0.05, -0.2], [0.42, -0.05], [0.46, 0.12], [0.36, 0.3], [0.12, 0.34], [0, 0.34]], 8).paint((x, y, z, c) => {
+    if (y > 0.05 && y < 0.2) c.set(0xffffff);
+  });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    b.segOpen(0xd8dce0, [Math.cos(a) * 0.3, 0.3, Math.sin(a) * 0.3], [Math.cos(a) * 0.08, 1.15, Math.sin(a) * 0.08], 0.025, 0.025, 3);
+  }
+  b.cone(0xe53935, 0.16, 0.3, [0, 1.25, 0], [0, 0, 0], 6);
+  b.sphere(0xfff3c4, 0.07, [0, 1.42, 0], [1, 1, 1], 5);
   return b.build();
 }
 
@@ -339,7 +547,7 @@ export function cliff(seed: number): THREE.BufferGeometry {
   const cols = [0x9b8577, 0x8a7466, 0xa89382, 0x7d6a5c];
   for (let i = 0; i < 6; i++) {
     const s = 1.6 + r() * 1.8;
-    b.ico(cols[i % 4] as number, s, [(r() - 0.5) * 5, s * 0.8 + i * 0.6, (r() - 0.5) * 7], [1.1, 1.3 + r() * 0.6, 1.1], 1, 0.25, seed + i * 7);
+    b.ico(cols[i % 4] as number, s, [(r() - 0.5) * 5, s * 0.8 + i * 0.6, (r() - 0.5) * 7], [1.1, 1.3 + r() * 0.6, 1.1], 1, 0.25, seed + i * 7).paint(rockPaint(6.5, true, seed));
   }
   b.sphere(0x3f8f4a, 1.0, [0, 6.5, 0], [2.2, 0.4, 2.2], 8);
   return b.build();
@@ -513,11 +721,11 @@ export function urchins(variant = 0, lo = false): THREE.BufferGeometry {
 }
 
 // --------------------------------------------------------------- zone 3: sunset
-export function tikiTorch(): THREE.BufferGeometry {
+export function tikiTorch(lo = false): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.cyl(0x6b4423, 0.06, 0.08, 2.2, [0, 1.1, 0], [0, 0, 0], 6);
-  b.cyl(0x3a2414, 0.16, 0.1, 0.3, [0, 2.3, 0], [0, 0, 0], 8);
-  for (let i = 0; i < 3; i++) b.torus(0xd9b15e, 0.085, 0.02, [0, 0.8 + i * 0.4, 0], [Math.PI / 2, 0, 0], 8);
+  b.cyl(0x3a2414, 0.16, 0.1, 0.3, [0, 2.3, 0], [0, 0, 0], lo ? 6 : 8);
+  if (!lo) for (let i = 0; i < 3; i++) b.torus(0xd9b15e, 0.085, 0.02, [0, 0.8 + i * 0.4, 0], [Math.PI / 2, 0, 0], 6, [1, 1, 1], 3);
   return b.build();
 }
 
@@ -540,8 +748,8 @@ export function lantern(col: number): THREE.BufferGeometry {
 export function bucketSpade(col: number): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.lathe(col, [[0.16, 0], [0.22, 0.3], [0.2, 0.3], [0.14, 0.02], [0, 0.02]], 12);
-  b.torus(new THREE.Color(col).multiplyScalar(0.8).getHex(), 0.2, 0.02, [0, 0.28, 0], [Math.PI / 2, 0, 0], 12);
-  b.torus(0xf2f2f2, 0.19, 0.012, [0, 0.33, 0], [0, 0, 0], 10, [1, 1, 1]);
+  b.torus(new THREE.Color(col).multiplyScalar(0.8).getHex(), 0.2, 0.02, [0, 0.28, 0], [Math.PI / 2, 0, 0], 12, [1, 1, 1], 3);
+  b.torus(0xf2f2f2, 0.19, 0.012, [0, 0.33, 0], [0, 0, 0], 10, [1, 1, 1], 3);
   // spade stuck in the sand beside it
   b.cyl(0xffc933, 0.025, 0.025, 0.55, [0.38, 0.32, 0.05], [0, 0, -0.25], 5);
   b.box(0xffc933, 0.2, 0.22, 0.03, [0.32, 0.06, 0.05], [0, 0, -0.25]);
@@ -560,19 +768,66 @@ export function surfboards(): THREE.BufferGeometry {
   return b.build();
 }
 
-export function lifeguardTower(): THREE.BufferGeometry {
+export function lifeguardTower(lo = false): THREE.BufferGeometry {
+  // Update 8: splayed stilts with cross braces, a cabin with framed windows and a striped band,
+  // a deck with a rail, a cleated ramp, a rescue tube on the rail and a flag
   const b = new GeoBuilder();
   const wood = 0xf4f0e6;
-  for (const x of [-0.8, 0.8]) for (const z of [-0.7, 0.7]) b.cyl(wood, 0.07, 0.08, 2.4, [x * 0.8, 1.2, z * 0.8], [z * 0.08, 0, -x * 0.08], 6);
-  b.box(0xe53935, 2.0, 0.12, 1.8, [0, 2.45, 0]);
-  b.box(0xfff4dc, 1.7, 1.0, 1.5, [0, 3.0, 0]);
-  b.box(0x8fd0f7, 1.2, 0.45, 0.04, [0, 3.15, 0.76]);
-  b.cone(0xe53935, 1.4, 0.6, [0, 3.8, 0], [0, Math.PI / 4, 0], 4);
-  // ladder + red cross flag
-  for (let i = 0; i < 6; i++) b.box(wood, 0.6, 0.05, 0.08, [0, 0.3 + i * 0.36, 1.25 - i * 0.07]);
-  b.cyl(0x8a8a90, 0.02, 0.02, 1.0, [0.8, 4.3, -0.6], [0, 0, 0], 4);
-  b.box(0xe53935, 0.5, 0.3, 0.02, [1.06, 4.65, -0.6]);
-  return addWind(b.build(), (x, y) => (y > 4.45 && x > 0.82 ? -0.04 : 0));
+  const dark = 0xc8c0b0;
+  for (const x of [-1, 1]) for (const z of [-1, 1]) {
+    const foot: V3 = [x * 0.82, 0, z * 0.72];
+    const head: V3 = [x * 0.66, 2.42, z * 0.58];
+    b.segOpen(wood, foot, head, 0.08, 0.07, 6);
+  }
+  // X braces on the sides and back
+  if (!lo) for (const x of [-1, 1]) {
+    b.segOpen(dark, [x * 0.8, 0.3, -0.7], [x * 0.69, 2.1, 0.6], 0.035, 0.035, 3);
+    b.segOpen(dark, [x * 0.8, 0.3, 0.7], [x * 0.69, 2.1, -0.6], 0.035, 0.035, 3);
+  }
+  if (!lo) {
+    b.segOpen(dark, [-0.8, 0.3, -0.7], [0.69, 2.1, -0.6], 0.035, 0.035, 3);
+    b.segOpen(dark, [0.8, 0.3, -0.7], [-0.69, 2.1, -0.6], 0.035, 0.035, 3);
+  }
+  // deck and cabin
+  b.box(0xe53935, 2.1, 0.12, 2.1, [0, 2.46, 0.15]);
+  b.box(0xfff4dc, 1.6, 1.05, 1.3, [0, 3.04, -0.15]);
+  b.box(0x2f6fd6, 1.62, 0.16, 1.32, [0, 2.62, -0.15]);
+  // windows: dark glass with white frames, front and both sides
+  b.box(0x5aa8d8, 1.2, 0.42, 0.03, [0, 3.18, 0.51]).paint((x, y, z, c) => c.lerp(new THREE.Color(0xe8f6ff), sstep(3.0, 3.4, y) * 0.6));
+  b.box(wood, 0.05, 0.46, 0.05, [0, 3.18, 0.53]);
+  for (const x of [-1, 1]) b.box(0x5aa8d8, 0.03, 0.36, 0.7, [x * 0.81, 3.18, -0.15]);
+  // pitched striped roof with an overhang
+  const roof = new Poly();
+  const ridge = 4.05;
+  for (let i = 0; i < 6; i++) {
+    const x0 = -1.0 + (i / 6) * 2.0;
+    const x1 = -1.0 + ((i + 1) / 6) * 2.0;
+    const c = i % 2 ? 0xe53935 : 0xffffff;
+    roof.quad([x0, 3.56, 0.75], [x1, 3.56, 0.75], [x1, ridge, -0.15], [x0, ridge, -0.15], c, 0.7);
+    roof.quad([x0, ridge, -0.15], [x1, ridge, -0.15], [x1, 3.56, -1.05], [x0, 3.56, -1.05], c, 0.7);
+  }
+  for (const x of [-1.0, 1.0]) roof.tri([x, 3.56, 0.75], [x, ridge, -0.15], [x, 3.56, -1.05], 0xfff4dc, 0.8);
+  b.raw(roof.build());
+  if (lo) return b.build();
+  // front deck rail
+  for (const x of [-0.95, -0.3, 0.3, 0.95]) b.tubeOpen(wood, 0.03, 0.03, 0.6, [x, 2.82, 1.15], [0, 0, 0], 4);
+  b.box(wood, 2.0, 0.06, 0.06, [0, 3.12, 1.15]);
+  b.box(wood, 2.0, 0.04, 0.04, [0, 2.86, 1.15]);
+  // rescue tube on the rail
+  b.sphere(0xff7a1a, 0.12, [0.55, 2.86, 1.24], [3.2, 1, 1], 6);
+  // ramp with cleats
+  const r0: V3 = [0.55, 2.4, 1.2];
+  const r1: V3 = [0.55, 0.02, 3.0];
+  b.box(dark, 0.62, 0.06, Math.hypot(r1[1] - r0[1], r1[2] - r0[2]), lerp3(r0, r1, 0.5), [Math.atan2(r0[1] - r1[1], r1[2] - r0[2]), 0, 0]);
+  for (let i = 1; i < 6; i++) {
+    const q = lerp3(r0, r1, i / 6);
+    b.box(wood, 0.6, 0.04, 0.06, [q[0], q[1] + 0.05, q[2]]);
+  }
+  // flag pole with a red-and-yellow flag
+  b.tubeOpen(0x8a8a90, 0.025, 0.025, 1.3, [0.95, 4.35, -0.95], [0, 0, 0], 4);
+  b.box(0xe53935, 0.55, 0.16, 0.02, [1.24, 4.88, -0.95]);
+  b.box(0xffd23a, 0.55, 0.16, 0.02, [1.24, 4.72, -0.95]);
+  return addWind(b.build(), (x, y) => (y > 4.6 && x > 0.98 ? -0.04 : 0));
 }
 
 export function fishingNet(): THREE.BufferGeometry {
@@ -682,17 +937,40 @@ export function bonfireFlame(): THREE.BufferGeometry {
 }
 
 // --------------------------------------------------------------- Update 5 map detail (UPDATE5_PLAN.md §1)
-/** a tuft of dune grass: thin blades that sway */
+/** a clump of dune grass (Update 8): curved, tapering blades in two greens, a few seed heads, a sand mound */
 export function duneGrass(seed: number): THREE.BufferGeometry {
   const r = prng(seed);
   const b = new GeoBuilder();
-  const n = 7;
+  const p = new Poly();
+  const n = 11;
+  const base = new THREE.Color(0x6f8f3e);
+  const tipA = new THREE.Color(0xc8cf7a);
+  const tipB = new THREE.Color(0x9fbf58);
+  const c = new THREE.Color();
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + r();
-    const h = 0.45 + r() * 0.4;
-    b.cone(i % 3 === 0 ? 0xb8c46a : 0x8fb04e, 0.035, h, [Math.cos(a) * 0.12, h / 2, Math.sin(a) * 0.12], [Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35], 3);
+    const a = (i / n) * Math.PI * 2 + r() * 0.6;
+    const h = 0.5 + r() * 0.55;
+    const lean = 0.25 + r() * 0.45;
+    const w = 0.035 + r() * 0.02;
+    const o: V3 = [Math.cos(a) * 0.12 * r(), 0.02, Math.sin(a) * 0.12 * r()];
+    const dx = Math.cos(a);
+    const dz = Math.sin(a);
+    const pt = (t: number, s: number): V3 => {
+      const out = lean * t * t * h;
+      const ww = w * (1 - t) * s;
+      return [o[0] + dx * out - dz * ww, o[1] + h * t * (1 - t * lean * 0.25), o[2] + dz * out + dx * ww];
+    };
+    const tip = r() < 0.5 ? tipA : tipB;
+    for (let k = 0; k < 3; k++) {
+      const t0 = k / 3;
+      const t1 = (k + 1) / 3;
+      c.copy(base).lerp(tip, t1);
+      if (k < 2) p.quad(pt(t0, -1), pt(t0, 1), pt(t1, 1), pt(t1, -1), c, 0.8);
+      else p.tri(pt(t0, -1), pt(t0, 1), pt(1, 0), c, 0.8);
+    }
   }
-  b.sphere(0xe9c37e, 0.2, [0, 0, 0], [1.4, 0.35, 1.2], 6);
+  b.raw(p.build());
+  b.lathe(0xe9c37e, [[0.34, 0], [0.22, 0.06], [0, 0.08]], 6);
   return addWind(b.build(), (x, y) => Math.max(0, y) * 0.16);
 }
 
@@ -739,7 +1017,7 @@ export function barrels(): THREE.BufferGeometry {
   const at: V3[] = [[0, 0.45, 0], [0.75, 0.45, 0.1], [0.38, 1.33, 0.05]];
   for (const p of at) {
     b.lathe(0x8a5a2b, [[0.3, -0.42], [0.36, -0.2], [0.38, 0], [0.36, 0.2], [0.3, 0.42], [0, 0.42]], 10, p);
-    for (const dy of [-0.26, 0.26]) b.torus(0x4a4a50, 0.355, 0.02, [p[0], p[1] + dy, p[2]], [Math.PI / 2, 0, 0], 10);
+    for (const dy of [-0.26, 0.26]) b.torus(0x4a4a50, 0.355, 0.02, [p[0], p[1] + dy, p[2]], [Math.PI / 2, 0, 0], 10, [1, 1, 1], 3);
   }
   return b.build();
 }
@@ -748,7 +1026,7 @@ export function barrels(): THREE.BufferGeometry {
 export function lifeRing(): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.cyl(0x8a5a2b, 0.08, 0.09, 1.6, [0, 0.8, 0], [0, 0, 0], 6);
-  b.torus(0xff4a3a, 0.3, 0.08, [0, 1.15, 0.12], [0, 0, 0], 12).paint((x, y, z, c) => {
+  b.torus(0xff4a3a, 0.3, 0.08, [0, 1.15, 0.12], [0, 0, 0], 12, [1, 1, 1], 5).paint((x, y, z, c) => {
     const a = Math.atan2(y - 1.15, x);
     if (Math.floor((a + Math.PI) / (Math.PI / 4)) % 2 === 0) c.set(0xffffff);
   });
@@ -799,5 +1077,337 @@ export function sailboat(col: number): THREE.BufferGeometry {
   b.cyl(0x8a5a2b, 0.04, 0.04, 3.2, [0, 1.6, 0], [0, 0, 0], 5);
   b.cone(col, 1.0, 2.6, [0, 1.6, -0.45], [0, 0, 0], 3, [0.05, 1, 1]);
   b.cone(0xffffff, 0.7, 1.9, [0, 1.3, 0.55], [0, 0, 0], 3, [0.05, 1, 1]);
+  return b.build();
+}
+
+// --------------------------------------------------------------- Update 8 hero scenery (UPDATE8_PLAN.md, map track)
+/** Striped canvas stripes across a sloped plane from edge (a0,a1) up to edge (b0,b1). */
+function stripes(p: Poly, a0: V3, a1: V3, b0: V3, b1: V3, n: number, colA: number, colB: number): void {
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n;
+    const t1 = (i + 1) / n;
+    p.quad(lerp3(a0, a1, t0), lerp3(a0, a1, t1), lerp3(b0, b1, t1), lerp3(b0, b1, t0), i % 2 ? colA : colB, 0.72);
+  }
+}
+
+/** A scalloped valance along an edge, flaps alternating colour. */
+function valance(p: Poly, a: V3, b: V3, n: number, drop: number, colA: number, colB: number): void {
+  for (let i = 0; i < n; i++) {
+    const p0 = lerp3(a, b, i / n);
+    const p1 = lerp3(a, b, (i + 1) / n);
+    const m = lerp3(p0, p1, 0.5);
+    p.quad(p0, p1, [p1[0], p1[1] - drop * 0.6, p1[2]], [p0[0], p0[1] - drop * 0.6, p0[2]], i % 2 ? colA : colB, 0.72);
+    p.tri([p0[0], p0[1] - drop * 0.6, p0[2]], [p1[0], p1[1] - drop * 0.6, p1[2]], [m[0], m[1] - drop, m[2]], i % 2 ? colA : colB, 0.72);
+  }
+}
+
+/** A beach cabana: a wooden frame, a striped pitched awning with a scalloped valance, tied-back
+ * curtains, a lounger with a pillow and a little side table. Opens toward +z. ~2.4 x 2.2 m. */
+export function cabana(colA: number, colB = 0xfff4dc): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const wood = 0xe8dcc4;
+  b.box(0xc9955a, 2.5, 0.1, 2.3, [0, 0.05, 0]).paint((x, y, z, c) => c.multiplyScalar(0.9 + Math.abs(Math.sin(x * 9)) * 0.12));
+  for (const x of [-1.15, 1.15]) for (const z of [-1.05, 1.05]) b.tubeOpen(wood, 0.06, 0.06, 2.2, [x, 1.15, z], [0, 0, 0], 5);
+  const p = new Poly();
+  const eave = 2.2;
+  const ridge = 2.85;
+  stripes(p, [-1.3, eave, 1.2], [1.3, eave, 1.2], [-1.3, ridge, 0], [1.3, ridge, 0], 7, colA, colB);
+  stripes(p, [-1.3, ridge, 0], [1.3, ridge, 0], [-1.3, eave, -1.2], [1.3, eave, -1.2], 7, colA, colB);
+  for (const x of [-1.3, 1.3]) p.tri([x, eave, 1.2], [x, ridge, 0], [x, eave, -1.2], colA, 0.75);
+  valance(p, [-1.3, eave, 1.2], [1.3, eave, 1.2], 7, 0.22, colA, colB);
+  valance(p, [1.3, eave, -1.2], [-1.3, eave, -1.2], 7, 0.22, colA, colB);
+  // back wall curtain in one panel, side curtains gathered and tied to the front posts
+  p.quad([-1.15, 0.12, -1.05], [1.15, 0.12, -1.05], [1.15, eave, -1.05], [-1.15, eave, -1.05], shade(colB, 0.96), 0.85);
+  for (const s of [-1, 1]) {
+    const x = s * 1.15;
+    p.quad([x, eave, 1.05], [x, eave, 0.55], [x, 1.2, 0.95], [x, 1.2, 1.0], colA, 0.8);
+    p.quad([x, 1.2, 1.0], [x, 1.2, 0.95], [x, 0.12, 0.7], [x, 0.12, 1.05], colA, 0.8);
+  }
+  b.raw(p.build());
+  for (const s of [-1, 1]) b.torus(0xffd23a, 0.06, 0.02, [s * 1.15, 1.2, 0.98], [Math.PI / 2, 0, 0], 6, [1, 1, 1], 3);
+  // lounger: frame, cushion and pillow, angled back rest
+  b.box(0xb98550, 0.75, 0.12, 1.6, [-0.35, 0.35, 0.05]);
+  b.box(colA, 0.7, 0.1, 1.1, [-0.35, 0.46, 0.3]);
+  b.box(colA, 0.7, 0.1, 0.6, [-0.35, 0.68, -0.55], [0.7, 0, 0]);
+  b.sphere(0xfff4dc, 0.18, [-0.35, 0.86, -0.42], [1.6, 0.6, 0.9], 6);
+  for (const x of [-0.65, -0.05]) for (const z of [-0.6, 0.75]) b.tubeOpen(0x8a5a2b, 0.03, 0.03, 0.3, [x, 0.2, z], [0, 0, 0], 4);
+  // side table with a drink
+  b.cyl(0xfff4dc, 0.22, 0.22, 0.05, [0.65, 0.55, 0.1], [0, 0, 0], 8);
+  b.tubeOpen(0xb0b8c0, 0.03, 0.03, 0.5, [0.65, 0.3, 0.1], [0, 0, 0], 4);
+  b.cyl(0xff8a3a, 0.05, 0.04, 0.14, [0.6, 0.65, 0.1], [0, 0, 0], 6);
+  return addWind(b.build(), (x, y, z) => (y > 1.8 && y < 2.25 && Math.abs(z) > 1.1 ? -0.02 : 0));
+}
+
+/** A wooden jetty reaching into the sea along +x: plank deck, pilings with braces, a rope rail,
+ * a bollard, a ladder down at the end and a lantern post. Starts at x = 0 on the sand. */
+export function jetty(len = 12, lo = false): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const deckY = 0.62;
+  const hw = 0.95;
+  const p = new Poly();
+  const n = Math.round(len / 0.38);
+  const plankA = new THREE.Color(0xc9955a);
+  const plankB = new THREE.Color(0xb3804a);
+  const c = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    const x0 = (i / n) * len + 0.03;
+    const x1 = ((i + 1) / n) * len - 0.03;
+    c.copy(i % 3 === 0 ? plankB : plankA).multiplyScalar(0.94 + hash(i, 3, 7) * 0.12);
+    // planks are a little uneven
+    const dy = (hash(i, 1, 2) - 0.5) * 0.02;
+    p.quad([x0, deckY + dy, hw], [x1, deckY + dy, hw], [x1, deckY + dy, -hw], [x0, deckY + dy, -hw], c, 0);
+  }
+  b.raw(p.build());
+  // stringers under the deck
+  for (const z of [-hw + 0.08, hw - 0.08]) b.box(0x7a5530, len, 0.2, 0.12, [len / 2, deckY - 0.12, z]);
+  // pilings with cross braces
+  const step = 2.4;
+  for (let x = 0.4; x < len; x += step) {
+    for (const z of [-hw - 0.05, hw + 0.05]) b.tubeOpen(0x6b4423, 0.12, 0.14, 2.6, [x, deckY - 1.15, z], [0, 0, 0], lo ? 5 : 7).paint((px, py, pz, cc) => {
+      if (py < 0.0) cc.lerp(new THREE.Color(0x3a4a3a), sstep(0.0, -0.4, py) * 0.6);
+    });
+    if (!lo && x > 2) b.segOpen(0x7a5530, [x, deckY - 0.25, -hw], [x, -0.6, hw], 0.035, 0.035, 3);
+  }
+  if (!lo) {
+    // rope rail along one side
+    for (let x = 0.4; x < len; x += step) b.tubeOpen(0x8a5a2b, 0.05, 0.05, 1.0, [x, deckY + 0.5, -hw - 0.05], [0, 0, 0], 5);
+    for (let x = 0.4; x + step < len; x += step) {
+      b.segOpen(0xe9dfc8, [x, deckY + 0.95, -hw - 0.05], [x + step / 2, deckY + 0.8, -hw - 0.05], 0.02, 0.02, 3);
+      b.segOpen(0xe9dfc8, [x + step / 2, deckY + 0.8, -hw - 0.05], [x + step, deckY + 0.95, -hw - 0.05], 0.02, 0.02, 3);
+    }
+    // bollard with a rope coil, a ladder at the end, a lantern post and a life ring
+    b.cyl(0x2c3e66, 0.12, 0.14, 0.3, [len - 0.4, deckY + 0.15, hw - 0.25], [0, 0, 0], 7);
+    b.sphere(0x2c3e66, 0.14, [len - 0.4, deckY + 0.32, hw - 0.25], [1, 0.6, 1], 6);
+    b.torus(0xe9dfc8, 0.2, 0.035, [len - 1.0, deckY + 0.04, hw - 0.35], [Math.PI / 2, 0, 0], 9, [1, 1, 1], 3);
+    for (const z of [-0.3, 0.3]) b.tubeOpen(0xb0b8c0, 0.025, 0.025, 1.6, [len + 0.05, deckY - 0.3, z], [0, 0, 0], 4);
+    for (let i = 0; i < 4; i++) b.tubeOpen(0xb0b8c0, 0.02, 0.02, 0.6, [len + 0.05, deckY + 0.3 - i * 0.35, 0], [Math.PI / 2, 0, 0], 3);
+    b.tubeOpen(0x2c3e66, 0.05, 0.06, 2.2, [len - 0.3, deckY + 1.1, -hw + 0.1], [0, 0, 0], 5);
+    b.sphere(0xfff3c4, 0.14, [len - 0.3, deckY + 2.3, -hw + 0.1], [1, 1.2, 1], 6);
+    b.cone(0x2c3e66, 0.17, 0.14, [len - 0.3, deckY + 2.5, -hw + 0.1], [0, 0, 0], 6);
+    b.torus(0xff4a3a, 0.22, 0.06, [len * 0.55, deckY + 0.65, -hw - 0.12], [0, 0, 0], 10, [1, 1, 1], 4).paint((x, y, z, cc) => {
+      if (Math.floor((Math.atan2(y - deckY - 0.65, x - len * 0.55) + Math.PI) / (Math.PI / 4)) % 2 === 0) cc.set(0xffffff);
+    });
+  }
+  return b.build();
+}
+
+/** A sea stack: stratified rock layers stepping in as they rise, moss and grass on top, a wet
+ * dark foot with barnacles. */
+export function seaStack(seed: number, lo = false): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  const cols = [0xa89382, 0x93806f, 0xb8a28e, 0x8a7466];
+  let y = 0;
+  let w = 2.0 + r() * 0.6;
+  let ox = 0;
+  let oz = 0;
+  const layers = 4 + Math.floor(r() * 2);
+  for (let i = 0; i < layers; i++) {
+    const h = 0.7 + r() * 0.6;
+    ox += (r() - 0.5) * 0.5;
+    oz += (r() - 0.5) * 0.4;
+    // each stratum: a flattened, jittered slab with its own tone and a lighter band at its top
+    const col = cols[i % 4] as number;
+    const yy = y + h / 2;
+    b.ico(col, 1, [ox, yy, oz], [w, h * 0.62, w * 0.82], 1, 0.16, seed + i * 11).paint((x, py, z, cc) => {
+      const k = (py - y) / h;
+      cc.multiplyScalar(0.84 + k * 0.22 + hash(Math.round(x * 6), Math.round(py * 6), Math.round(z * 6)) * 0.06);
+      if (py < 0.35) cc.lerp(new THREE.Color(0x4a4038), 0.45);
+    });
+    y += h * 0.95;
+    w *= 0.8 + r() * 0.08;
+  }
+  // moss cap and grass on the top
+  b.sphere(0x4f8f3e, 1, [ox, y + 0.05, oz], [w * 0.9, 0.22, w * 0.75], 7).paint((x, py, z, cc) => cc.multiplyScalar(0.85 + Math.sin(x * 5 + z * 4) * 0.12));
+  if (!lo) {
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + r();
+      b.cone(i % 2 ? 0x8fb04e : 0x6f9a3e, 0.12, 0.5, [ox + Math.cos(a) * w * 0.4, y + 0.3, oz + Math.sin(a) * w * 0.3], [Math.sin(a) * 0.3, 0, -Math.cos(a) * 0.3], 3);
+    }
+    // moss dripping over the edge of the top stratum and barnacles at the foot
+    for (let i = 0; i < 3; i++) {
+      const a = r() * Math.PI * 2;
+      b.sphere(0x5a9a46, 0.3, [ox + Math.cos(a) * w * 0.75, y - 0.2, oz + Math.sin(a) * w * 0.62], [1.2, 0.5, 1], 5);
+    }
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2 + r() * 0.4;
+      b.cone(0xf2ece0, 0.07, 0.08, [Math.cos(a) * 1.7, 0.18 + r() * 0.3, Math.sin(a) * 1.45], [Math.PI / 2 - 0.3, -a + Math.PI / 2, 0], 4);
+    }
+  }
+  return b.build();
+}
+
+/** Sun-bleached driftwood: a bent log with branch stubs and pale end grain. */
+export function driftwood(seed: number): THREE.BufferGeometry {
+  const r = prng(seed);
+  const b = new GeoBuilder();
+  const L = 1.8 + r() * 1.2;
+  const bend = (r() - 0.5) * 0.6;
+  const pts: V3[] = [[-L / 2, 0.12, 0], [-L / 6, 0.16, bend * 0.6], [L / 6, 0.14, bend], [L / 2, 0.1, bend * 0.4]];
+  b.tube(0xb8a890, pts, (t) => 0.13 * (1 - t * 0.45), 6, 6, 'start').paint((x, y, z, c) => c.multiplyScalar(0.86 + Math.abs(Math.sin(x * 14 + z * 3)) * 0.18));
+  b.cyl(0xe2d6bc, 0.12, 0.12, 0.02, [-L / 2 - 0.01, 0.12, 0], [0, 0, Math.PI / 2], 6);
+  for (let i = 0; i < 2; i++) {
+    const t = 0.35 + i * 0.3;
+    const q = lerp3(pts[1] as V3, pts[2] as V3, t);
+    const s = i % 2 ? 1 : -1;
+    b.tube(0xa89880, [q, [q[0] + 0.2, q[1] + 0.22, q[2] + s * 0.25], [q[0] + 0.35, q[1] + 0.28, q[2] + s * 0.45]], (u) => 0.05 * (1 - u * 0.6), 4, 3, 'end');
+  }
+  return b.build();
+}
+
+/** A sandcastle with four towers, a keep, walls, a gate, a moat, shells and a flag. */
+export function sandcastle(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const sandA = 0xe9c37e;
+  const sandB = 0xf2d699;
+  const ridges = (x: number, y: number, z: number, c: THREE.Color): void => {
+    c.multiplyScalar(0.9 + Math.abs(Math.sin(y * 18)) * 0.12);
+  };
+  // moat: wet sand ring with a sliver of water
+  b.lathe(0xc8a060, [[1.45, 0], [1.3, 0.03], [0, 0.03]], 10);
+  b.tubeOpen(0x7ad0e8, 1.22, 1.22, 0.04, [0, 0.03, 0], [0, 0, 0], 10);
+  b.lathe(sandA, [[1.08, 0], [1.0, 0.22], [0, 0.22]], 8);
+  const tower: [number, number][] = [[0.24, 0], [0.2, 0.22], [0.18, 0.44], [0.17, 0.62], [0, 0.62]];
+  for (const [x, z] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]] as [number, number][]) {
+    b.lathe(sandB, tower, 6, [x, 0.2, z]).paint(ridges);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + 0.4;
+      b.box(sandB, 0.08, 0.1, 0.08, [x + Math.cos(a) * 0.12, 0.86, z + Math.sin(a) * 0.12]);
+    }
+  }
+  // walls between the towers, a dark gate at the front
+  for (const [x, z, ry] of [[0, -0.6, 0], [0, 0.6, 0], [-0.6, 0, Math.PI / 2], [0.6, 0, Math.PI / 2]] as [number, number, number][]) {
+    b.box(sandA, 1.0, 0.36, 0.14, [x, 0.38, z], [0, ry, 0]).paint(ridges);
+  }
+  b.box(0x8a6a40, 0.22, 0.22, 0.04, [0, 0.33, 0.68]);
+  // keep
+  b.lathe(sandB, [[0.34, 0], [0.28, 0.32], [0.25, 0.72], [0.22, 0.95], [0, 0.95]], 6, [0, 0.2, 0]).paint(ridges);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    b.box(sandB, 0.09, 0.12, 0.09, [Math.cos(a) * 0.18, 1.2, Math.sin(a) * 0.18], [0, -a, 0]);
+  }
+  b.tubeOpen(0x7a5530, 0.012, 0.012, 0.55, [0, 1.45, 0], [0, 0, 0], 3);
+  b.box(0xe53935, 0.26, 0.15, 0.02, [0.14, 1.63, 0]);
+  // shells pressed into the wall
+  b.ico(0xf7a6b8, 0.05, [0.3, 0.42, 0.68], [1, 1, 0.5], 0);
+  b.ico(0xfff4dc, 0.05, [-0.3, 0.42, 0.68], [1, 1, 0.5], 0);
+  return addWind(b.build(), (x, y) => (y > 1.55 && x > 0.02 ? -0.02 * x * 6 : 0));
+}
+
+/** A line of floats on a rope, marking the swimming area (lies along z, centred on 0). */
+export function floatLine(n = 9, gap = 1.4): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const L = (n - 1) * gap;
+  b.segOpen(0xe9dfc8, [0, 0.06, -L / 2], [0, 0.06, L / 2], 0.02, 0.02, 3);
+  for (let i = 0; i < n; i++) b.ico(i % 2 ? 0xffffff : 0xff5a3a, 0.14, [0, 0.07, -L / 2 + i * gap], [1, 0.8, 1.3], 0);
+  return addWind(b.build(), () => 0.02);
+}
+
+/** Stacked wire crab pots with a buoy and rope, for the pier. */
+export function crabPots(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const pot = (x: number, y: number, z: number, ry: number, col: number): void => {
+    const w = 0.7;
+    const h = 0.42;
+    // dark mesh panels with a coloured frame
+    b.box(0x34474a, w - 0.04, h - 0.04, w - 0.04, [x, y + h / 2, z], [0, ry, 0]).paint((px, py, pz, c) => c.multiplyScalar(0.8 + 0.3 * Math.abs(Math.sin(py * 30))));
+    const cs = Math.cos(ry);
+    const sn = Math.sin(ry);
+    const at = (lx: number, lz: number): [number, number] => [x + lx * cs + lz * sn, z - lx * sn + lz * cs];
+    for (const lx of [-w / 2, w / 2]) for (const lz of [-w / 2, w / 2]) {
+      const [px, pz] = at(lx, lz);
+      b.tubeOpen(col, 0.025, 0.025, h, [px, y + h / 2, pz], [0, 0, 0], 3);
+    }
+    for (const yy of [y + 0.01, y + h]) for (const lz of [-w / 2, w / 2]) {
+      const [px, pz] = at(0, lz);
+      b.box(col, w, 0.04, 0.04, [px, yy, pz], [0, ry, 0]);
+    }
+  };
+  pot(0, 0, 0, 0.1, 0xffc933);
+  pot(0.78, 0, 0.1, -0.15, 0x22c8f0);
+  pot(0.35, 0.44, 0.05, 0.3, 0xff5a3a);
+  b.lathe(0xff7a1a, [[0, -0.18], [0.12, -0.12], [0.14, 0.05], [0.1, 0.18], [0, 0.2]], 6, [-0.55, 0.16, 0.45], [Math.PI / 2, 0, 0.4]);
+  b.torus(0xe9dfc8, 0.18, 0.03, [-0.55, 0.03, -0.1], [Math.PI / 2, 0, 0], 8, [1, 1, 1], 3);
+  return b.build();
+}
+
+/** A post hung with colourful fishing buoys. */
+export function hangingBuoys(): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.tubeOpen(0x8a5a2b, 0.09, 0.1, 2.0, [0, 1.0, 0], [0, 0, 0], 6);
+  b.sphere(0x7a4a22, 0.1, [0, 2.0, 0], [1, 0.6, 1], 5);
+  const cols = [0xff5a3a, 0xffd23a, 0x22c8f0, 0xffffff];
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.3;
+    const x = Math.cos(a) * 0.2;
+    const z = Math.sin(a) * 0.2;
+    const y = 1.2 - (i % 2) * 0.35;
+    b.segOpen(0xe9dfc8, [x * 0.5, 1.85, z * 0.5], [x, y + 0.2, z], 0.012, 0.012, 3);
+    b.lathe(cols[i] as number, [[0, -0.2], [0.11, -0.14], [0.13, 0.02], [0.1, 0.16], [0, 0.2]], 6, [x, y, z]).paint((px, py, pz, c) => {
+      if (Math.abs(py - y) < 0.04) c.set(0x2a2f38);
+    });
+  }
+  return addWind(b.build(), (x, y) => (y < 1.8 ? 0.015 : 0));
+}
+
+/** A sunset tiki bar: thatch roof, striped awning, a bamboo counter with stools and a tiki mask. */
+export function tikiBar(colA: number): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  const bamboo = (x: number, y: number, z: number, c: THREE.Color): void => {
+    c.multiplyScalar(0.8 + Math.abs(Math.sin(x * 12.5)) * 0.25);
+    if (Math.abs(Math.sin(y * 6)) > 0.95) c.multiplyScalar(0.75);
+  };
+  b.box(0xc9955a, 2.6, 1.0, 0.7, [0, 0.5, 0.5]).paint(bamboo);
+  b.box(0x8a5a2b, 2.8, 0.1, 0.9, [0, 1.05, 0.55]);
+  for (const x of [-1.25, 1.25]) for (const z of [-0.9, 0.85]) b.tubeOpen(0x9a6a34, 0.08, 0.09, 2.4, [x, 1.2, z], [0, 0, 0], 5);
+  b.box(0xb98550, 2.5, 1.0, 0.1, [0, 1.6, -0.9]).paint(bamboo);
+  // thatch: two layers with a ragged fringe
+  b.cone(0xd9b15e, 2.2, 1.1, [0, 3.0, 0], [0, Math.PI / 4, 0], 4, [1, 1, 0.8]).paint((x, y, z, c) => c.multiplyScalar(0.88 + 0.12 * Math.sin(Math.atan2(z, x) * 30 + y * 6)));
+  b.cone(0xe2bd6a, 1.3, 0.8, [0, 3.55, 0], [0, Math.PI / 4, 0], 4, [1, 1, 0.8]);
+  const p = new Poly();
+  // striped awning over the counter
+  stripes(p, [-1.4, 2.35, 0.95], [1.4, 2.35, 0.95], [-1.4, 2.0, 1.6], [1.4, 2.0, 1.6], 8, colA, 0xfff4dc);
+  valance(p, [-1.4, 2.0, 1.6], [1.4, 2.0, 1.6], 8, 0.2, colA, 0xfff4dc);
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2;
+    const rr = 1.5;
+    const q: V3 = [Math.cos(a) * rr, 2.42, Math.sin(a) * rr * 0.8];
+    p.tri([q[0] - 0.18, q[1], q[2]], [q[0] + 0.18, q[1], q[2]], [q[0], q[1] - 0.3, q[2]], 0xc49c48, 0.8);
+  }
+  b.raw(p.build());
+  // stools, a tiki mask post and a pineapple on the bar
+  for (const x of [-0.8, 0, 0.8]) {
+    b.tubeOpen(0x6b4423, 0.05, 0.06, 0.6, [x, 0.3, 1.25], [0, 0, 0], 4);
+    b.cyl(colA, 0.2, 0.2, 0.08, [x, 0.62, 1.25], [0, 0, 0], 7);
+  }
+  b.cyl(0x7a4a22, 0.22, 0.24, 1.6, [1.7, 0.8, 0.7], [0, 0, 0], 7);
+  b.box(0x2a1a10, 0.3, 0.1, 0.05, [1.7, 1.15, 0.92]);
+  b.box(0xffd23a, 0.08, 0.08, 0.05, [1.62, 1.3, 0.93]);
+  b.box(0xffd23a, 0.08, 0.08, 0.05, [1.78, 1.3, 0.93]);
+  b.sphere(0xffb020, 0.13, [-0.6, 1.24, 0.55], [1, 1.3, 1], 6);
+  b.cone(0x3dae4f, 0.08, 0.2, [-0.6, 1.47, 0.55], [0, 0, 0], 4);
+  return addWind(b.build(), (x, y, z) => (y < 2.2 && y > 1.7 && z > 1.4 ? -0.02 : 0));
+}
+
+/** An outrigger canoe pulled up on the sand. */
+export function outrigger(col: number): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.sphere(col, 0.5, [0, 0.22, 0], [0.55, 0.42, 3.6], 9).paint((x, y, z, c) => {
+    if (y > 0.33) c.set(0xfff4dc);
+  });
+  b.sphere(0x3a2414, 0.24, [0, 0.38, 0], [0.75, 0.25, 5.4], 6);
+  b.sphere(0xd8c8a8, 0.18, [1.3, 0.1, 0], [0.7, 0.6, 9], 6);
+  for (const z of [-0.6, 0.6]) b.segOpen(0x8a5a2b, [0, 0.42, z], [1.3, 0.22, z], 0.03, 0.03, 4);
+  b.tubeOpen(0xb98550, 0.025, 0.025, 2.0, [-0.1, 0.45, -0.3], [Math.PI / 2, 0.2, 0], 4);
+  b.sphere(0xb98550, 0.1, [-0.3, 0.45, 0.65], [1, 0.25, 1.8], 5, [0, 0.2, 0]);
+  return b.build();
+}
+
+/** Cross-bracing for a pier piling pair (sunk into the water). */
+export function pilingBraces(span: number): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.segOpen(0x5a3a1c, [0, -0.05, -span / 2], [0, -1.6, span / 2], 0.05, 0.05, 4);
+  b.segOpen(0x5a3a1c, [0, -0.05, span / 2], [0, -1.6, -span / 2], 0.05, 0.05, 4);
+  b.box(0x5a3a1c, 0.12, 0.14, span, [0, -0.12, 0]);
   return b.build();
 }

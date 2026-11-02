@@ -138,11 +138,27 @@ export class GeoBuilder {
   cyl(color: number, rTop: number, rBot: number, h: number, pos: Vec3 = [0, 0, 0], rot: Vec3 = [0, 0, 0], seg = 12, scale: Vec3 = [1, 1, 1], gradient?: { top: number; bottom: number }): this {
     return this.push(new THREE.CylinderGeometry(rTop, rBot, h, seg), color, pos, rot, scale, gradient);
   }
+  /** Cylinder without end caps (posts sunk into sand or water, hoops): half the triangles of `cyl`. */
+  tubeOpen(color: number, rTop: number, rBot: number, h: number, pos: Vec3 = [0, 0, 0], rot: Vec3 = [0, 0, 0], seg = 8): this {
+    return this.push(new THREE.CylinderGeometry(rTop, rBot, h, seg, 1, true), color, pos, rot, [1, 1, 1]);
+  }
+  /** Open-ended cylinder spanning two points (no caps): planks, poles and braces whose ends are hidden. */
+  segOpen(color: number, a: Vec3, bp: Vec3, rA: number, rB: number, segs = 5): this {
+    const va = new THREE.Vector3(...a);
+    const vb = new THREE.Vector3(...bp);
+    const dir = vb.clone().sub(va);
+    const len = dir.length();
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    const e = new THREE.Euler().setFromQuaternion(q);
+    const mid = va.add(vb).multiplyScalar(0.5);
+    return this.tubeOpen(color, rB, rA, len, [mid.x, mid.y, mid.z], [e.x, e.y, e.z], segs);
+  }
   cone(color: number, r: number, h: number, pos: Vec3 = [0, 0, 0], rot: Vec3 = [0, 0, 0], seg = 10, scale: Vec3 = [1, 1, 1]): this {
     return this.push(new THREE.ConeGeometry(r, h, seg), color, pos, rot, scale);
   }
-  torus(color: number, r: number, tube: number, pos: Vec3 = [0, 0, 0], rot: Vec3 = [0, 0, 0], seg = 16, scale: Vec3 = [1, 1, 1]): this {
-    return this.push(new THREE.TorusGeometry(r, tube, 8, seg), color, pos, rot, scale);
+  /** `tubeSeg`: segments round the tube (8 by default; thin hoops and rings read fine with 3-4) */
+  torus(color: number, r: number, tube: number, pos: Vec3 = [0, 0, 0], rot: Vec3 = [0, 0, 0], seg = 16, scale: Vec3 = [1, 1, 1], tubeSeg = 8): this {
+    return this.push(new THREE.TorusGeometry(r, tube, tubeSeg, seg), color, pos, rot, scale);
   }
   ico(color: number, r: number, pos: Vec3 = [0, 0, 0], scale: Vec3 = [1, 1, 1], detail = 1, jitter = 0, seed = 1): this {
     const g = new THREE.IcosahedronGeometry(r, detail);

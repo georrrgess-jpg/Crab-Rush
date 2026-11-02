@@ -206,6 +206,9 @@ export class UI {
       void this.pauseEl.offsetWidth;
       this.pauseEl.classList.add('enter');
       (this.pauseEl.querySelector('.btn.big') as HTMLElement | null)?.focus({ preventScroll: true });
+      // the sheet scrolls on short screens: always open it at the top, with the title in view
+      const sh = this.pauseEl.querySelector<HTMLElement>('.sheet');
+      if (sh) sh.scrollTop = 0;
     }
     if (name === 'hud' && prev !== 'pause') {
       this.hud.classList.remove('enter');
@@ -240,7 +243,14 @@ export class UI {
     node.classList.add('rt-enter');
     // content rises in after the card
     const body = node.querySelector<HTMLElement>('.page-body, .shop-body');
-    if (body) requestAnimationFrame(() => staggerIn(body.querySelector('.crab-grid, .stat-grid, .map-body, .daily-body > .dt-col-a') ?? body));
+    if (body)
+      requestAnimationFrame(() => {
+        const list = body.querySelector<HTMLElement>('.crab-grid, .map-body, .daily-body > .dt-col-a');
+        staggerIn(list ?? body);
+        // then the cards inside the page's main list (cups, trophies, stat tiles, pass tiers, settings rows)
+        const inner = list ? null : body.querySelector<HTMLElement>('.cup-grid, .trophy-shelf, .stat-grid, .pass-track');
+        if (inner) staggerIn(inner, ':scope > *', 12, 120);
+      });
   }
 
   hideExtras(): void {
@@ -511,6 +521,16 @@ export class UI {
     this.toasts.style.top = corner ? '' : `${Math.round(toastTop())}px`;
     this.toasts.appendChild(t);
     while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
+    // over a results card (results, race podium, level end): sit in the open sky above the card when
+    // there is room, so the toast never covers the big distance, the podium or the stars
+    if (!corner) {
+      const card = [...document.querySelectorAll<HTMLElement>('.res-card')].find((n) => n.offsetParent !== null);
+      if (card) {
+        const top = card.getBoundingClientRect().top;
+        const h = this.toasts.offsetHeight;
+        if (top - h - 12 >= 8) this.toasts.style.top = `${Math.round(top - h - 12)}px`;
+      }
+    }
     setTimeout(() => t.remove(), (life + 0.4) * 1000);
   }
 

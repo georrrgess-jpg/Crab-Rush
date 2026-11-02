@@ -1638,7 +1638,7 @@ export class Game {
     this.reviveCard.hide();
     this.ui.hideExtras();
     this.world.revive();
-    this.audio.play('powerup');
+    this.audio.play('revive');
     this.haptics.play('success');
     this.ui.show('hud');
     this.input.setPointerEnabled(true);
@@ -2316,7 +2316,7 @@ export class Game {
           this.audio.play('hop');
           break;
         case 'land':
-          this.audio.play(ev.hard ? 'slam' : 'land');
+          this.audio.play(ev.hard ? 'slam' : 'land', { intensity: Math.min(1, Math.abs(ev.vy) / 15) });
           break;
         case 'bump':
           this.audio.play('bump', { pan: ev.x * 0.15 });
@@ -2331,7 +2331,7 @@ export class Game {
           this.ui.floater(`Close shave! +${ev.reward}`, 0.5, 0.42);
           break;
         case 'powerup':
-          this.audio.play(ev.kind === 'rider' ? 'rider' : 'powerup');
+          this.audio.play(ev.kind === 'rider' ? 'rider' : 'powerup', { kind: ev.kind });
           this.ui.toast(ev.kind === 'magnet' ? 'Shell Magnet!' : ev.kind === 'shield' ? 'Bubble Shield!' : 'Wave Rider!', { kind: 'gold' });
           break;
         case 'powerupEnd':
@@ -2366,8 +2366,7 @@ export class Game {
           this.audio.play('splash');
           break;
         case 'fever':
-          this.audio.play('streakFlame');
-          setTimeout(() => this.audio.play('powerup'), 120);
+          this.audio.play('fever');
           this.haptics.play('success');
           this.ui.toast('SHELL FEVER!', { kind: 'gold', big: true, sub: '2× shells · shells fly to you', life: 2 });
           break;
@@ -2377,7 +2376,7 @@ export class Game {
           this.ui.floater('Stumble!', 0.5, 0.4);
           break;
         case 'dash':
-          this.audio.play('rider');
+          this.audio.play('dash');
           this.haptics.play('success');
           this.ui.toast('Shell Dash!', { kind: 'gold', sub: 'Smash straight through!', life: 1.6 });
           break;
@@ -2617,11 +2616,16 @@ export class Game {
         const list: { id: string; geo: () => THREE.BufferGeometry; mat?: THREE.Material; yaw?: number }[] = [
           { id: 'sandcastle', geo: () => O.sandcastle(0) },
           { id: 'sandcastle-b', geo: () => O.sandcastle(1) },
-          { id: 'crates', geo: () => P.crateStack(0) },
-          { id: 'boulder', geo: () => P.boulder(17) },
+          { id: 'crates', geo: () => O.crateBlock(0, false, true) },
+          { id: 'fish-crate', geo: () => O.crateBlock(1, false, true) },
+          { id: 'sea-stack', geo: () => O.rockBlock(0, false, true) },
+          { id: 'cairn', geo: () => O.rockBlock(1, false, true) },
           { id: 'log', geo: () => O.driftwoodLog(0) },
-          { id: 'deckchair', geo: () => P.deckChair(0) },
-          { id: 'urchins', geo: () => P.urchins(0) },
+          { id: 'surfboard-stand', geo: () => O.lowBarrier(1, 0, false, true) },
+          { id: 'cooler', geo: () => O.lowBarrier(1, 1, false, true) },
+          { id: 'urchins', geo: () => O.lowBarrier(2, 0, false, true) },
+          { id: 'coral', geo: () => O.lowBarrier(2, 1, false, true) },
+          { id: 'scuttler', geo: () => O.obstacleModel('scuttle', 0, 0, false, true) },
           { id: 'ball', geo: () => O.beachBall() },
           { id: 'gull', geo: () => O.gullGeometry() },
           { id: 'coconut', geo: () => O.coconut() },

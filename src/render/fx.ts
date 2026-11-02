@@ -1,3 +1,4 @@
+import { CFG } from '../config';
 import * as THREE from 'three';
 import type { Materials } from './materials';
 
@@ -8,13 +9,21 @@ const _s = new THREE.Vector3();
 const _c = new THREE.Color();
 const FLAT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
+
 /** Soft blob shadows: one instanced draw call for everything. */
 export class BlobShadows {
   readonly mesh: THREE.InstancedMesh;
   private n = 0;
   constructor(mats: Materials, max = 96) {
     const mat = new THREE.MeshBasicMaterial({ map: mats.shadowTex, color: 0x2a2440, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    // Update 8: the instance colour's red channel is a per-blob opacity (contact shadows darken as
+    // the caster nears the ground); the shadow tint stays the material colour
+    mat.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#if defined( USE_COLOR )\n  diffuseColor.a *= vColor.r;\n#endif');
+    };
+    mat.customProgramCacheKey = () => 'blobShadowAlpha';
     this.mesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, max);
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3).fill(1), 3);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 1;
     this.mesh.count = 0;
@@ -34,17 +43,36 @@ export class BlobShadows {
     this.ox = -dx * 0.35;
     this.oz = -dz * 0.35;
   }
-  /** `h` is the caster's height above the ground: the shadow slides away from the sun and shrinks. */
-  add(x: number, y: number, z: number, sx: number, sz: number, h = 0): void {
+  /**
+   * `h` is the caster's height above the ground: the shadow slides away from the sun and shrinks.
+   * `alpha` scales this blob's opacity (1 = the normal shadow; up to ~1.5 for a dark contact core).
+   */
+  add(x: number, y: number, z: number, sx: number, sz: number, h = 0, alpha = 1): void {
     if (this.n >= this.mesh.instanceMatrix.count) return;
     const k = 0.5 + h;
     const stretch = 1 + Math.abs(this.ox) * 0.6;
     _m.compose(_p.set(x + this.ox * k, y + 0.025, z + this.oz * k), FLAT, _s.set(sx * stretch, sz, 1));
+    this.mesh.instanceColor!.setXYZ(this.n, alpha, alpha, alpha);
     this.mesh.setMatrixAt(this.n++, _m);
+  }
+  /**
+   * Update 8 contact shadow: a soft blob that tightens and darkens as the caster (at height `h`)
+   * nears the ground, plus a small dark core that only shows in the last ~0.6 m. `withBlob` false
+   * draws only the core (the High tier has a real shadow map for the soft part).
+   */
+  contact(x: number, z: number, w: number, d: number, h: number, withBlob = true): void {
+    const k = Math.min(1, Math.max(0, h / CFG.fx.contactFadeH));
+    if (withBlob) {
+      const s = 1.08 - k * 0.5;
+      this.add(x, 0, z, w * s, d * s, h, 1.18 - k * 0.72);
+    }
+    const near = Math.max(0, 1 - h / CFG.fx.contactCoreH);
+    if (near > 0.01) this.add(x, 0.002, z, w * (0.5 + 0.12 * (1 - near)), d * (0.5 + 0.12 * (1 - near)), 0, near * CFG.fx.contactCoreAlpha);
   }
   end(): void {
     this.mesh.count = this.n;
     this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.n > 0) this.mesh.instanceColor!.needsUpdate = true;
   }
 }
 
@@ -64,6 +92,8 @@ interface Particle {
   gC: number;
   b: number;
   local: boolean;
+  /** shrink away instead of fading (sand grains, foam drops) */
+  shrink: boolean;
 }
 
 /** Pooled billboard particles (one instanced mesh per blend mode). */
@@ -89,12 +119,31 @@ export class Particles {
     this.limit = max;
   }
 
-  spawn(x: number, y: number, wz: number, vx: number, vy: number, vz: number, life: number, size: number, color: number, g = 0, grow = 0, local = false): void {
+  spawn(x: number, y: number, wz: number, vx: number, vy: number, vz: number, life: number, size: number, color: number, g = 0, grow = 0, local = false, shrink = false): void {
     if (this.ps.length >= Math.min(this.limit, this.max)) return;
     const p = this.free.pop() ?? ({} as Particle);
     _c.set(color);
-    Object.assign(p, { x, y, wz, vx, vy, vz, g, life, max: life, size, grow, r: _c.r, gC: _c.g, b: _c.b, local });
+    p.x = x;
+    p.y = y;
+    p.wz = wz;
+    p.vx = vx;
+    p.vy = vy;
+    p.vz = vz;
+    p.g = g;
+    p.life = life;
+    p.max = life;
+    p.size = size;
+    p.grow = grow;
+    p.r = _c.r;
+    p.gC = _c.g;
+    p.b = _c.b;
+    p.local = local;
+    p.shrink = shrink;
     this.ps.push(p);
+  }
+  /** free slots right now (callers scale optional bursts down when the pool is busy) */
+  get room(): number {
+    return Math.min(this.limit, this.max) - this.ps.length;
   }
 
   clear(): void {
@@ -123,12 +172,20 @@ export class Particles {
       const p = this.ps[i] as Particle;
       const t = p.life / p.max;
       const fade = Math.min(1, t * 2.5);
-      const s = p.size * (1 + (1 - t) * p.grow) * (this.shrinkFade ? fade : 1);
+      const shrink = this.shrinkFade || p.shrink;
+      // grains also stop at the sand instead of sinking through it
+      if (p.shrink && p.y < 0.03 && !p.local) {
+        p.y = 0.03;
+        p.vy = 0;
+        p.vx *= 0.8;
+        p.vz *= 0.8;
+      }
+      const s = p.size * (1 + (1 - t) * p.grow) * (shrink ? fade : 1);
       const z = p.local ? p.wz : -(p.wz - dist);
       _q.copy(camQ);
       _m.compose(_p.set(p.x, p.y, z), _q, _s.set(s, s, s));
       this.mesh.setMatrixAt(i, _m);
-      const k = this.shrinkFade ? 1 : fade;
+      const k = shrink ? 1 : fade;
       this.mesh.instanceColor!.setXYZ(i, p.r * k, p.gC * k, p.b * k);
     }
     this.mesh.count = w;

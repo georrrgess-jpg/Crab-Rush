@@ -45,12 +45,12 @@ export function installPress(root: HTMLElement): void {
   root.addEventListener('pointerleave', release, { passive: true });
 }
 
-/** Stagger the children of `node` in (rise + fade), 40 ms apart, capped so long lists stay snappy. */
-export function staggerIn(node: HTMLElement, selector = ':scope > *', max = 14): void {
+/** Stagger the children of `node` in (rise + fade), 40 ms apart, capped so long lists stay snappy. `delay` offsets the whole group (ms). */
+export function staggerIn(node: HTMLElement, selector = ':scope > *', max = 14, delay = 0): void {
   if (reduced()) return;
   const kids = [...node.querySelectorAll<HTMLElement>(selector)].slice(0, max);
   kids.forEach((k, i) => {
-    k.animate([{ opacity: 0, transform: 'translateY(12px) scale(0.98)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: i * 40, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
+    k.animate([{ opacity: 0, transform: 'translateY(12px) scale(0.98)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: delay + i * 40, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'backwards' });
   });
 }
 

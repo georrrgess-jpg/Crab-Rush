@@ -5,10 +5,18 @@ export const POWER_KINDS: readonly PowerKind[] = ['magnet', 'shield', 'rider'];
 export type GameEvent =
   | { t: 'shell'; big: boolean; streak: number; x: number; y: number; wz: number }
   | { t: 'laneChange'; dir: -1 | 1 }
-  | { t: 'hop' }
-  | { t: 'land'; hard: boolean }
+  /** Update 8: a lane input that reverses a glide in progress (the crab turns back mid-move) */
+  | { t: 'turn'; dir: -1 | 1 }
+  /** buffered: fired on landing from an early press; coyote: fired just after dropping off something */
+  | { t: 'hop'; buffered: boolean; coyote: boolean }
+  /** Update 8: the top of a hop (the arc hangs here) */
+  | { t: 'apex' }
+  /** vy: impact speed (m/s, ≤ 0); onTop: landed on an obstacle's top rather than the sand */
+  | { t: 'land'; hard: boolean; vy: number; onTop: boolean }
   | { t: 'slam' }
   | { t: 'bump'; x: number }
+  /** Update 8: a corner graze during a lane change (always followed by its 'bump') */
+  | { t: 'graze'; x: number; side: -1 | 1 }
   | { t: 'crash'; kind: string }
   | { t: 'closeShave'; reward: number }
   | { t: 'powerup'; kind: PowerKind }

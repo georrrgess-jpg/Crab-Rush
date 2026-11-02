@@ -3,7 +3,7 @@ import { ITEM_BY_ID } from '../meta/wardrobe';
 import { PASS_TIERS } from '../meta/xp';
 import { btn, el, fmt } from './dom';
 import { BOOST_SVG, DANCE_SVG, GIFT_SVG, ICON, TRAIL_SVG } from './icons';
-import { Wallet } from './kit';
+import { Wallet, pageHead } from './kit';
 import { flyReward } from './motion';
 
 export interface PassData {
@@ -40,7 +40,7 @@ export function rewardView(r: Reward, thumbs: PassData['thumbs']): { name: strin
   else if (r.slot === 'dances') art = DANCE_SVG[r.id] ?? '';
   else {
     const src = r.slot === 'bodies' ? thumbs.bodies[r.id] : thumbs.hats[r.id];
-    art = src ? `<img alt="" src="${src}">` : ICON.crab;
+    art = src ? `<img alt="" src="${src}">` : `<span class="rw-ph">${ICON.crab}</span>`;
   }
   return { name, kind: SLOT_LABEL[r.slot] ?? '', art: `<span class="rw-item">${art}</span>` };
 }
@@ -63,10 +63,8 @@ export class PassScreen {
     this.el = el('div', 'screen page pass');
     this.el.id = 'pass';
     const card = el('div', 'page-card wide pass-card');
-    const top = el('div', 'page-head');
+    const { head: top } = pageHead('Sunny Pass', () => this.h.back(), [this.wallet.el]);
     this.boosts = el('span', 'pass-boosts');
-    top.dataset.toastAvoid = '';
-    top.append(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back'), el('h2', '', 'Sunny Pass'), this.boosts, this.wallet.el);
     const body = el('div', 'page-body pass-body');
     this.head = el('div', 'pass-hero');
     this.all = btn(`${ICON.check}<span>Claim all</span>`, 'green small pass-all', () => this.h.claimAll());
@@ -87,11 +85,14 @@ export class PassScreen {
     const how = el(
       'div',
       'pass-how',
-      `<b>Earn XP in every mode</b><span>${ICON.flag}Run distance</span><span>${ICON.shell}Shells</span><span>${ICON.trophy}Goals</span><span>${ICON.star}Island stars</span><span>${ICON.calendar}Daily Tide</span>`,
+      `<b>Earn XP in every mode</b><span class="u-pill">${ICON.flag}Run distance</span><span class="u-pill">${ICON.shell}Shells</span><span class="u-pill">${ICON.trophy}Goals</span><span class="u-pill">${ICON.star}Island stars</span><span class="u-pill">${ICON.calendar}Daily Tide</span>`,
     );
     const heroRow = el('div', 'pass-hero-row');
     heroRow.append(this.head, this.all);
-    body.append(heroRow, this.next, this.track, how);
+    // the next big reward and the Golden Shells share one row under the hero
+    const info = el('div', 'pass-info');
+    info.append(this.next, this.boosts);
+    body.append(heroRow, info, this.track, how);
     card.append(top, body);
     this.el.append(el('div', 'page-dim'), card);
   }
@@ -103,7 +104,7 @@ export class PassScreen {
     this.head.innerHTML = `<span class="ph-tier"><span class="sunico">${ICON.sun}</span><b>${d.tier}</b></span><span class="ph-col"><span class="ph-lbl">Tier ${d.tier} of ${PASS_TIERS}</span><span class="bar"><i style="width:${Math.round(frac * 100)}%"></i></span><span class="ph-xp">${d.tier >= PASS_TIERS ? 'Pass complete!' : `${fmt(d.into)} / ${fmt(d.need)} XP to tier ${d.tier + 1}`}</span></span>`;
     this.all.disabled = claimable.length === 0;
     this.all.classList.toggle('hidden', claimable.length < 2);
-    this.boosts.innerHTML = `${BOOST_SVG}<b>${d.boosts}</b>/${MAX_BOOSTS}`;
+    this.boosts.innerHTML = `${BOOST_SVG}<span class="pb-col"><span class="pb-lbl">Golden Shells</span><span><b>${d.boosts}</b>/${MAX_BOOSTS}</span></span>`;
     this.boosts.title = 'Golden Shells: 2× shells for one run';
     if (d.shells !== undefined) this.wallet.set(d.shells, d.pearls);
     // the next big reward

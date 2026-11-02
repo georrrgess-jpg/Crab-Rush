@@ -37,28 +37,41 @@ export class TrophyScreen {
   render(d: TrophyData): void {
     this.wallet.set(d.shells, d.pearls);
     this.body.innerHTML = '';
+    const total = FAMILIES.length * 3;
+    const golds = FAMILIES.filter((f) => d.earned.includes(`${f.id}:2`)).length;
+    // summary: how many trophies, how far along, and the title picker
+    const sum = el('div', 'tr-summary');
+    sum.appendChild(
+      el(
+        'div',
+        'ts-count',
+        `<span class="ts-ico">${ICON.trophy}</span><span class="ts-col"><span class="ts-num"><b>${d.earned.length}</b>/${total} trophies</span><span class="bar"><i style="width:${Math.round((d.earned.length / total) * 100)}%"></i></span><span class="ts-sub">${golds} gold · each gold trophy unlocks a title</span></span>`,
+      ),
+    );
     const titles = el('div', 'title-pick', `<span class="tp-lbl">Your title</span>`);
     if (d.titles.length === 0) titles.appendChild(el('span', 'tp-none', 'Earn a gold trophy to unlock a title'));
     for (const t of d.titles) {
       const b = el('button', `chip${t === d.title ? ' on' : ''}`, t) as HTMLButtonElement;
       b.type = 'button';
+      b.setAttribute('aria-pressed', String(t === d.title));
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         this.h.title(t);
       });
       titles.appendChild(b);
     }
+    sum.appendChild(titles);
     const shelf = el('div', 'trophy-shelf');
-    shelf.appendChild(el('div', 'ts-count', `${ICON.trophy}<b>${d.earned.length}</b>/${FAMILIES.length * 3} trophies`));
     for (const f of FAMILIES) {
       const have = d.progress[f.id] ?? 0;
       const tierNow = [0, 1, 2].filter((t) => d.earned.includes(`${f.id}:${t}`)).length;
       const next = f.targets[Math.min(2, tierNow)] as number;
       const medals = [0, 1, 2].map((t) => `<span class="medal${d.earned.includes(`${f.id}:${t}`) ? ' on' : ''}" style="--m:${MEDAL[t]}" title="${TIER_NAMES[t]}: ${f.text(f.targets[t] as number)}">${ICON.trophy}</span>`).join('');
-      const row = el('div', 'trophy');
+      const row = el('div', `trophy${tierNow >= 3 ? ' done' : tierNow === 0 ? ' fresh' : ''}`);
       row.innerHTML = `<span class="tr-medals">${medals}</span><span class="tr-col"><span class="tr-name">${f.name}</span><span class="tr-txt">${tierNow >= 3 ? `Complete! Title: <b>${f.title}</b>` : f.text(next)}</span><span class="bar"><i style="width:${tierNow >= 3 ? 100 : Math.round(Math.min(1, have / next) * 100)}%"></i></span></span>`;
       shelf.appendChild(row);
     }
-    this.body.append(titles, shelf);
+    this.body.append(sum, shelf);
   }
+
 }
