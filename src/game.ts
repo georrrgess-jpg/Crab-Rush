@@ -2577,8 +2577,9 @@ export class Game {
         for (const l of LEVELS) g.save.data.levels[l.id] = { stars: [true, stars > 1, stars > 2], best: 40 };
       },
       /** close-up camera at an offset from the crab (null restores the game camera) */
-      cam(x: number | null, y = 1.6, z = 4.2) {
+      cam(x: number | null, y = 1.6, z = 4.2, look?: [number, number, number]) {
         g.view.debugCam = x === null ? null : new THREE.Vector3(x, y, z);
+        g.view.debugLook = x === null || !look ? null : new THREE.Vector3(look[0], look[1], look[2]);
       },
       /** drive crab animations directly: emote(id), celebrate() */
       crabEmote(id?: string) {

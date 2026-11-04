@@ -117,6 +117,8 @@ export class GameView {
   shopSpin = 0;
   /** test hook: close-up camera offset from the crab, or null */
   debugCam: THREE.Vector3 | null = null;
+  /** test hook: where the debug camera looks (absolute; default: the crab) */
+  debugLook: THREE.Vector3 | null = null;
 
   constructor(canvas: HTMLCanvasElement, quality: QualityPreset) {
     this.renderer = new Renderer(canvas, quality);
@@ -936,7 +938,8 @@ export class GameView {
       // test hook: a fixed close-up relative to the crab (animation strips)
       const r = this.crab.root.position;
       this.camPos.set(r.x + this.debugCam.x, this.debugCam.y, this.debugCam.z);
-      this.camLook.set(r.x, 0.6, 0);
+      if (this.debugLook) this.camLook.copy(this.debugLook);
+      else this.camLook.set(r.x, 0.6, 0);
     }
     cam.position.copy(this.camPos);
     cam.lookAt(this.camLook);
