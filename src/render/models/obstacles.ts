@@ -125,6 +125,44 @@ function starfish(b: GeoBuilder, col: number, r: number, pos: V3, rot: V3, lo = 
   place(b, s, pos, rot);
 }
 
+// ---- Update 9 small props for the High (`rich`) obstacle models
+/** a cluster of blue-black mussels around `pos` (lying on the sand or a rock face) */
+function mussels(b: GeoBuilder, pos: V3, n: number, seed: number, spread = 0.14): void {
+  for (let i = 0; i < n; i++) {
+    const a = hash(seed, i, 1) * Math.PI * 2;
+    const r = spread * Math.sqrt(hash(seed, i, 2));
+    ball(b, i % 3 ? 0x24304a : 0x33405e, 0.065, [pos[0] + Math.cos(a) * r, pos[1] + hash(seed, i, 3) * 0.04, pos[2] + Math.sin(a) * r * 0.6], 6, 4, [0.5, 1, 0.38], [0.4 + hash(seed, i, 4), a, 1.1 + hash(seed, i, 5) * 0.6]).paint((x, y, z, c) => {
+      if (y > pos[1] + 0.03) c.lerp(_hl.set(0x6f86b0), 0.35);
+    });
+  }
+}
+const _hl = new THREE.Color();
+/** a limpet (a low ribbed cone) stuck on a surface with outward normal `n` */
+function limpet(b: GeoBuilder, pos: V3, n: V3, r = 0.05): void {
+  spanCone(b, 0xbfae96, pos, v3.add(pos, v3.norm(n), r * 0.7), r, 6).paint((x, y, z, c) => {
+    if (Math.sin(Math.atan2(z - pos[2], x - pos[0]) * 6) > 0.4) c.multiplyScalar(0.82);
+  });
+}
+/** a little hermit crab in a spiral shell, on the sand at `pos`, facing yaw `yaw` (0: +z) */
+function hermit(b: GeoBuilder, pos: V3, yaw: number, shell = 0xf0c27a): void {
+  const s = new GeoBuilder();
+  s.lathe(shell, [[0.0, 0.0], [0.09, 0.02], [0.1, 0.07], [0.07, 0.13], [0.035, 0.17], [0, 0.19]], 8, [0, 0.03, -0.03], [-0.9, 0, 0.2]).paint((x, y, z, c) => {
+    if (Math.sin(y * 70 + z * 30) > 0.5) c.multiplyScalar(0.8);
+  });
+  for (const sx of [-1, 1]) {
+    s.seg(0xe0503a, [sx * 0.05, 0.05, 0.05], [sx * 0.11, 0.0, 0.1], 0.016, 0.012, 4);
+    s.seg(0xe0503a, [sx * 0.03, 0.06, 0.07], [sx * 0.03, 0.12, 0.1], 0.008, 0.008, 3);
+    ball(s, 0x141820, 0.016, [sx * 0.03, 0.13, 0.105], 5, 3);
+  }
+  ball(s, 0xff6a4a, 0.035, [0.05, 0.05, 0.11], 5, 3, [1, 0.7, 1.2]);
+  place(b, s, pos, [0, yaw, 0]);
+}
+/** a kelp ribbon rising from the sand at `pos`, leaning by `lean` */
+function kelp(b: GeoBuilder, pos: V3, h: number, lean: V3, col = 0x3f9a4a): void {
+  b.tube(col, [pos, v3.add(pos, [lean[0] * 0.3, h * 0.45, lean[2] * 0.3]), v3.add(pos, [lean[0], h, lean[2]])], (t) => 0.035 - t * 0.022, 3, 5, false);
+  b.geo(new THREE.SphereGeometry(0.05, 5, 3), col, v3.add(pos, [lean[0] * 0.6, h * 0.68, lean[2] * 0.6]), [0, 0, 0.6], [0.5, 1.3, 0.25]);
+}
+
 // ------------------------------------------------------------------ zone 0 (Sunny Shore)
 /**
  * Sandcastle v2 (UPDATE2_PLAN.md §2.3): lathed towers with dripped crenellations, shell decorations,
@@ -202,6 +240,25 @@ export function sandcastle(variant = 0, lo = false, rich = false): THREE.BufferG
     }
     starfish(b, 0xff8a4a, 0.13, variant === 0 ? [-0.48, 0.55, 0.7] : [0.55, 1.0, 0.56], [-0.2, variant === 0 ? -0.55 : 0.6, 0.3]);
     b.sphere(0x3fae5a, 0.05, [variant === 0 ? 0.62 : -0.5, 0.1, 0.7], [1.2, 2.2, 0.6], 5);
+    if (variant === 0) {
+      // Update 9: pennants on the turret roofs and a toy spade stuck by the door
+      for (const [x, z, h, col] of [[-0.66, 0.42, 1.25, 0x2f6fd6], [0.66, 0.42, 1.25, 0xffc933], [0, -0.7, 1.4, 0x3dae4f]] as [number, number, number, number][]) {
+        b.cyl(0x7a5530, 0.012, 0.012, 0.22, [x, h + 0.53, z], [0, 0, 0], 4);
+        b.cone(col, 0.06, 0.18, [x + 0.09, h + 0.58, z], [0, 0, -Math.PI / 2], 3, [1, 1, 0.25]);
+        ball(b, 0xffd23a, 0.022, [x, h + 0.65, z], 5, 3);
+      }
+      b.box(0xe53935, 0.05, 0.5, 0.05, [0.42, 0.42, 0.95], [0.2, 0, -0.25]);
+      b.box(0x2f6fd6, 0.2, 0.18, 0.03, [0.37, 0.12, 0.98], [0.2, 0, -0.25]);
+    } else {
+      // Update 9: the toy bucket it was moulded with, tipped on its side, with a ribbed rim and a handle
+      const k = new GeoBuilder();
+      k.lathe(0x2f8fd6, [[0, 0.0], [0.13, 0.0], [0.17, 0.26], [0.185, 0.27], [0.18, 0.29], [0.165, 0.285], [0.125, 0.03], [0, 0.03]], 10).paint((x, y, z, c) => {
+        if (y > 0.25) c.set(0x7fc6ff);
+      });
+      k.geo(torusGeo(0.18, 0.012, 3, 10, Math.PI), 0xffc933, [0, 0.22, 0], [0, 0, 0]);
+      place(b, k, [0.62, 0.17, 0.88], [0, 0.5, Math.PI / 2 - 0.15]);
+      for (let i = 0; i < 3; i++) b.sphere(0xfff4e6, 0.04, [0.3 + i * 0.12, 0.03, 1.02 - i * 0.03], [1.2, 0.5, 1], 5);
+    }
   }
   const g = b.build();
   // castles are deeper than wide on the run camera's axis only by a little: squash front-to-back to fit
@@ -301,6 +358,17 @@ export function crateBlock(variant = 0, lo = false, rich = false): THREE.BufferG
       b.torus(0x30343c, 0.05, 0.012, [0.56, 1.41, 0.05], [0, 0, 0], 8);
       // rope trailing down the side
       b.tube(rope, [[-0.4, 2.15, 0.22], [-0.62, 1.95, 0.45], [-0.75, 1.3, 0.52], [-0.95, 0.2, 0.5]], 0.035, 4, 8, 'end');
+      // Update 9: a message in a bottle on the top crate, a fish-hook float on the barrel and mussels at the foot
+      b.lathe(0x3fae7a, [[0, 0], [0.07, 0.0], [0.075, 0.14], [0.03, 0.22], [0.025, 0.3], [0, 0.3]], 8, [0.16, 2.2, 0.18], [0, 0, -1.35]).paint((x, y, z, c) => {
+        if (z > 0.2) c.lerp(_hl.set(0xc8f5dc), 0.4);
+      });
+      b.cyl(0xc79a62, 0.026, 0.022, 0.05, [0.47, 2.27, 0.18], [0, 0, -1.35], 5);
+      b.box(0xfff4dc, 0.1, 0.03, 0.15, [0.25, 2.29, 0.18], [0, 0, -1.35]);
+      ball(b, 0xe53935, 0.07, [0.98, 0.72, 0.28], 7, 5).paint((x, y, z, c) => {
+        if (y > 0.72) c.set(0xfafafa);
+      });
+      b.cyl(0x30343c, 0.012, 0.012, 0.1, [0.98, 0.81, 0.28], [0, 0, 0], 4);
+      mussels(b, [0.15, 0.03, 0.62], 5, 7, 0.16);
     }
   } else {
     place(b, crate(0x5fa8b8, 1.98, 0.98, 1.18, lo, rich, 2), [0, 0, 0]);
@@ -316,6 +384,17 @@ export function crateBlock(variant = 0, lo = false, rich = false): THREE.BufferG
       // a gull feather and a fish tail poking out of the long crate
       b.cone(0x7fb2d6, 0.1, 0.22, [-0.85, 0.98, 0.42], [0.4, 0, 0.6], 4, [1, 1, 0.3]);
       b.sphere(0xfafafa, 0.04, [0.15, 1.01, 0.55], [0.6, 3.0, 0.6], 4, [0.5, 0, -0.4]);
+      // Update 9: the day's catch peeking over the long crate's rim on a bed of ice
+      for (const [x, z, yaw, col] of [[-0.05, 0.42, 0.3, 0x8fb8d8], [0.12, 0.4, -0.5, 0xf08a5a], [-0.88, 0.4, 0.9, 0x9fc8a8]] as [number, number, number, number][]) {
+        const fsh = new GeoBuilder();
+        ball(fsh, col, 0.09, [0, 0, 0], 7, 5, [1.9, 1, 0.75]).paint((px, py, pz, c) => {
+          if (py < -0.01) c.lerp(_hl.set(0xf4f6f8), 0.6);
+        });
+        fsh.cone(col, 0.08, 0.12, [-0.22, 0, 0], [0, 0, Math.PI / 2], 4, [1, 1, 0.3]);
+        ball(fsh, 0x141820, 0.016, [0.13, 0.028, 0.058], 4, 3);
+        place(b, fsh, [x, 1.04, z + 0.06], [0, yaw, 0.5]);
+      }
+      for (let i = 0; i < 5; i++) b.ico(0xdff4ff, 0.05, [-0.6 + i * 0.32, 0.99, 0.46 - (i % 2) * 0.05], [1, 0.7, 1], 0);
     }
   }
   return b.build();
@@ -373,6 +452,18 @@ export function rockBlock(variant = 0, lo = false, rich = false): THREE.BufferGe
         b.cone(0xffc2d4, 0.025, 0.1, [0.38 + Math.cos(a) * 0.07, 1.36 + Math.sin(a) * 0.05, 0.61], [0.9 + Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4], 4);
       }
       for (let i = 0; i < 4; i++) b.sphere(0x8a7a6e, 0.08, [-0.8 + i * 0.45, 0.04, 0.72 - (i % 2) * 0.1], [1.2, 0.5, 1], 5);
+      // Update 9: limpets seated on the stack's face, a mussel bed at its foot and a hermit crab passing by
+      for (let i = 0; i < 6; i++) {
+        const a = -0.9 + (i / 5) * 1.6 + hash(seed, i, 7) * 0.2;
+        const y = 0.35 + hash(seed, i, 8) * 0.75;
+        const ly = (y - 0.82) / 0.84;
+        const d: V3 = [Math.sin(a) * Math.sqrt(1 - ly * ly), ly, Math.cos(a) * Math.sqrt(1 - ly * ly)];
+        const e: V3 = [d[0] * 0.98, 0.82 + d[1] * 0.84, d[2] * 0.66];
+        const k = (1 + n3(e[0], e[1], e[2]) * 0.2) * 0.99;
+        limpet(b, [e[0] * k, 0.82 + (e[1] - 0.82) * k, e[2] * k], [d[0] / 0.98, d[1] / 0.84, d[2] / 0.66], 0.06 + hash(seed, i, 9) * 0.02);
+      }
+      mussels(b, [0.55, 0.05, 0.5], 6, seed, 0.18);
+      hermit(b, [-0.72, 0, 0.62], 0.7);
     }
   } else {
     // balanced pebbles: wide flat bottom, a middle stone and a small top stone, each with a quartz band
@@ -412,6 +503,17 @@ export function rockBlock(variant = 0, lo = false, rich = false): THREE.BufferGe
       b.sphere(0xd98a4a, 0.08, [0.18, 2.2, 0.2], [1, 1, 0.8], 6);
       b.sphere(0xe9d8b8, 0.05, [0.26, 2.17, 0.24], [1.4, 0.6, 0.7], 5);
       for (let i = 0; i < 4; i++) b.sphere(0x5fa04f, 0.08, [-0.6 + i * 0.4, 0.88, 0.42 + (i % 2) * 0.06], [1.5, 0.4, 1], 5);
+      // Update 9: mussels and kelp round the base stone, limpets on the middle one, a hermit crab on the sand
+      mussels(b, [-0.55, 0.05, 0.55], 5, seed, 0.15);
+      for (const [x, y] of [[-0.35, 1.18], [0.5, 1.12], [-0.1, 1.05]] as [number, number][]) {
+        const ly = (y - 1.26) / 0.4;
+        const lx = (x - 0.08) / 0.74;
+        const lz = Math.sqrt(Math.max(0.05, 1 - ly * ly - lx * lx));
+        limpet(b, [x, y, lz * 0.55 * 0.94], [lx / 0.74, ly / 0.4, lz / 0.55], 0.045);
+      }
+      kelp(b, [0.7, 0, 0.45], 0.55, [0.15, 0, 0.1]);
+      kelp(b, [0.82, 0, 0.3], 0.42, [0.2, 0, -0.05], 0x5aa83f);
+      hermit(b, [0.35, 0, 0.72], -0.6, 0xe8a4b8);
     }
   }
   return b.build();
@@ -464,6 +566,15 @@ export function driftwoodLog(variant = 0, lo = false, rich = false): THREE.Buffe
       b.geo(torusGeo(r - 0.01, 0.03, 4, radial), 0xc79a62, [x, 0.3, path[x < 0 ? 0 : 3]![2]], [0, Math.PI / 2, 0]);
     }
     b.sphere(0xf7a6b8, 0.07, [-0.55, 0.05, 0.33], [1, 0.5, 0.9], 6);
+    // Update 9: bracket fungus shelves on the camera side, moss on the top and a fresh sprout
+    for (const [x, y, r] of [[0.42 * k, 0.44, 0.09], [0.55 * k, 0.36, 0.065], [-0.3 * k, 0.4, 0.07]] as V3[]) {
+      ball(b, 0xf2c98a, r, [x, y, Math.sqrt(Math.max(0, 0.29 * 0.29 - (y - 0.3) * (y - 0.3))) + r * 0.25], 7, 4, [1.1, 0.32, 0.8], [0.25, 0, 0]).paint((px, py, pz, c) => {
+        if (py > y + r * 0.15) c.set(0xc98a4a);
+      });
+    }
+    for (let i = 0; i < 4; i++) ball(b, i % 2 ? 0x5fa04f : 0x4f9a46, 0.07, [-0.75 + i * 0.12, 0.57 - Math.abs(i - 1.5) * 0.01, 0.04 * k + (i % 2) * 0.05], 6, 3, [1.3, 0.35, 1]);
+    b.seg(0x6aa83f, [-0.12 * k, 0.56, 0.05], [-0.1 * k, 0.72, 0.06], 0.012, 0.009, 4);
+    for (const sx of [-1, 1]) ball(b, 0x7cc24a, 0.05, [-0.1 * k + sx * 0.05, 0.73, 0.06], 5, 3, [1.2, 0.25, 0.6], [0, 0, -sx * 0.5]);
   }
   return b.build();
 }
@@ -510,6 +621,15 @@ export function lowBarrier(zone: number, variant = 0, lo = false, rich = false):
         if (Math.floor((y + 1) * 14) % 2 === 0) c.set(0xfff4dc);
       });
       b.box(0xffe9a8, 0.1, 0.05, 0.08, [-0.6, 0.115, 0.2], [0, 0.3, 0]);
+      // Update 9: a hibiscus decal on the deck, the leash trailing to the sand and sunglasses on a stand
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        ball(b, 0xff5a8a, 0.042, [-0.55 + Math.cos(a) * 0.045, 0.34 + Math.sin(a) * 0.045, 0.052], 5, 3, [1, 1, 0.2]);
+      }
+      ball(b, 0xffd23a, 0.02, [-0.55, 0.34, 0.058], 4, 3, [1, 1, 0.4]);
+      b.tube(0x30343c, [[-1.06, 0.2, 0.06], [-1.12, 0.06, 0.18], [-0.95, 0.015, 0.32], [-0.7, 0.015, 0.3]], 0.012, 3, 8, false);
+      for (const sx of [-1, 1]) b.cyl(0x14181f, 0.045, 0.045, 0.012, [0.6 + sx * 0.05, 0.36, 0.085], [Math.PI / 2, 0, 0], 8);
+      b.box(0xff5a3a, 0.04, 0.012, 0.012, [0.6, 0.372, 0.085]);
     }
   } else if (zone === 1) {
     // cooler: bevelled blue body, white lid with a rim, handles and a latch
@@ -533,6 +653,16 @@ export function lowBarrier(zone: number, variant = 0, lo = false, rich = false):
       // a soda can and a striped towel peeking from under the lid
       b.cyl(0xe53935, 0.05, 0.05, 0.14, [0.18, 0.07, 0.36], [0, 0, 0], 8);
       b.box(0xffc933, 0.5, 0.012, 0.18, [-0.6, 0.5, 0.36], [-0.5, 0, 0]);
+      // Update 9: a drain spout and a hinge on the cooler, sunscreen on the lid, an antenna and a dial on the boom box
+      b.cyl(0xd8dde4, 0.035, 0.035, 0.06, [-0.85, 0.1, 0.33], [Math.PI / 2, 0, 0], 6);
+      b.box(0xc0c6ce, 1.1, 0.04, 0.03, [-0.36, 0.52, -0.33]);
+      b.lathe(0xff8a3a, [[0, 0], [0.045, 0], [0.05, 0.12], [0.03, 0.15], [0.02, 0.19], [0, 0.19]], 8, [-0.78, 0.615, 0.12]).paint((x, y, z, c) => {
+        if (y > 0.62 + 0.05 && y < 0.62 + 0.1) c.set(0xfff4dc);
+        if (y > 0.62 + 0.15) c.set(0xfafafa);
+      });
+      b.seg(0xc0c6ce, [0.9, 0.36, 0.2], [1.02, 0.62, 0.1], 0.01, 0.007, 4);
+      ball(b, 0xc0c6ce, 0.016, [1.02, 0.62, 0.1], 4, 3);
+      b.cyl(0xffd23a, 0.03, 0.03, 0.03, [0.68, 0.33, 0.33], [Math.PI / 2, -0.25, 0], 6);
     }
   } else if (variant === 0) {
     // urchin ledge: a flat, wet rock with three urchins whose spines stay upright and inside the box
@@ -556,7 +686,17 @@ export function lowBarrier(zone: number, variant = 0, lo = false, rich = false):
       }
     }
     if (!lo) starfish(b, 0xff7a3a, 0.13, [-0.3, 0.26, 0.24], [-1.2, 0, 0.4]);
-    if (rich) for (let i = 0; i < 5; i++) b.sphere(0x9b8577, 0.05, [-0.9 + i * 0.45, 0.03, 0.32], [1.3, 0.6, 1], 5);
+    if (rich) {
+      for (let i = 0; i < 5; i++) b.sphere(0x9b8577, 0.05, [-0.9 + i * 0.45, 0.03, 0.32], [1.3, 0.6, 1], 5);
+      // Update 9: kelp behind the urchins and an anemone in a crack
+      kelp(b, [-0.32, 0.2, -0.18], 0.32, [0.08, 0, -0.06]);
+      kelp(b, [0.36, 0.2, -0.2], 0.28, [-0.06, 0, -0.08], 0x5aa83f);
+      b.cyl(0xff8fb1, 0.06, 0.045, 0.07, [0.34, 0.27, 0.2], [0.5, 0, 0], 8);
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        b.cone(0xffc2d4, 0.016, 0.07, [0.34 + Math.cos(a) * 0.04, 0.32, 0.22 + Math.sin(a) * 0.03], [0.5 + Math.sin(a) * 0.4, 0, -Math.cos(a) * 0.4], 4);
+      }
+    }
     return addWind(b.build(), (x, y) => Math.max(0, y - 0.38) * 0.1);
   } else {
     // coral ridge: a low rock with branching pink coral, a brain coral and an anemone
@@ -583,6 +723,15 @@ export function lowBarrier(zone: number, variant = 0, lo = false, rich = false):
     if (rich) {
       starfish(b, 0xffd23a, 0.11, [0.3, 0.24, 0.25], [-1.1, 0, -0.3]);
       for (let i = 0; i < 4; i++) b.sphere(0xfff4e6, 0.04, [-0.95 + i * 0.6, 0.03, 0.3], [1.2, 0.5, 1], 5);
+      // Update 9: tube sponges and a giant clam with a pearl
+      for (const [x, z, h, col] of [[0.66, 0.14, 0.2, 0xb06ad6], [0.76, 0.2, 0.14, 0xffb03a], [0.6, 0.24, 0.11, 0xb06ad6]] as [number, number, number, number][]) {
+        b.tubeOpen(col, 0.045, 0.04, h, [x, 0.2 + h / 2, z], [0, 0, 0], 7);
+        b.torus(col, 0.045, 0.012, [x, 0.2 + h, z], [Math.PI / 2, 0, 0], 7, [1, 1, 1], 3);
+      }
+      for (const sy of [1, -1]) ball(b, 0x3fb6a8, 0.11, [0.36, 0.27 + sy * 0.02, 0.18], 8, 4, [1, 0.3, 0.8], [sy * 0.35, 0, 0]).paint((x, y, z, c) => {
+        if (Math.sin(Math.atan2(z - 0.18, x - 0.36) * 7) > 0.3) c.multiplyScalar(0.8);
+      });
+      ball(b, 0xfff8f0, 0.025, [0.36, 0.28, 0.22], 5, 3);
     }
     return addWind(b.build(), (x, y) => Math.max(0, y - 0.35) * 0.06);
   }
@@ -622,12 +771,15 @@ const LOW_WAVE: Prof = [
   [-0.76, 0.0, 0.8],
 ];
 
-/** Wave v3: a curling breaker with an overhanging lip, foam beads on the crest and hop chevrons. */
-export function waveSweep(lo = false, chevrons = true, beads = true): THREE.BufferGeometry {
-  return breaker(LOW_WAVE, lo, chevrons, beads);
+/**
+ * Wave v3: a curling breaker with an overhanging lip, foam beads on the crest and hop chevrons.
+ * `rich` (High, near; Update 9): spray thrown off the lip and lacy foam streaks down the face.
+ */
+export function waveSweep(lo = false, chevrons = true, beads = true, rich = false): THREE.BufferGeometry {
+  return breaker(LOW_WAVE, lo, chevrons, beads, rich);
 }
 
-function breaker(prof: Prof, lo: boolean, chevrons: boolean, beads: boolean): THREE.BufferGeometry {
+function breaker(prof: Prof, lo: boolean, chevrons: boolean, beads: boolean, rich = false): THREE.BufferGeometry {
   const W = 6.8;
   const crest = Math.max(...prof.map((p) => p[1]));
   const tall = crest > 0.9;
@@ -683,6 +835,20 @@ function breaker(prof: Prof, lo: boolean, chevrons: boolean, beads: boolean): TH
     if (tall) b.sphere(0xffffff, r, [x, 1.1 + hash(i, 4, 1) * 0.05, 0.48 + hash(i, 5, 1) * 0.16], [1.3, 0.8, 1], 5);
     else b.sphere(0xffffff, r, [x, 0.585 + hash(i, 4, 1) * 0.02, 0.2 + hash(i, 5, 1) * 0.14], [1.4, 0.7, 1], 5);
   }
+  if (rich && !tall) {
+    // spray droplets flung up off the lip, and foam lace streaking down the glassy face
+    for (let i = 0; i < 16; i++) {
+      const x = -W / 2 + 0.3 + (i / 15) * (W - 0.6) + (hash(i, 9, 2) - 0.5) * 0.3;
+      ball(b, 0xf4feff, 0.025 + hash(i, 9, 3) * 0.025, [x, 0.66 + hash(i, 9, 4) * 0.14, 0.26 + hash(i, 9, 5) * 0.16], 5, 3);
+    }
+    for (let i = 0; i < 14; i++) {
+      const x = -W / 2 + 0.35 + (i / 13) * (W - 0.7) + (hash(i, 8, 2) - 0.5) * 0.25;
+      const y = 0.18 + hash(i, 8, 3) * 0.14;
+      // on the face: z follows the profile from (0.46, 0.13) up to (0.29, 0.38)
+      const z = 0.46 - ((y - 0.13) / 0.25) * 0.17 + 0.025;
+      ball(b, 0xe4fbff, 0.05, [x, y, z], 6, 3, [2.4, 0.3, 0.45], [-0.95, 0, (hash(i, 8, 4) - 0.5) * 0.4]);
+    }
+  }
   // chevron markers on the water in front of the crest
   for (const x of chevrons ? [-1.8, 0, 1.8] : []) {
     for (let k = 0; k < 2; k++) {
@@ -698,7 +864,7 @@ function breaker(prof: Prof, lo: boolean, chevrons: boolean, beads: boolean): TH
  * Beach ball v3: six crisp gores (segments aligned to the seams, so colour never smears across one),
  * smooth shading, white caps with a raised button and valve. Rolls about x. Radius 0.56.
  */
-export function beachBall(lo = false): THREE.BufferGeometry {
+export function beachBall(lo = false, rich = false): THREE.BufferGeometry {
   const r = BALL_R;
   // smooth normals are computed on the indexed sphere, then kept when it's split for per-face colour
   const g = new THREE.SphereGeometry(r, lo ? 12 : 24, lo ? 8 : 12).toNonIndexed();
@@ -734,6 +900,20 @@ export function beachBall(lo = false): THREE.BufferGeometry {
   if (!lo) {
     b.cyl(0xf2f2f2, 0.035, 0.045, 0.06, [0.24, r * 0.88, 0.0], [0, 0, -0.45], 6);
     b.cyl(0xd0d0d0, 0.02, 0.02, 0.02, [0.255, r * 0.88 + 0.035, 0.0], [0, 0, -0.45], 6);
+  }
+  if (rich) {
+    // Update 9 (High, near): raised welded seams between the gores and a printed sun on a white panel
+    for (let k = 0; k < 3; k++) b.geo(torusGeo(r + 0.002, 0.009, 3, 28), 0xe2e2e2, [0, 0, 0], [0, -(-Math.PI + (k * Math.PI) / 3), 0]);
+    const a = -Math.PI + (1.5 * Math.PI) / 3;
+    const n: V3 = [Math.cos(a), 0.15, Math.sin(a)];
+    const p = v3.norm(n);
+    b.cyl(0xffb21f, 0.09, 0.09, 0.01, [p[0] * r, p[1] * r, p[2] * r], aim('y', p, [0, 1, 0]), 12);
+    for (let i = 0; i < 8; i++) {
+      const t = (i / 8) * Math.PI * 2;
+      const sub = new GeoBuilder();
+      sub.cone(0xffb21f, 0.025, 0.06, [Math.cos(t) * 0.125, 0, Math.sin(t) * 0.125], [0, -t, -Math.PI / 2], 3, [1, 1, 0.3]);
+      place(b, sub, [p[0] * (r + 0.002), p[1] * (r + 0.002), p[2] * (r + 0.002)], aim('y', p, [0, 1, 0]));
+    }
   }
   const out = b.build();
   // rolling axis is x, so rotate the poles onto the x axis
@@ -778,11 +958,27 @@ export function gullGeometry(lo = false): THREE.BufferGeometry {
   b.bone(2).cone(0xffb21f, 0.075, 0.32, [0, 1.36, 0.66], [Math.PI / 2, 0, 0], s(8), [1, 0.8, 1]);
   b.bone(2).sphere(0xe53935, 0.025, [0, 1.32, 0.72], [1, 1, 1], 4);
   b.bone(3).cone(0xff9a1f, 0.05, 0.24, [0, 1.3, 0.62], [Math.PI / 2, 0, 0], s(6), [1, 0.6, 1]);
+  if (!lo) {
+    // Update 9: yellow eye rings, nostrils on the beak and a grey cap line
+    for (const x of [-0.13, 0.13]) {
+      b.bone(2).geo(torusGeo(0.047, 0.01, 3, 10), 0xffc933, [x, 1.42, 0.47], [0, x > 0 ? 0.35 : -0.35, 0]);
+      b.bone(2).box(0x6a4a20, 0.014, 0.012, 0.05, [x * 0.25, 1.4, 0.66]);
+    }
+  }
   // wings: spread, three tones out to black tips
   for (const [bone, sg] of [[4, -1], [5, 1]] as [number, number][]) {
     b.bone(bone).sphere(0xdfe6ec, 0.3, [sg * 0.62, 1.0, -0.06], [1.5, 0.16, 0.72], s(10));
     b.bone(bone).sphere(grey, 0.24, [sg * 1.0, 1.0, -0.1], [1.4, 0.14, 0.6], s(8));
     b.bone(bone).sphere(0x2a2f38, 0.13, [sg * 1.32, 1.0, -0.13], [1.4, 0.12, 0.5], 6);
+    if (!lo) {
+      // Update 9: separated primary feathers with white 'mirror' spots, and a pale leading edge
+      for (let i = 0; i < 3; i++) {
+        const x = sg * (1.12 + i * 0.12);
+        b.bone(bone).cone(0x23272f, 0.05, 0.2, [x, 0.995, -0.25 - i * 0.015], [-(Math.PI / 2 + 0.1), 0, -sg * (0.25 + i * 0.12)], 3, [1, 1, 0.22]);
+        ball(b.bone(bone), 0xffffff, 0.022, [x + sg * 0.02, 1.012, -0.17 - i * 0.01], 4, 3, [1.2, 0.3, 1]);
+      }
+      b.bone(bone).tube(0xffffff, [[sg * 0.3, 1.01, 0.12], [sg * 0.7, 1.012, 0.14], [sg * 1.05, 1.01, 0.06]], 0.022, 4, 6, false);
+    }
   }
   // tail fan
   b.bone(6).sphere(grey, 0.22, [0, 0.86, -0.62], [1.0, 0.18, 1.1], s(8)).paint((x, y, z, c) => {
@@ -791,8 +987,11 @@ export function gullGeometry(lo = false): THREE.BufferGeometry {
   return b.build();
 }
 
-/** Build a rigid-skinned instance (bones + skinned mesh) for a shared geometry. */
-export function makeRig(geo: THREE.BufferGeometry, mat: THREE.Material, joints: { pos: V3; parent: number }[], outline?: THREE.Material): { group: THREE.Group; bones: THREE.Bone[]; mesh: THREE.SkinnedMesh; line: THREE.SkinnedMesh | null } {
+/**
+ * Build a rigid-skinned instance (bones + skinned mesh) for a shared geometry. The outline hull shares the
+ * skeleton; it uses `lineGeo` (a skinned silhouette pass) when given, else the model itself.
+ */
+export function makeRig(geo: THREE.BufferGeometry, mat: THREE.Material, joints: { pos: V3; parent: number }[], outline?: THREE.Material, lineGeo?: THREE.BufferGeometry): { group: THREE.Group; bones: THREE.Bone[]; mesh: THREE.SkinnedMesh; line: THREE.SkinnedMesh | null } {
   const group = new THREE.Group();
   const bones = joints.map(() => new THREE.Bone());
   joints.forEach((j, i) => {
@@ -814,7 +1013,7 @@ export function makeRig(geo: THREE.BufferGeometry, mat: THREE.Material, joints: 
   mesh.bind(skel, new THREE.Matrix4());
   let line: THREE.SkinnedMesh | null = null;
   if (outline) {
-    line = new THREE.SkinnedMesh(geo, outline);
+    line = new THREE.SkinnedMesh(lineGeo ?? geo, outline);
     line.frustumCulled = false;
     group.add(line);
     line.bind(skel, new THREE.Matrix4());
@@ -1172,88 +1371,321 @@ export function shellRing(lo = false): THREE.BufferGeometry {
   return b.build();
 }
 
-/** Where each scuttler claw pivots (x is mirrored for the left claw). */
-export const SCUTTLE_SHOULDER: V3 = [0.36, 0.3, 0.2];
+// ------------------------------------------------------------------ Scuttler v3 (Update 9)
+/*
+ * A grumpy blue rock crab, one skinned mesh (one draw call, plus its outline hull). It faces +z (the
+ * player). Bones (SCUTTLE_JOINTS): 0 root, 1 body (carapace + face), 2/3 eye stalks, 4/5 arms (palm and
+ * fixed finger), 6/7 the moving fingers, 8–11 the left legs and 12–15 the right legs (front to back).
+ * The bind pose is the resting pose that tests/hitbox.test.ts measures (w ~1.6, d ~1.1, h ~0.8 core).
+ */
+
+/** carapace half-width (x) and half-depth (z), and the z of its centre */
+const SC_W = 0.6;
+const SC_D = 0.44;
+const SC_Z0 = -0.1;
+/** carapace profile [ρ, y] from the belly to the dome (ρ 1 is the rim): a flat belly, a pale rim ledge, a dark groove, the dome */
+const SC_PROFILE: [number, number][] = [
+  [0, 0.17], [0.55, 0.176], [0.8, 0.2], [0.93, 0.25], [0.99, 0.3], [1.0, 0.335], [0.97, 0.36], [0.93, 0.372], [0.88, 0.405], [0.75, 0.48], [0.55, 0.545], [0.3, 0.588], [0, 0.602],
+];
+const SC_PROFILE_LO = [0, 2, 4, 5, 7, 9, 11, 12];
+/** body bone pivot */
+const SC_BODY: V3 = [0, 0.3, -0.05];
+/** right-side claw: shoulder, elbow, wrist, palm centre and the palm's long axis (pointing in at the face); x mirrors */
+const SC_CLAW = { S: [0.27, 0.27, 0.14] as V3, E: [0.46, 0.24, 0.26] as V3, C: [0.44, 0.26, 0.39] as V3, P: [0.32, 0.29, 0.46] as V3, dir: [-0.85, 0.08, 0.52] as V3 };
+/** legs, front to back: hip z, yaw splay (rad, + forward), and the in-plane profile [reach, y] hip, knee, ankle, tip */
+const SC_LEG_Z = [0.1, -0.04, -0.18, -0.32];
+const SC_LEG_YAW = [0.52, 0.17, -0.18, -0.52];
+const SC_HIP_X = 0.38;
+const SC_LEG_PTS: [number, number][] = [[0, 0.24], [0.27, 0.41], [0.43, 0.2], [0.47, 0.0]];
+const SC_COL = {
+  shell: 0x2f72c4, top: 0x5c9de2, rim: 0xb4d8f6, knob: 0x74aeea, belly: 0x1b3558,
+  leg: 0x3274c4, joint: 0xa6cff4, tip: 0x182f52,
+  claw: 0x2462dc, clawPale: 0xcfe3f8, nail: 0xff6038,
+  eye: 0xffffff, pupil: 0x0f1522, lid: 0x2a63ad, brow: 0x13284a, mouth: 0x0d1830, tooth: 0xf4f8fc,
+};
+/** eyelid (a thick cap with a rounded lip) around its own +y axis, [r, y] from the lip up */
+const SC_LID: [number, number][] = [[0.07, 0.06], [0.094, 0.052], [0.108, 0.066], [0.104, 0.082], [0.082, 0.1], [0.045, 0.113], [0, 0.117]];
+
+const v3 = {
+  add: (a: V3, b: V3, k = 1): V3 => [a[0] + b[0] * k, a[1] + b[1] * k, a[2] + b[2] * k],
+  sub: (a: V3, b: V3): V3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  norm: (a: V3): V3 => {
+    const l = Math.hypot(a[0], a[1], a[2]) || 1;
+    return [a[0] / l, a[1] / l, a[2] / l];
+  },
+  dot: (a: V3, b: V3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  mx: (a: V3, s: number): V3 => [a[0] * s, a[1], a[2]],
+};
+
+/** Euler (XYZ) that turns local axis `ax` onto `dir`, with the next local axis as close to `hint` as it can be. */
+function aim(ax: 'x' | 'y' | 'z', dir: V3, hint: V3): V3 {
+  const a = new THREE.Vector3(...dir).normalize();
+  const h = new THREE.Vector3(...hint).normalize();
+  if (Math.abs(a.dot(h)) > 0.999) h.set(h.y, h.z, h.x);
+  const x = new THREE.Vector3();
+  const y = new THREE.Vector3();
+  const z = new THREE.Vector3();
+  // local +y onto dir (local +z toward hint); +x onto dir (+y toward hint); +z onto dir (+y toward hint)
+  if (ax === 'y') {
+    y.copy(a);
+    x.crossVectors(y, h).normalize();
+    z.crossVectors(x, y);
+  } else if (ax === 'x') {
+    x.copy(a);
+    z.crossVectors(x, h).normalize();
+    y.crossVectors(z, x);
+  } else {
+    z.copy(a);
+    x.crossVectors(h, z).normalize();
+    y.crossVectors(z, x);
+  }
+  const e = new THREE.Euler().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z), 'XYZ');
+  return [e.x, e.y, e.z];
+}
+
+/** a budget sphere: `w` around, `h` rows (GeoBuilder.sphere keeps at least 6 rows) */
+function ball(b: GeoBuilder, col: number, r: number, pos: V3, w: number, h: number, scale: V3 = [1, 1, 1], rot: V3 = [0, 0, 0]): GeoBuilder {
+  return b.geo(new THREE.SphereGeometry(r, w, h), col, pos, rot, scale);
+}
+
+/** a cone from `base` to `tip`; `flat` squashes it along the axis nearest `hint` */
+function spanCone(b: GeoBuilder, col: number, base: V3, tip: V3, r: number, seg: number, flat = 1, hint: V3 = [0, 1, 0]): GeoBuilder {
+  const d = v3.sub(tip, base);
+  return b.cone(col, r, Math.hypot(d[0], d[1], d[2]), v3.add(base, d, 0.5), aim('y', d, hint), seg, [1, 1, flat]);
+}
+
+/** height of the carapace's upper surface over (x, z) (for seating knobs, eyes and the mouth on it) */
+function scDomeY(x: number, z: number): number {
+  const rho = Math.hypot(x / SC_W, (z - SC_Z0) / SC_D);
+  // the upper profile runs from the rim lip (index 6) inward to the top
+  for (let i = 6; i < SC_PROFILE.length - 1; i++) {
+    const [r0, y0] = SC_PROFILE[i] as [number, number];
+    const [r1, y1] = SC_PROFILE[i + 1] as [number, number];
+    if (rho <= r0 && rho >= r1) return y0 + ((r0 - rho) / (r0 - r1)) * (y1 - y0);
+  }
+  return rho > 0.97 ? 0.36 : 0.602;
+}
+
+/** the four points (hip, knee, ankle, tip) of leg `i` on side `s` (-1 left, 1 right) */
+function scLeg(s: number, i: number): V3[] {
+  const a = SC_LEG_YAW[i] as number;
+  const dx = s * Math.cos(a);
+  const dz = Math.sin(a);
+  const hz = SC_LEG_Z[i] as number;
+  return SC_LEG_PTS.map(([r, y]) => [s * SC_HIP_X + dx * r, y, hz + dz * r] as V3);
+}
+
+/** the claw's palm axis on side `s` */
+const scClawDir = (s: number): V3 => v3.norm(v3.mx(SC_CLAW.dir, s));
+/** the moving finger's hinge on side `s` (top front of the palm) */
+const scHinge = (s: number): V3 => v3.add(v3.add(v3.mx(SC_CLAW.P, s), scClawDir(s), 0.135), [0, 0.075, 0]);
+
+/** Scuttler rig joints (model space, bind pose). */
+export const SCUTTLE_JOINTS: { pos: V3; parent: number }[] = [
+  { pos: [0, 0, 0], parent: -1 },
+  { pos: SC_BODY, parent: 0 },
+  { pos: [-0.13, 0.43, 0.25], parent: 1 },
+  { pos: [0.13, 0.43, 0.25], parent: 1 },
+  { pos: v3.mx(SC_CLAW.S, -1), parent: 1 },
+  { pos: SC_CLAW.S, parent: 1 },
+  { pos: scHinge(-1), parent: 4 },
+  { pos: scHinge(1), parent: 5 },
+  ...[-1, 1].flatMap((s) => [0, 1, 2, 3].map((i) => ({ pos: (scLeg(s, i)[0] as V3), parent: 1 }))),
+];
 
 /**
- * Scuttler v2 (Update 8): a grumpy blue-grey rock crab sized to its hitbox (w 1.4, d 0.9, h 0.65).
- * A domed, knobbly carapace with a pale bevelled rim and front teeth, stubby eyes with highlights and
- * cross brows, and three bent legs a side. Body only; the claws are separate (they rise as a warning).
+ * What the scuttler's animation needs to know about the rig (entities.ts): bone indices, each leg's
+ * lift axis (positive lifts the tip; in the body's frame), each leg tip relative to the body pivot,
+ * and each moving finger's opening axis. Index 0 is the left side.
  */
-export function scuttlerBody(lo = false, rich = false): THREE.BufferGeometry {
+export const SCUTTLE_RIG = {
+  body: 1,
+  eye: [2, 3],
+  arm: [4, 5],
+  finger: [6, 7],
+  leg0: 8,
+  legAxis: [-1, 1].flatMap((s) => SC_LEG_YAW.map((a) => [-Math.sin(a), 0, s * Math.cos(a)] as V3)),
+  legTip: [-1, 1].flatMap((s) => [0, 1, 2, 3].map((i) => v3.sub(scLeg(s, i)[3] as V3, SC_BODY))),
+  legReach: SC_LEG_PTS[3]![0],
+  fingerAxis: [-1, 1].map((s) => {
+    const d = scClawDir(s);
+    return v3.norm([-d[2], 0, d[0]]);
+  }),
+};
+
+/**
+ * Scuttler v3 (Update 9), skinned to SCUTTLE_JOINTS. `lo`: Low tier and far away; `hi`: Medium; `rich`:
+ * High near (barnacles, seaweed, a starfish, claw teeth, mouthparts); `lineLo` / `lineHi`: silhouette-only
+ * passes for the outline hull (no pupils, mouth or small props, so the ink stays clean).
+ * - carapace: a lathed oval with a flat dark belly, a pale rim ledge over a dark groove, a lighter dome,
+ *   knobs, three pale lobes and a lateral spine a side
+ * - face: eyes on stalks with pupils, highlights and heavy slanted lids (the grumpy brow), a frown
+ *   pressed into the front slope and a snaggle tooth
+ * - claws: chunky saturated palms held in a guard in front of the face, white undersides, red-orange
+ *   fingertips; the upper finger is its own bone so it can snap
+ * - legs: four a side, splayed and jointed (round segments, pale knees, dark pointed tips)
+ */
+export function scuttlerGeometry(mode: 'lo' | 'hi' | 'rich' | 'lineLo' | 'lineHi' = 'hi'): THREE.BufferGeometry {
   const b = new GeoBuilder();
-  const seg = lo ? 10 : 14;
-  const shell = 0x4f6a86;
-  const dark = 0x2f4258;
-  const rim = 0x9fb6cc;
-  b.sphere(shell, 1, [0, 0.33, -0.02], [0.56, 0.27, 0.42], seg).warp((p) => {
-    // flat belly and a slightly squared front edge
-    if (p.y < 0.24) p.y = 0.24 - (0.24 - p.y) * 0.45;
-    if (p.z > 0.2) p.y -= (p.z - 0.2) * 0.12;
-  }).paint((x, y, z, c) => {
-    const r = Math.hypot(x / 0.56, (z + 0.02) / 0.42);
-    c.multiplyScalar(0.86 + 0.18 * sstep(0.3, 0.58, y));
-    // mottled shell, a pale rim band where the dome turns under, and a darker belly
-    c.multiplyScalar(0.92 + 0.12 * Math.max(0, Math.sin(x * 11) * Math.sin(z * 9 + 1)));
-    if (r > 0.86 && y > 0.25) c.lerp(new THREE.Color(rim), 0.7);
-    if (y < 0.26) c.lerp(new THREE.Color(dark), 0.6);
-  });
-  // knobbly back and a couple of barnacles
-  const knobs: V3[] = lo ? [[0, 0.58, -0.08], [-0.2, 0.53, 0.02], [0.2, 0.53, 0.02]] : [[0, 0.59, -0.08], [-0.2, 0.55, 0.04], [0.2, 0.55, 0.04], [-0.12, 0.55, -0.25], [0.14, 0.54, -0.24], [0, 0.57, 0.12]];
-  for (const k of knobs) b.ico(0x6f8aa6, 0.065, k, [1, 0.6, 1], 0);
-  if (!lo) b.cone(0xf2ece0, 0.05, 0.06, [0.3, 0.5, -0.18], [0.4, 0, -0.6], 5);
-  // pale teeth along the front rim
-  const nT = lo ? 4 : 6;
-  for (let i = 0; i < nT; i++) {
-    const a = -0.9 + (i / (nT - 1)) * 1.8;
-    b.cone(rim, 0.045, 0.1, [Math.sin(a) * 0.55, 0.33, Math.cos(a) * 0.4], [Math.PI / 2, 0, 0], 4);
+  const line = mode === 'lineLo' || mode === 'lineHi';
+  // detail: 2 hi/rich, 1 the high outline, 0 lo and the low outline
+  const q = mode === 'hi' || mode === 'rich' ? 2 : mode === 'lineHi' ? 1 : 0;
+  const rich = mode === 'rich';
+  const deco = !line;
+  const C = SC_COL;
+  const up: V3 = [0, 1, 0];
+  const tint = new THREE.Color();
+
+  // ---- carapace (body bone): seam at the back, analytic lathe normals (no crease)
+  b.bone(1);
+  const prof = q === 2 ? SC_PROFILE : SC_PROFILE.filter((_, i) => SC_PROFILE_LO.includes(i));
+  b.lathe(C.shell, prof, q === 2 ? 18 : q === 1 ? 14 : 12, [0, 0, SC_Z0], [0, Math.PI, 0], [SC_W, 1, SC_D]);
+  if (deco) {
+    b.paint((x, y, z, c) => {
+      const rho = Math.hypot(x / SC_W, (z - SC_Z0) / SC_D);
+      c.lerp(tint.set(C.top), sstep(0.42, 0.6, y) * 0.6);
+      c.multiplyScalar(0.94 + hash(Math.round(x * 20), Math.round(y * 20), Math.round(z * 20)) * 0.1);
+      // pale rim ledge with a dark groove just inside it, and a dark belly
+      if (y > 0.29 && y < 0.365 && rho > 0.95) c.lerp(tint.set(C.rim), 0.8);
+      else if (y >= 0.365 && y < 0.39 && rho > 0.9) c.multiplyScalar(0.7);
+      if (y < 0.31) c.lerp(tint.set(C.belly), sstep(0.31, 0.24, y));
+    });
   }
-  // eyes on stubby stalks, with pupils, highlights and angry brows
+  // knobs on the dome
+  if (q === 2) {
+    for (const [x, z] of [[-0.13, 0.06], [0.13, 0.06], [0, -0.12], [-0.24, -0.3], [0.24, -0.3]] as [number, number][]) {
+      ball(b, C.knob, 0.052, [x, scDomeY(x, z) - 0.006, z], 6, 3, [1, 0.55, 1]);
+    }
+  }
+  // pale lobes along the front rim and the long lateral spine
   for (const s of [-1, 1]) {
-    b.cyl(dark, 0.035, 0.045, 0.14, [s * 0.14, 0.58, 0.28], [0.2, 0, 0], 5);
-    b.sphere(0xffffff, 0.075, [s * 0.14, 0.68, 0.3], [1, 1, 1], lo ? 6 : 7);
-    b.ico(0x14141c, 0.04, [s * 0.13, 0.68, 0.365], [1, 1, 0.6], 0);
-    if (!lo) b.ico(0xffffff, 0.013, [s * 0.12, 0.695, 0.392], [1, 1, 1], 0);
-    b.box(0x1c2836, 0.13, 0.035, 0.04, [s * 0.13, 0.765, 0.32], [0, 0, s * 0.45]);
+    const rimAt = (th: number): [V3, V3] => [
+      [s * SC_W * Math.sin(th), 0.335, SC_Z0 + SC_D * Math.cos(th)],
+      v3.norm([(s * Math.sin(th)) / SC_W, 0, Math.cos(th) / SC_D]),
+    ];
+    if (q === 2) {
+      for (const th of [0.62, 0.92, 1.2]) {
+        const [p, n] = rimAt(th);
+        spanCone(b, C.rim, v3.add(p, n, -0.025), v3.add(p, n, 0.07), 0.042, 5, 0.6);
+      }
+    }
+    const [p, n] = rimAt(1.62);
+    spanCone(b, deco ? C.rim : C.shell, v3.add(p, n, -0.03), v3.add(v3.add(p, n, 0.15), [0, 0.03, 0.02]), 0.046, q === 2 ? 6 : 4, 0.7);
   }
-  // a frowning mouth plate
-  b.box(0x22303f, 0.16, 0.035, 0.03, [0, 0.36, 0.43], [0, 0, 0]);
-  if (!lo) b.box(rim, 0.04, 0.025, 0.03, [0.05, 0.355, 0.445]);
-  // legs: three a side, bent knee up, tips pointed
-  for (const s of [-1, 1]) for (let i = 0; i < 3; i++) {
-    const z = 0.12 - i * 0.18;
-    const knee: V3 = [s * 0.62, 0.4, z * 1.15];
-    b.seg(shell, [s * 0.44, 0.3, z], knee, 0.05, 0.042, lo ? 3 : 4);
-    b.seg(dark, knee, [s * 0.7, 0.0, z * 1.25], 0.042, 0.012, lo ? 3 : 4);
-    if (rich) b.ico(rim, 0.045, knee, [1, 1, 1], 0);
+  if (deco) {
+    // a frown pressed into the front slope (half sunk, so it reads as a groove) and a snaggle tooth
+    b.geo(torusGeo(0.085, 0.021, q === 2 ? 4 : 3, q === 2 ? 8 : 5, 2.0), C.mouth, [0, 0.392, 0.286], [-0.65, 0, Math.PI / 2 - 1.0]);
+    if (q === 2) spanCone(b, C.tooth, [0.028, 0.437, 0.262], [0.03, 0.475, 0.232], 0.016, 4);
   }
   if (rich) {
-    // seaweed snagged on the shell and a tiny starfish hitch-hiker
-    b.tube(0x3a9a50, [[-0.32, 0.5, -0.1], [-0.45, 0.42, 0.05], [-0.55, 0.3, 0.12]], (t) => 0.035 - t * 0.015, 3, 4, false);
-    starfish(b, 0xff8a4a, 0.07, [0.24, 0.52, -0.12], [-1.0, 0, 0.3]);
+    // mouthparts under the front rim, barnacles, a seaweed strand over the back and a starfish hitch-hiker
+    for (const s of [-1, 1]) ball(b, C.joint, 0.05, [s * 0.055, 0.285, 0.3], 6, 4, [1, 0.75, 0.5]);
+    for (const [x, z] of [[-0.26, -0.33], [-0.17, -0.41], [-0.33, -0.22]] as [number, number][]) {
+      const y = scDomeY(x, z);
+      b.cone(0xf2ece0, 0.032, 0.045, [x, y + 0.012, z], [-0.3, 0, 0.35], 5);
+      ball(b, 0x5a6470, 0.012, [x, y + 0.035, z - 0.005], 4, 3);
+    }
+    b.tube(0x3a9a50, [[0.24, 0.52, -0.3], [0.45, 0.43, -0.36], [0.58, 0.3, -0.36], [0.6, 0.16, -0.32]], (t) => 0.03 - t * 0.012, 3, 5, false);
+    starfish(b, 0xff8a4a, 0.075, [0.06, 0.6, -0.24], [-1.35, 0, 0.4]);
+  }
+
+  // ---- eyes on stalks (one bone each, pivot at the stalk base inside the shell)
+  for (const [k, s] of [[0, -1], [1, 1]] as [number, number][]) {
+    b.bone(2 + k);
+    const E: V3 = [s * 0.17, 0.69, 0.29];
+    b.tube(C.shell, [[s * 0.12, 0.36, 0.24], [s * 0.15, 0.55, 0.27], E], (t) => 0.052 - t * 0.012, q === 2 ? 6 : 4, q === 2 ? 3 : 1, false);
+    if (line) {
+      // the eyeball's silhouette (the lid sits on it); dark, so its ink ring is dark too
+      ball(b, C.pupil, 0.1, E, q ? 7 : 6, q ? 5 : 4);
+      continue;
+    }
+    ball(b, C.eye, 0.1, E, q === 2 ? 9 : 6, q === 2 ? 6 : 4);
+    // pupils glare at the player, a little cross-eyed
+    const L = v3.norm([-s * 0.14, 0.06, 1]);
+    ball(b, C.pupil, 0.05, v3.add(E, L, 0.083), q === 2 ? 6 : 5, q === 2 ? 4 : 3, [1, 1, 0.45], aim('z', L, up));
+    if (q === 2) ball(b, 0xffffff, 0.02, v3.add(E, v3.norm(v3.add(L, [s * 0.3, 0.5, 0])), 0.1), 4, 3);
+    // the heavy lid, slanted down toward the middle: the grumpy brow is part of the eye
+    const lidRot: V3 = [0.5, 0, s * 0.55];
+    const lidAx = new THREE.Vector3(0, 1, 0).applyEuler(new THREE.Euler(...lidRot));
+    if (q === 2) b.lathe(C.lid, SC_LID, 8, E, lidRot);
+    else b.geo(new THREE.SphereGeometry(0.112, 7, 3, 0, Math.PI * 2, 0, 1.05), C.lid, E, lidRot);
+    b.paint((x, y, z, c) => {
+      const h = (x - E[0]) * lidAx.x + (y - E[1]) * lidAx.y + (z - E[2]) * lidAx.z;
+      if (h < 0.07) c.set(C.brow);
+    });
+  }
+
+  // ---- claws: arm and palm with the fixed finger on the arm bone, the moving finger on its own bone
+  for (const [k, s] of [[0, -1], [1, 1]] as [number, number][]) {
+    const S = v3.mx(SC_CLAW.S, s);
+    const E = v3.mx(SC_CLAW.E, s);
+    const W = v3.mx(SC_CLAW.C, s);
+    const P = v3.mx(SC_CLAW.P, s);
+    const dir = scClawDir(s);
+    b.bone(4 + k);
+    if (q === 2) {
+      b.segOpen(C.claw, S, E, 0.05, 0.045, 7);
+      ball(b, C.joint, 0.049, E, 6, 4);
+      b.segOpen(C.claw, E, W, 0.045, 0.05, 7);
+      ball(b, C.claw, 0.06, W, 6, 4);
+    } else {
+      b.tube(C.claw, [S, E, W], 0.05, q ? 5 : 4, q ? 3 : 2, false);
+    }
+    // the palm: long along `dir`, white underneath, catching light on top
+    ball(b, C.claw, 1, P, q === 2 ? 10 : q ? 8 : 7, q === 2 ? 7 : q ? 6 : 5, [0.2, 0.15, 0.13], aim('x', dir, up));
+    if (deco) {
+      b.paint((x, y, z, c) => {
+        const ly = y - P[1];
+        c.multiplyScalar(0.88 + 0.24 * sstep(-0.08, 0.12, ly));
+        if (ly < -0.08) c.lerp(tint.set(C.clawPale), sstep(-0.08, -0.14, ly) * 0.85);
+      });
+    }
+    // fixed finger (lower), curling up to meet the moving one
+    const f0 = v3.add(v3.add(P, dir, 0.145), up, -0.04);
+    const fixedPts: V3[] = [f0, v3.add(v3.add(f0, dir, 0.11), up, -0.006), v3.add(v3.add(f0, dir, 0.21), up, 0.04)];
+    const h0 = scHinge(s);
+    const movePts: V3[] = [h0, v3.add(v3.add(h0, dir, 0.11), up, 0.016), v3.add(v3.add(h0, dir, 0.205), up, -0.032)];
+    const finger = (pts: V3[], r0: number): void => {
+      if (q === 2) b.tube(C.claw, pts, (t) => r0 * (1 - t) + 0.009, 5, 3, false);
+      else spanCone(b, C.claw, pts[0] as V3, pts[2] as V3, r0, q ? 5 : 4);
+      if (deco) {
+        const o = pts[0] as V3;
+        b.paint((x, y, z, c) => {
+          const u = v3.dot([x - o[0], y - o[1], z - o[2]], dir) / 0.21;
+          if (u > 0.55) c.lerp(tint.set(C.nail), sstep(0.55, 0.75, u));
+        });
+      }
+    };
+    finger(fixedPts, 0.066);
+    if (rich) for (const u of [0.35, 0.6]) spanCone(b, C.tooth, v3.add(v3.add(f0, dir, 0.21 * u), up, 0.028), v3.add(v3.add(f0, dir, 0.21 * u + 0.01), up, 0.062), 0.015, 4);
+    b.bone(6 + k);
+    finger(movePts, 0.06);
+    if (rich) for (const u of [0.4, 0.65]) spanCone(b, C.tooth, v3.add(v3.add(h0, dir, 0.205 * u), up, -0.02), v3.add(v3.add(h0, dir, 0.205 * u + 0.01), up, -0.052), 0.014, 4);
+  }
+
+  // ---- legs: four a side, splayed; round jointed segments standing on their tips
+  for (let k = 0; k < 2; k++) {
+    for (let i = 0; i < 4; i++) {
+      const s = k ? 1 : -1;
+      b.bone(8 + k * 4 + i);
+      const [H, K, A, T] = scLeg(s, i) as [V3, V3, V3, V3];
+      if (q === 2) {
+        b.segOpen(C.leg, H, K, 0.064, 0.054, 6).paint((x, y, z, c) => c.multiplyScalar(0.82 + 0.3 * sstep(0.22, 0.45, y)));
+        ball(b, C.joint, 0.06, K, 6, 3);
+        b.segOpen(C.leg, K, A, 0.052, 0.04, 6).paint((x, y, z, c) => c.multiplyScalar(0.85 + 0.25 * sstep(0.15, 0.43, y)));
+        ball(b, C.leg, 0.042, A, 5, 3);
+        spanCone(b, C.tip, A, T, 0.04, 5);
+      } else {
+        b.tube(C.leg, [H, K, A, T], (t) => 0.064 - t * 0.048, q ? 4 : line ? 3 : 4, q ? 5 : 4, false);
+        if (deco) b.paint((x, y, z, c) => {
+          if (y < 0.14) c.lerp(tint.set(C.tip), sstep(0.14, 0.08, y));
+        });
+      }
+    }
   }
   return b.build();
 }
 
-/**
- * One scuttler claw, pivot at the shoulder (x mirrored by scale). The arm reaches forward and out so
- * the pincer sits in front of the body; the rig pitches it up (rotation.x < 0) as a warning.
- */
-export function scuttlerClaw(lo = false): THREE.BufferGeometry {
-  const b = new GeoBuilder();
-  const shell = 0x5f7c9a;
-  b.seg(0x4f6a86, [0, 0, 0], [0.1, 0.03, 0.1], 0.06, 0.055, 5);
-  b.ico(0x6f8aa6, 0.06, [0.1, 0.03, 0.1], [1, 1, 1], 0);
-  // the pincer: a fat palm with a pale underside, a fixed finger and a moving thumb
-  b.sphere(shell, 0.15, [0.15, 0.06, 0.23], [0.8, 0.7, 1.0], lo ? 7 : 9).paint((x, y, z, c) => {
-    if (y < 0.03) c.lerp(new THREE.Color(0xdfe6ee), 0.6);
-    c.multiplyScalar(0.9 + 0.2 * sstep(0.0, 0.16, y));
-  });
-  b.cone(0xe0e6ee, 0.05, 0.16, [0.16, 0.1, 0.37], [Math.PI / 2 - 0.25, 0, 0], 5);
-  b.cone(0xe0e6ee, 0.04, 0.12, [0.17, 0.0, 0.35], [Math.PI / 2 + 0.3, 0, 0], 5);
-  if (!lo) b.ico(0xffffff, 0.028, [0.1, 0.125, 0.24], [1, 0.6, 1.4], 0);
-  return b.build();
-}
 
 /** A sand arrow showing which way the scuttler will go (points +x). */
 export function scuttleArrow(): THREE.BufferGeometry {
@@ -1267,8 +1699,8 @@ export function scuttleArrow(): THREE.BufferGeometry {
  * The model drawn for a sim obstacle at rest (Update 8), by kind, zone skin (0 shore, 1 boardwalk,
  * 2 tide pools; 3 sunset reuses 0) and variant (entity id % 2). entities.ts builds its views from
  * this, and hitbox tests can measure the same meshes. Sweep: the wave body without its flat hop
- * chevrons (sand decals ahead of the wave). Roller: the ball resting on the sand. Scuttle: the body
- * with both claws in their resting pose.
+ * chevrons (sand decals ahead of the wave). Roller: the ball resting on the sand. Scuttle: the rigged
+ * crab in its bind pose (claws in their guard, legs planted).
  */
 export function obstacleModel(kind: 'block' | 'low' | 'sweep' | 'roller' | 'scuttle', skin: number, variant = 0, lo = false, rich = false): THREE.BufferGeometry {
   const z = skin === 3 ? 0 : skin;
@@ -1284,31 +1716,10 @@ export function obstacleModel(kind: 'block' | 'low' | 'sweep' | 'roller' | 'scut
       g.translate(0, BALL_R, 0);
       return g;
     }
-    case 'scuttle': {
-      const b = new GeoBuilder();
-      b.raw(scuttlerBody(lo, rich));
-      for (const s of [-1, 1]) {
-        const c = scuttlerClaw(lo);
-        c.scale(s, 1, 1);
-        if (s < 0) flipWinding(c);
-        c.translate(s * SCUTTLE_SHOULDER[0], SCUTTLE_SHOULDER[1], SCUTTLE_SHOULDER[2]);
-        b.raw(c);
-      }
-      return b.build();
-    }
+    case 'scuttle':
+      return scuttlerGeometry(lo ? 'lo' : rich ? 'rich' : 'hi');
   }
 }
 
 /** Beach ball radius (the roller rests on the sand at this height). */
 export const BALL_R = 0.56;
-
-function flipWinding(g: THREE.BufferGeometry): void {
-  const p = g.attributes.position as THREE.BufferAttribute;
-  for (const a of [g.attributes.position, g.attributes.normal, g.attributes.color] as THREE.BufferAttribute[]) {
-    for (let i = 0; i < p.count; i += 3) {
-      const x = [a.getX(i + 1), a.getY(i + 1), a.getZ(i + 1)];
-      a.setXYZ(i + 1, a.getX(i + 2), a.getY(i + 2), a.getZ(i + 2));
-      a.setXYZ(i + 2, x[0] as number, x[1] as number, x[2] as number);
-    }
-  }
-}

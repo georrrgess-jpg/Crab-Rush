@@ -1,7 +1,7 @@
 import { btn, el, fmt } from './dom';
 import { BOOST_SVG, ICON } from './icons';
 import type { GoalView } from './ui';
-import { Sheet, Wallet, onSizeClass } from './kit';
+import { KEYS, Sheet, Wallet, keyHint, onSizeClass, tip } from './kit';
 import { morphFrom } from './motion';
 import { DIG_ICON } from './dig';
 
@@ -139,7 +139,8 @@ export class HomeScreen {
     });
     this.passDot = this.profile.querySelector('.dot') as HTMLElement;
     this.wallet = new Wallet('home-wallet');
-    const gear = btn(GEAR, 'icon h6-gear', () => this.h.settings(), 'Settings');
+    const gear = tip(btn(GEAR, 'icon h6-gear', () => this.h.settings(), 'Settings'), 'Settings');
+    tip(this.profile, 'Your level · Sunny Pass');
     const right = el('div', 'h6-topr');
     right.append(this.wallet.el, gear);
     top.append(this.profile, right);
@@ -187,7 +188,7 @@ export class HomeScreen {
     const start = el('button', 'h6-start play-card mode-card beach') as HTMLButtonElement;
     start.type = 'button';
     start.dataset.mode = 'beach';
-    start.innerHTML = `<span class="h6-play">${ICON.play}</span><span class="h6-start-l">Start Beach Run</span>`;
+    start.innerHTML = `<span class="h6-play">${ICON.play}</span><span class="h6-start-l">Start Beach Run</span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}`;
     start.addEventListener('click', (e) => {
       e.stopPropagation();
       this.h.play();
@@ -195,6 +196,7 @@ export class HomeScreen {
     start.addEventListener('focus', () => this.setFocus(0, false));
     this.boost = el('button', 'boost-chip hidden') as HTMLButtonElement;
     this.boost.type = 'button';
+    tip(this.boost, 'Golden Shell: 2× shells on your next Beach Run');
     this.boost.addEventListener('click', (e) => {
       e.stopPropagation();
       this.h.toggleBoost();
@@ -208,7 +210,7 @@ export class HomeScreen {
       r.type = 'button';
       r.dataset.mode = id;
       r.setAttribute('role', 'listitem');
-      r.innerHTML = `<span class="h6-ri">${ROW_ART[id]}</span><span class="h6-rcol"><span class="h6-rt">${title}</span><span class="h6-rs"></span></span><span class="h6-chev">${CHEVRON}</span><span class="mc-badge hidden"></span>`;
+      r.innerHTML = `<span class="h6-ri">${ROW_ART[id]}</span><span class="h6-rcol"><span class="h6-rt">${title}</span><span class="h6-rs"></span></span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}<span class="h6-chev">${CHEVRON}</span><span class="mc-badge hidden"></span>`;
       r.addEventListener('click', (e) => {
         e.stopPropagation();
         morphFrom(r);

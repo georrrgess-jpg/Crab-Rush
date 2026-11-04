@@ -5,11 +5,12 @@ import { World, defaultRunOptions } from '../src/sim/world';
 
 const DT = 1 / 120;
 
-function run(seed: number, metres: number, startDist = 0, tutorial: { move: boolean; hop: boolean } | null = null): string | null {
+function run(seed: number, metres: number, startDist = 0, tutorial: { move: boolean; hop: boolean } | null = null, followLines = false): string | null {
   const w = new World();
   w.start({ ...defaultRunOptions(), seed, startDist, tutorial });
   const ap = new Autopilot(w);
-  ap.seekShells = seed % 2 === 0; // half the runs chase shells (harder paths), half play safe
+  ap.seekShells = followLines || seed % 2 === 0; // half the runs chase shells (harder paths), half play safe
+  ap.followLines = followLines;
   const end = startDist + metres;
   let steps = 0;
   while (w.dist < end && steps++ < 120 * 60 * 30) {
@@ -38,6 +39,19 @@ describe('autopilot fairness (zero unavoidable crashes)', () => {
         const f = run(seed, 1500, start);
         if (f) fails.push(f);
       }
+    }
+    expect(fails).toEqual([]);
+  }, 120_000);
+
+  it('Update 9: following the shell lines never leads into an unavoidable crash', () => {
+    const fails: string[] = [];
+    for (let seed = 1; seed <= 12; seed++) {
+      const f = run(seed, 5000, 0, null, true);
+      if (f) fails.push(f);
+    }
+    for (const start of CFG.tierStarts.slice(1)) {
+      const f = run(200 + start, 1500, start, null, true);
+      if (f) fails.push(f);
     }
     expect(fails).toEqual([]);
   }, 120_000);

@@ -4,7 +4,7 @@
  */
 import { btn, el, fmt } from './dom';
 import { ICON } from './icons';
-import { PEARL_ICO } from './kit';
+import { KEYS, PEARL_ICO, keyHint } from './kit';
 
 export interface ReviveOffer {
   cost: number;
@@ -44,7 +44,7 @@ export class ReviveCard {
     const label = free ? `${ICON.play}<span>Continue</span><span class="rv-cost free">FREE</span>` : `${ICON.play}<span>Continue</span><span class="rv-cost">${PEARL_ICO}${o.cost}</span>`;
     this.go = btn(label, 'big green rv-go', () => this.h.go(), free ? 'Continue for free' : `Continue for ${o.cost} pearls`);
     this.go.disabled = !free && o.pearls < o.cost;
-    const no = btn('No thanks', 'small ghost rv-no', () => this.h.no());
+    const no = btn(`<span>No thanks</span>${keyHint(KEYS.back.kb, KEYS.back.pad)}`, 'small ghost rv-no', () => this.h.no());
     const foot = el('div', 'rv-foot', free ? 'One free Second Chance a day' : `You have ${PEARL_ICO}<b>${o.pearls}</b> pearls`);
     this.card.append(this.go, no, foot);
     this.el.classList.remove('hidden');

@@ -5,7 +5,7 @@
 import { COLS, RELIC_SETS, RELIC_TOTAL, ROWS, SITE_THEMES, TILES, type DigResult, type DigState, type DugTile, generateSite, heat, relicId, siteReward } from '../meta/dig';
 import { btn, el, fmt } from './dom';
 import { ICON } from './icons';
-import { PEARL_ICO, Sheet, Wallet, pageHead } from './kit';
+import { PEARL_ICO, Sheet, Wallet, pageHead, tip } from './kit';
 import { flyReward, reduced } from './motion';
 
 export const DIG_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M24.5 6.5l9 9-3 3-9-9z" fill="#ffd23a" stroke="#8a5a10" stroke-width="2" stroke-linejoin="round"/><path d="M26 14L12 28" stroke="#8a4a1e" stroke-width="4" stroke-linecap="round"/><path d="M7 25l8 8-4 3c-3 1-6-2-5-5z" fill="#cfd8e0" stroke="#5a6a7a" stroke-width="2" stroke-linejoin="round"/></svg>`;
@@ -66,6 +66,7 @@ export class DigScreen {
     const card = el('div', 'page-card wide dig-card');
     this.spadeChip = el('div', 'spade-chip', `${DIG_ICON}<b>0</b>`);
     this.spadeChip.setAttribute('aria-label', 'Spades');
+    tip(this.spadeChip, 'Spades: 1 per dig');
     const { head } = pageHead('Treasure Dig', () => this.h.back(), [this.spadeChip, this.wallet.el]);
     this.body = el('div', 'page-body dig-body');
     // left: the site card, relics found, the site reward, Museum and Play (UPDATE6_PLAN.md §2)
@@ -125,7 +126,8 @@ export class DigScreen {
     // the Museum, and a way to earn spades
     this.actions.innerHTML = '';
     const museum = btn(`${ICON.trophy}<span class="dm-col">Museum<small>${st.relics.length}/${RELIC_TOTAL}</small></span><span class="dm-hall">${HALL_ICON}</span>`, 'blue big dig-museum', () => this.openMuseum(), `Relic Museum: ${st.relics.length} of ${RELIC_TOTAL}`);
-    const play = btn(`${ICON.play}<span>${st.spades === 0 ? 'Play for spades' : 'Play'}</span>`, `dig-play${st.spades === 0 ? ' glow' : ''}`, () => this.h.play(), st.spades === 0 ? 'Play a run to earn spades' : 'Play a run');
+    // runs pay the spades: say so on the button, so "Play" never reads as "dig"
+    const play = btn(`${ICON.play}<span class="dm-col">${st.spades === 0 ? 'Play for spades' : 'Play'}<small>${st.spades === 0 ? 'out of spades' : 'earn spades'}</small></span>`, `dig-play${st.spades === 0 ? ' glow' : ''}`, () => this.h.play(), st.spades === 0 ? 'Play a run to earn spades' : 'Play a run to earn more spades');
     this.actions.append(museum, play);
     this.info.appendChild(this.actions);
   }

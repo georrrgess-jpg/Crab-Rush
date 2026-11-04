@@ -31,6 +31,10 @@ function makeBubble(time: THREE.IUniform<number>): THREE.ShaderMaterial {
         vec3 c = mix(vec3(1.0), hue(fract(f * 1.3 + uTime * 0.12 + vY * 0.6)), 0.55);
         float spec = pow(max(dot(normalize(vN), normalize(vec3(-0.4, 0.6, 0.7))), 0.0), 40.0);
         float a = 0.1 + pow(f, 2.2) * 0.7 + spec * 0.8;
+        // a shimmer band sweeping up the bubble
+        float band = smoothstep(0.9, 1.0, sin(vY * 6.0 - uTime * 3.0 + f * 4.0));
+        c += band * 0.4;
+        a += band * 0.25;
         gl_FragColor = vec4(c + spec, a);
       }`,
   });
@@ -52,13 +56,16 @@ interface View {
   outlines?: THREE.Object3D[];
   /** seconds since the entity came within the entrance distance (<0: not yet) */
   enter: number;
-  /** per-view animation memory (gull landing time, squawks) */
-  memo: { landed: number; squawk: number };
+  /** per-view animation memory (gull landing time, squawks; the scuttler's claw raise and last frame time) */
+  memo: { landed: number; squawk: number; raise?: number; t?: number };
 }
 
 const LOD_DIST = 50;
 /** High tier: the extra-detail obstacle models are drawn this close (m) */
-const RICH_DIST = 35;
+const RICH_DIST = CFG.obstacleView.richDist;
+/** High tier: obstacles this close (m) cast into the shadow map; beyond it (and for small hazards) a blob is drawn.
+ *  Update 9: was 40 (every obstacle drew twice); the shadow map only needs the near ones. */
+const SHADOW_DIST = CFG.obstacleView.shadowDist;
 const ENTER_DIST = 60;
 const easeOutBack = (t: number): number => {
   const c = 1.9;
@@ -66,10 +73,114 @@ const easeOutBack = (t: number): number => {
   return 1 + (c + 1) * x * x * x + c * x * x;
 };
 
+/**
+ * Update 9 scuttler animation knobs (candidates for CFG.scuttle): sideways metres per gait cycle, leg
+ * lift and fore-aft swing (rad), body roll / yaw into the move (rad) and bob (m), claw raise and spread
+ * (rad; the arms turn in ZXY order, so the claws end up beside the eyes, pincers up), snaps per second and how far the finger opens (rad), and how fast the warning pose blends in (1/s).
+ */
+const SCUTTLE_ANIM = CFG.obstacleView.scuttleAnim;
+const SR = O.SCUTTLE_RIG;
+const SC_LEG_AXIS = SR.legAxis.map((a) => new THREE.Vector3(a[0], a[1], a[2]));
+const SC_FINGER_AXIS = SR.fingerAxis.map((a) => new THREE.Vector3(a[0], a[1], a[2]));
+/** tetrapod gait: left 0 and 2 step with right 1 and 3, then the other four */
+const SC_GROUP = [0, 1, 0, 1, 1, 0, 1, 0];
+const SC_BODY_Y = (O.SCUTTLE_JOINTS[SR.body] as { pos: [number, number, number] }).pos[1];
+const SC_EYE_Y = (O.SCUTTLE_JOINTS[SR.eye[0] as number] as { pos: [number, number, number] }).pos[1];
+const _scQ = new THREE.Quaternion();
+const _scY = new THREE.Vector3(0, 1, 0);
+
+/**
+ * The scuttler rig (parts: [arrow, ...bones]). At rest it breathes, looks about and now and then shifts a
+ * foot. From the warning (state 1) the claws rise, spread and snap and it crouches, tapping its feet;
+ * while it crosses, the two leg sets step alternately (phase tied to the distance moved, so the feet
+ * don't skate), the body rolls, turns and bobs into the move, and the planted feet stay on the sand.
+ */
+function scuttleAnim(v: View, e: Entity, t: number): void {
+  const A = SCUTTLE_ANIM;
+  const P = v.parts as THREE.Object3D[];
+  const ar = P[0] as THREE.Object3D;
+  // bones follow the arrow in parts: bone i is P[1 + i]
+  const from = CFG.laneX[e.lane] as number;
+  const to = e.toLane !== undefined ? (CFG.laneX[e.toLane] as number) : from;
+  const dir = Math.sign(to - from) || 1;
+  const off = Math.abs(e.x - from);
+  const prog = Math.min(1, off / (Math.abs(to - from) || 1));
+  const crossing = e.state === 1 && off > 0.004;
+  const env = crossing ? Math.sin(prog * Math.PI) : 0;
+  // the warning pose blends in over a few frames
+  const m = v.memo;
+  const dt = m.t === undefined ? 0 : Math.min(0.1, Math.max(0, t - m.t));
+  m.t = t;
+  const target = e.state >= 1 ? 1 : 0;
+  const up = (m.raise = (m.raise ?? 0) + (target - (m.raise ?? 0)) * Math.min(1, dt * A.blend));
+  const gait = (off / A.stride) * Math.PI * 2;
+  const ph = e.id * 1.37;
+
+  // body: breathing at rest, a crouch and a nervous rock when warned, roll / yaw / bob while crossing
+  const breathe = Math.sin(t * 2.3 + ph) * (1 - up);
+  const bob = Math.abs(Math.sin(gait)) * A.bob * env;
+  const dy = bob - 0.025 * up * (1 - env) + breathe * 0.006;
+  const rz = -dir * A.roll * env + Math.sin(gait) * 0.06 * env + (1 - env) * Math.sin(t * 9 + ph) * 0.035 * up;
+  const rx = -0.08 * up + breathe * 0.012;
+  const ry = dir * A.yaw * env + Math.sin(t * 0.5 + ph) * 0.06 * (1 - up);
+  const body = P[1 + SR.body] as THREE.Object3D;
+  body.position.y = SC_BODY_Y + dy;
+  body.rotation.set(rx, ry, rz);
+  body.scale.set(1 - breathe * 0.006, 1 + breathe * 0.018, 1 - breathe * 0.006);
+
+  // legs: lift about each hip (in the body's frame), swing fore and aft, and cancel the body's roll,
+  // pitch and bob so the planted tips stay on the sand
+  for (let j = 0; j < 8; j++) {
+    const grp = SC_GROUP[j] as number;
+    let lift = 0;
+    let swing = 0;
+    if (crossing) {
+      const phi = gait + grp * Math.PI;
+      lift = Math.max(0, Math.sin(phi)) * A.legLift * Math.min(1, env * 2.5);
+      swing = Math.cos(phi) * A.legSwing * env;
+    } else if (up > 0.01) {
+      lift = Math.max(0, Math.sin(t * 13 + grp * Math.PI + ph)) * 0.16 * up;
+    } else {
+      const f = Math.sin(t * 0.9 + j * 2.1 + ph);
+      lift = f > 0.94 ? ((f - 0.94) / 0.06) * 0.25 : 0;
+    }
+    const tip = SR.legTip[j] as [number, number, number];
+    lift += (-tip[0] * rz + tip[2] * rx - dy) / SR.legReach;
+    const b = P[1 + SR.leg0 + j] as THREE.Object3D;
+    b.quaternion.setFromAxisAngle(SC_LEG_AXIS[j] as THREE.Vector3, lift);
+    _scQ.setFromAxisAngle(_scY, swing);
+    b.quaternion.premultiply(_scQ);
+  }
+
+  for (let k = 0; k < 2; k++) {
+    const s = k ? 1 : -1;
+    // eyes: look about at rest; perk up and glare when warned; jiggle while running
+    const eye = P[1 + (SR.eye[k] as number)] as THREE.Object3D;
+    eye.position.y = SC_EYE_Y + 0.035 * up;
+    eye.rotation.set(-0.1 * up + Math.sin(gait * 2 + k) * 0.08 * env, Math.sin(t * 0.7 + ph + k * 0.5) * 0.3 * (1 - up), s * 0.06 * up + Math.sin(gait * 2 + k) * 0.1 * env);
+    // claws: a low guard at rest; raised, spread and pumping (alternately) when warned
+    const arm = P[1 + (SR.arm[k] as number)] as THREE.Object3D;
+    const pump = Math.sin(t * 7.5 + k * Math.PI) * 0.1 * up;
+    const sway = Math.sin(t * 1.7 + ph + k) * 0.05 * (1 - up);
+    arm.rotation.set(-A.clawRaise * up - pump + sway + Math.sin(gait) * 0.08 * env, s * A.clawSpread * up, s * 0.05 * up);
+    // fingers: open slowly, snap shut fast
+    const u = t * A.snapHz + k * 0.45 + ph;
+    const fr = u - Math.floor(u);
+    const snap = fr < 0.75 ? fr / 0.75 : 1 - (fr - 0.75) / 0.25;
+    const open = up * (0.06 + A.snapOpen * snap) + (1 - up) * (0.08 + Math.sin(t * 1.3 + k + ph) * 0.06);
+    (P[1 + (SR.finger[k] as number)] as THREE.Object3D).quaternion.setFromAxisAngle(SC_FINGER_AXIS[k] as THREE.Vector3, open);
+  }
+
+  ar.visible = e.state === 1;
+  ar.rotation.y = dir > 0 ? 0 : Math.PI;
+  ar.position.x = dir * (0.6 + (Math.sin(t * 8) * 0.5 + 0.5) * 0.25);
+}
+
 const _olCache = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
 /**
  * Outline hull geometry: positions with normals averaged across coincident vertices so the pushed-out
  * hull stays closed at hard edges. Wind-animated triangles (flags) are dropped; the hull doesn't move.
+ * Skin weights are kept, so a rigged model's hull can ride the same skeleton (the scuttler).
  */
 function outlineGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
   let o = _olCache.get(g);
@@ -79,6 +190,8 @@ function outlineGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const na = src.attributes.normal as THREE.BufferAttribute;
   const ca = src.attributes.color as THREE.BufferAttribute;
   const wa = src.attributes.wind as THREE.BufferAttribute | undefined;
+  const si = src.attributes.skinIndex as THREE.BufferAttribute | undefined;
+  const sw = src.attributes.skinWeight as THREE.BufferAttribute | undefined;
   const keep: number[] = [];
   for (let t = 0; t < pa.count; t += 3) {
     if (wa && (wa.getX(t) !== 0 || wa.getX(t + 1) !== 0 || wa.getX(t + 2) !== 0)) continue;
@@ -97,17 +210,23 @@ function outlineGeo(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const pos = new Float32Array(keep.length * 3);
   const nor = new Float32Array(keep.length * 3);
   const col = new Float32Array(keep.length * 3);
+  const skI = si ? new Uint16Array(keep.length * 4) : null;
+  const skW = sw ? new Float32Array(keep.length * 4) : null;
   keep.forEach((i, j) => {
     const v = sum.get(key(i)) as [number, number, number];
     const l = Math.hypot(v[0], v[1], v[2]) || 1;
     pos.set([pa.getX(i), pa.getY(i), pa.getZ(i)], j * 3);
     nor.set([v[0] / l, v[1] / l, v[2] / l], j * 3);
     col.set([ca.getX(i), ca.getY(i), ca.getZ(i)], j * 3);
+    if (skI && si) skI.set([si.getX(i), si.getY(i), si.getZ(i), si.getW(i)], j * 4);
+    if (skW && sw) skW.set([sw.getX(i), sw.getY(i), sw.getZ(i), sw.getW(i)], j * 4);
   });
   o = new THREE.BufferGeometry();
   o.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   o.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   o.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  if (skI) o.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(skI, 4));
+  if (skW) o.setAttribute('skinWeight', new THREE.Float32BufferAttribute(skW, 4));
   _olCache.set(g, o);
   return o;
 }
@@ -206,43 +325,32 @@ export class EntityViews {
         break;
       }
       case 'scuttle': {
-        // Update 8: modelled at hitbox size (no extra scale); claws reach forward from the shoulders
-        const bodyHi = g.get('scut', () => O.scuttlerBody());
-        const body = mesh(bodyHi, M.clay);
-        const clawG = g.get('scutclaw', () => O.scuttlerClaw());
-        const cl = mesh(clawG, M.clay);
-        const cr = mesh(clawG, M.clay);
-        const [sx, sy, sz] = O.SCUTTLE_SHOULDER;
-        cl.position.set(-sx, sy, sz);
-        cl.scale.x = -1;
-        cr.position.set(sx, sy, sz);
+        // Update 9: one skinned crab (legs, claws, fingers and eyes on bones) and its outline hull on the
+        // same skeleton: two draw calls plus the sand arrow. lo / hi / rich swap the mesh; the hull swaps
+        // between its own low and high silhouette passes.
+        const hi = g.get('scut', () => O.scuttlerGeometry('hi'));
+        const lo = g.get('scutlo', () => O.scuttlerGeometry('lo'));
+        const rich = g.get('scutrich', () => O.scuttlerGeometry('rich'));
+        const olHi = outlineGeo(g.get('scutlinehi', () => O.scuttlerGeometry('lineHi')));
+        const olLo = outlineGeo(g.get('scutlinelo', () => O.scuttlerGeometry('lineLo')));
+        const rig = O.makeRig(hi, M.clay, O.SCUTTLE_JOINTS, this.outlineMat, olHi);
+        // the threat pose turns each claw up and out from the shoulder: yaw, then pitch, then roll
+        for (const i of O.SCUTTLE_RIG.arm) (rig.bones[i] as THREE.Bone).rotation.order = 'ZXY';
         const arrow = new THREE.Mesh(g.get('scutarrow', () => O.scuttleArrow()), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false }));
         arrow.position.set(0, 0.02, 0.9);
-        const inner = new THREE.Group();
-        inner.add(body, cl, cr);
         arrow.scale.setScalar(1.5);
         const grp = new THREE.Group();
-        grp.add(inner, arrow);
-        v = { obj: grp, key, stamp: 0, shadow: [1.5, 1.1], parts: [inner, cl, cr, arrow], enter: -1, memo: { landed: -1, squawk: 0 } };
-        const bodyLo = g.get('scutlo', () => O.scuttlerBody(true));
-        const ol = this.addOutline(v, body, bodyLo);
-        v.lod = { mesh: body, hi: bodyHi, lo: bodyLo, rich: g.get('scutrich', () => O.scuttlerBody(false, true)), outline: ol, olHi: ol.geometry, olLo: ol.geometry };
-        v.anim = (vv, ee, t) => {
-          const [inn, l, r, ar] = vv.parts as THREE.Object3D[];
-          const dir = ee.toLane !== undefined ? Math.sign(ee.toLane - ee.lane) || 1 : 1;
-          const moving = ee.state === 1 && Math.abs(ee.x - (CFG.laneX[ee.lane] as number)) > 0.02;
-          // warning: claws pitched up and snapping; while crossing: a quick sideways scuttle bob and tilt
-          const up = ee.state >= 1 ? 1 : 0;
-          const snap = Math.sin(t * 16) * 0.22 * up;
-          const idle = Math.sin(t * 2.3 + ee.id) * 0.06;
-          l!.rotation.set(-up * 0.95 - snap + idle, 0, up * 0.35);
-          r!.rotation.set(-up * 0.95 + snap - idle, 0, -up * 0.35);
-          inn!.position.y = moving ? Math.abs(Math.sin(t * 28)) * 0.08 : 0;
-          inn!.rotation.z = moving ? -dir * 0.12 : 0;
-          ar!.visible = ee.state === 1;
-          ar!.rotation.y = dir > 0 ? 0 : Math.PI;
-          ar!.position.x = dir * (0.6 + (Math.sin(t * 8) * 0.5 + 0.5) * 0.25);
-        };
+        grp.add(rig.group, arrow);
+        v = { obj: grp, key, stamp: 0, shadow: [1.5, 1.1], parts: [arrow, ...rig.bones], enter: -1, memo: { landed: -1, squawk: 0, raise: 0 } };
+        v.lod = { mesh: rig.mesh, hi, lo, rich, olHi, olLo };
+        if (rig.line) {
+          rig.line.visible = this.outlinesOn || this.contrast;
+          rig.line.castShadow = false;
+          (v.outlines ??= []).push(rig.line);
+          this.allOutlines.push(rig.line);
+          v.lod.outline = rig.line;
+        }
+        v.anim = scuttleAnim;
         break;
       }
       case 'sweep': {
@@ -251,7 +359,7 @@ export class EntityViews {
           const geo = g.get('gap', gapGeometry);
           v = { obj: mesh(geo), key, stamp: 0, shadow: [0, 0], enter: -1, memo: { landed: -1, squawk: 0 } };
         } else {
-          v = this.lodView(key, g.get('wave', () => O.waveSweep()), g.get('wavelo', () => O.waveSweep(true)), M.gloss, [0, 0], false);
+          v = this.lodView(key, g.get('wave', () => O.waveSweep()), g.get('wavelo', () => O.waveSweep(true)), M.gloss, [0, 0], false, g.get('waverich', () => O.waveSweep(false, true, true, true)));
           v.anim = (vv, ee, t) => {
             // the breaker leans forward as it closes in, with a surging bob
             const rel = ee.wz - this.dist;
@@ -268,7 +376,7 @@ export class EntityViews {
         const grp = new THREE.Group();
         grp.add(ball);
         v = { obj: grp, key, stamp: 0, shadow: [1.3, 1.0], parts: [ball], enter: -1, memo: { landed: -1, squawk: 0 } };
-        v.lod = { mesh: ball, hi: ball.geometry, lo: g.get('balllo', () => O.beachBall(true)) };
+        v.lod = { mesh: ball, hi: ball.geometry, lo: g.get('balllo', () => O.beachBall(true)), rich: g.get('ballrich', () => O.beachBall(false, true)) };
         this.addOutline(v, ball);
         v.anim = (vv, ee) => {
           const b = (vv.parts as THREE.Object3D[])[0] as THREE.Object3D;
@@ -356,15 +464,25 @@ export class EntityViews {
         const glow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({ map: M.glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }));
         if (this.lite) grp.add(icon, bubble);
         else grp.add(glow, icon, bubble, ring);
-        v = { obj: grp, key, stamp: 0, shadow: [1.0, 1.0], parts: [icon, ring, glow], enter: -1, memo: { landed: -1, squawk: 0 } };
+        v = { obj: grp, key, stamp: 0, shadow: [1.0, 1.0], parts: [icon, ring, glow, bubble], enter: -1, memo: { landed: -1, squawk: 0 } };
         this.addOutline(v, icon);
+        const tilt = kind === 'rider' ? 0.5 : 0;
         v.anim = (vv, ee, t) => {
-          const [ic, rg, gl] = vv.parts as THREE.Object3D[];
+          const pp = vv.parts as THREE.Object3D[];
+          const ic = pp[0] as THREE.Object3D;
+          const rg = pp[1] as THREE.Object3D;
+          const gl = pp[2] as THREE.Object3D;
+          // the bubble centre bobs (shell twinkles orbit it); it breathes, and the icon bobs, spins with
+          // an ease and tilts inside it
           vv.obj.position.y = ee.y + Math.sin(t * 3) * 0.12;
-          ic!.rotation.y = t * 2;
-          rg!.rotation.x = Math.PI / 2 + Math.sin(t * 2) * 0.3;
-          rg!.rotation.y = t;
-          gl!.scale.setScalar(1 + Math.sin(t * 5) * 0.08);
+          const br = Math.sin(t * 3.6);
+          (pp[3] as THREE.Object3D).scale.set(1 + br * 0.045, 1 - br * 0.05, 1 + br * 0.045);
+          ic.position.y = Math.sin(t * 3 + 1.2) * 0.06;
+          ic.rotation.y = t * 2 + Math.sin(t * 2) * 0.4;
+          ic.rotation.z = tilt + Math.sin(t * 1.7) * 0.12;
+          rg.rotation.x = Math.PI / 2 + Math.sin(t * 2) * 0.3;
+          rg.rotation.y = t;
+          gl.scale.setScalar(1 + Math.sin(t * 5) * 0.08);
         };
         break;
       }
@@ -430,7 +548,8 @@ export class EntityViews {
       default:
         v = { obj: new THREE.Object3D(), key, stamp: 0, shadow: [0, 0], enter: -1, memo: { landed: -1, squawk: 0 } };
     }
-    const cast = v.shadow[0] > 0 && e.kind !== 'gull' && e.kind !== 'powerup' && e.kind !== 'dollar' && e.kind !== 'hourglass';
+    // Update 9: only the big blocks and logs cast into the map; the scuttler, ball and pickups keep a blob
+    const cast = v.shadow[0] > 0 && (e.kind === 'block' || e.kind === 'low');
     const casters: THREE.Object3D[] = [];
     v.obj.traverse((o) => {
       o.frustumCulled = false;
@@ -547,8 +666,8 @@ export class EntityViews {
         if (e.kind === 'block') v.obj.scale.set(v.obj.scale.x * (0.85 + 0.15 * k), v.obj.scale.y * (0.6 + 0.4 * k), v.obj.scale.z * (0.85 + 0.15 * k));
         else if (e.kind === 'low') v.obj.scale.multiplyScalar(0.7 + 0.3 * k);
       }
-      // the shadow map covers the first ~40 m; blobs take over beyond it
-      const inMap = this.castShadows && rel < 40 && rel > -10 && v.casters !== undefined;
+      // near blocks and logs cast into the shadow map (SHADOW_DIST); everything else draws a blob
+      const inMap = this.castShadows && rel < SHADOW_DIST && rel > -10 && v.casters !== undefined;
       if (v.casters && inMap !== v.casting) {
         v.casting = inMap;
         for (let i = 0; i < v.casters.length; i++) (v.casters[i] as THREE.Object3D).castShadow = inMap;
@@ -603,6 +722,8 @@ export class EntityViews {
     v.obj.rotation.set(0, 0, 0);
     v.enter = -1;
     v.memo.landed = -1;
+    v.memo.raise = 0;
+    v.memo.t = undefined;
     pool.push(v);
   }
 

@@ -2,6 +2,11 @@
  * Balance report (opt-in): BALANCE=1 npx vitest run tests/balance.test.ts
  * Simulates players of different skill (reaction delay, look-ahead, hop timing noise) and prints
  * run length and shell income, for tuning PLAN.md §9 values.
+ *
+ * Update 9: a 40-seed median moves ±10–15% from one seed set to the next (Update 8's own sets of
+ * 40 ranged novice 710–867 m, average 1380–1691 m, skilled 2772–3611 m), so the report also prints
+ * the median over BALANCE_SEEDS seeds (default 160). Update 8 over 320 seeds: novice 798 m,
+ * average 1570 m, skilled 3100 m; shell income 240 / 346 / 310 per km.
  */
 import { it } from 'vitest';
 import { Autopilot, type PilotProfile } from '../src/sim/autopilot';
@@ -14,13 +19,16 @@ const PROFILES: Record<string, PilotProfile> = {
 };
 
 it.skipIf(!process.env.BALANCE)('balance report', () => {
-  const lines: string[] = [];
+  const out: string[] = [];
   for (const [name, prof] of Object.entries(PROFILES)) {
     const ds: number[] = [];
     const ts: number[] = [];
     const shells: number[] = [];
+    const combos: number[] = [];
+    let lines = 0;
+    let km = 0;
     const kinds: Record<string, number> = {};
-    for (let seed = 1; seed <= 40; seed++) {
+    for (let seed = 1; seed <= Math.max(40, Number(process.env.BALANCE_SEEDS ?? 160)); seed++) {
       const w = new World();
       w.start({ ...defaultRunOptions(), seed, tutorial: null });
       const ap = new Autopilot(w, 3, prof);
@@ -34,13 +42,16 @@ it.skipIf(!process.env.BALANCE)('balance report', () => {
       ds.push(w.dist);
       ts.push(w.time);
       shells.push(w.runShells);
+      combos.push(w.stats.maxCombo);
+      lines += w.stats.perfectLines;
+      km += w.distance / 1000;
       kinds[w.crashKind || 'none'] = (kinds[w.crashKind || 'none'] ?? 0) + 1;
     }
     const q = (a: number[], f: number): number => [...a].sort((x, y) => x - y)[Math.floor(a.length * f)] as number;
-    lines.push(`${name.padEnd(8)} dist p25/med/p75 ${q(ds, 0.25).toFixed(0)}/${q(ds, 0.5).toFixed(0)}/${q(ds, 0.75).toFixed(0)} m · time med ${q(ts, 0.5).toFixed(0)} s · shells med ${q(shells, 0.5)} · crashes ${JSON.stringify(kinds)}`);
+    out.push(`${name.padEnd(8)} dist med seeds 1–40 ${q(ds.slice(0, 40), 0.5).toFixed(0)} m · all ${ds.length} seeds p25/med/p75 ${q(ds, 0.25).toFixed(0)}/${q(ds, 0.5).toFixed(0)}/${q(ds, 0.75).toFixed(0)} m · time med ${q(ts, 0.5).toFixed(0)} s · shells med ${q(shells, 0.5)} (${(shells.reduce((a, b) => a + b, 0) / km).toFixed(0)}/km) · best combo med ${q(combos, 0.5)} · perfect lines ${(lines / km).toFixed(1)}/km · crashes ${JSON.stringify(kinds)}`);
   }
-  console.log(`\n${lines.join('\n')}\n`);
-}, 120_000);
+  console.log(`\n${out.join('\n')}\n`);
+}, 300_000);
 
 /** Island Hop (UPDATE2_PLAN.md §9 Phase G): attempts a simulated player needs to reach the flag. */
 import { LEVELS } from '../src/sim/levelData';

@@ -1,5 +1,5 @@
 import { btn, el, fmt } from './dom';
-import { actionBar } from './kit';
+import { KEYS, actionBar, backButton, keyHint, keyLine } from './kit';
 import { ICON } from './icons';
 
 /** Island Hop screens (UPDATE2_PLAN.md §4.3): the island map, the level intro and the level end. */
@@ -86,7 +86,7 @@ export class MapScreen {
     const head = el('div', 'page-head');
     this.count = el('span', 'map-count');
     this.rushToggle = el('div', 'map-mode hidden');
-    head.append(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back'), el('h2', '', 'Island Hop'), this.rushToggle, this.count);
+    head.append(backButton(() => this.h.back()), el('h2', '', 'Island Hop'), this.rushToggle, this.count);
     this.body = el('div', 'page-body map-body');
     card.append(head, this.body);
     this.el.append(el('div', 'page-dim'), card);
@@ -110,6 +110,9 @@ export class MapScreen {
       this.rushToggle.appendChild(b);
     }
     this.body.innerHTML = '';
+    // a one-line guide for new players, and what Tide Rush asks for (Update 9)
+    if (d.rush) this.body.appendChild(el('p', 'u9-help', `<b>Tide Rush:</b> faster, no power-ups. Finish a level without a single bump to earn its crown.`));
+    else if (d.totalStars < 6) this.body.appendChild(el('p', 'u9-help', `Every level has <b>3 stars</b>: reach the flag, grab all 3 sand dollars and beat its challenge. Stars open new islands and treasure chests.`));
     let focus: HTMLElement | null = null;
     d.islands.forEach((isl, i) => {
       const panel = el('section', `isl isl-${i}${isl.unlocked ? '' : ' locked'}`);
@@ -230,9 +233,9 @@ export class LevelIntro {
         ${d.best > 0 ? `<div class="lv-best">Best time ${d.best.toFixed(1)} s</div>` : ''}
       </div>`;
     // Play is pinned in the action bar so it is visible without scrolling
-    (this.card.querySelector('.page-head') as HTMLElement).prepend(btn(ICON.back, 'icon ghost back', () => this.h.back(), 'Back to the map'));
-    const go = btn(`${ICON.play}<span>Play</span>`, 'big', () => this.h.play(d.id));
-    const back = btn(`${ICON.back}<span>Map</span>`, 'blue small', () => this.h.back());
+    (this.card.querySelector('.page-head') as HTMLElement).prepend(backButton(() => this.h.back(), 'Back to the map'));
+    const go = btn(`${ICON.play}<span>Play</span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}`, 'big', () => this.h.play(d.id));
+    const back = btn(`${ICON.back}<span>Map</span>${keyHint(KEYS.back.kb, KEYS.back.pad)}`, 'blue small', () => this.h.back());
     this.card.appendChild(actionBar(back, go));
     requestAnimationFrame(() => go.focus({ preventScroll: true }));
   }
@@ -283,9 +286,9 @@ export class LevelEnd {
       ${d.goldCrab ? `<div class="lv-unlock gold">${ICON.crab}<span>All 72 stars! The <b>Golden Crab</b> is yours</span></div>` : ''}`;
     const bar = el('div', 'res-buttons');
     if (d.success && d.hasNext) {
-      bar.append(btn(`${ICON.play}<span>Next Level</span>`, 'big', () => this.h.next()));
+      bar.append(btn(`${ICON.play}<span>Next Level</span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}`, 'big', () => this.h.next()));
       const row = el('div', 'btn-row');
-      row.append(btn(`${ICON.restart}<span>Retry</span>`, 'blue small', () => this.h.retry()), btn(`${ICON.island}<span>Map</span>`, 'blue small', () => this.h.map()));
+      row.append(btn(`${ICON.restart}<span>Retry</span>`, 'blue small', () => this.h.retry()), btn(`${ICON.island}<span>Map</span>${keyHint(KEYS.back.kb, KEYS.back.pad)}`, 'blue small', () => this.h.map()));
       bar.append(row);
     } else {
       // Map and Retry share one row: the primary action stays big without pushing Map off screen
@@ -293,6 +296,7 @@ export class LevelEnd {
       bar.append(btn(`${ICON.island}<span>Map</span>`, 'blue small', () => this.h.map()), btn(`${ICON.restart}<span>Retry</span>`, 'big', () => this.h.retry()));
     }
     this.card.appendChild(bar);
+    if (bar.classList.contains('one-row')) this.card.insertAdjacentHTML('beforeend', keyLine([[KEYS.confirm.kb, KEYS.confirm.pad, 'Retry'], [KEYS.back.kb, KEYS.back.pad, 'Map']]));
     this.el.classList.remove('hidden');
     (bar.querySelector('.btn') as HTMLElement | null)?.focus({ preventScroll: true });
     if (!reduceMotion) {
@@ -300,6 +304,11 @@ export class LevelEnd {
         if (g) setTimeout(() => this.h.star(i), (0.45 + i * 0.35) * 1000 + 250);
       });
     }
+  }
+
+  /** Enter / A: the big button (Next Level after a clear, Retry otherwise) */
+  primary(): void {
+    (this.card.querySelector('.res-buttons .btn.big') as HTMLElement | null)?.click();
   }
 
   hide(): void {
@@ -331,7 +340,7 @@ export class ChestScreen {
         <span class="loot" style="--i:2">${ICON.sun}<b>+${d.xp} XP</b></span>
         ${d.extras.map((x, i) => `<span class="loot big" style="--i:${3 + i}">${ICON.sparkle}<b>${x}</b></span>`).join('')}
       </div>`;
-    const ok = btn(`${ICON.check}<span>Awesome!</span>`, 'big', () => this.h.done());
+    const ok = btn(`${ICON.check}<span>Awesome!</span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}`, 'big', () => this.h.done());
     this.card.appendChild(ok);
     this.el.classList.remove('hidden');
     this.card.classList.remove('open');

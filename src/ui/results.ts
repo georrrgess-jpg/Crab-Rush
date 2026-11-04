@@ -1,6 +1,7 @@
 import { tierFromXp } from '../meta/xp';
 import { btn, el, fmt } from './dom';
 import { ICON } from './icons';
+import { KEYS, keyHint } from './kit';
 import type { GoalView } from './ui';
 
 export interface ResultsView {
@@ -23,6 +24,8 @@ export interface ResultsView {
   extra?: { label: string; value: number }[];
   /** a highlighted line under the distance (Daily Tide score) */
   banner?: string;
+  /** items this run unlocked (they wait in the Wardrobe) */
+  unlocked?: string[];
 }
 
 export interface ResultsHandlers {
@@ -101,11 +104,13 @@ export class ResultsScreen {
       unlock = el('div', 'res-unlock', `<span class="ul-lbl">${d.unlock.label}: <b>${d.unlock.name}</b></span><span class="bar"><i></i></span><span class="ul-num">${fmt(Math.min(d.unlock.have, d.unlock.need))} / ${fmt(d.unlock.need)}${d.unlock.unit === 'XP' ? ' XP' : ''}</span>`);
     }
     const buttons = el('div', 'res-buttons');
-    this.again = btn(`${ICON.restart}<span>Play Again</span>`, 'big', () => this.h.again());
+    // the next step is the big button; on a computer Enter plays again and Esc goes home
+    this.again = btn(`${ICON.restart}<span>Play Again</span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}`, 'big', () => this.h.again());
     const small = el('div', 'btn-row');
+    const fresh = d.unlocked ?? [];
     small.append(
-      btn(`${ICON.hanger}<span>Wardrobe</span><i class="dot${d.wardrobeBadge ? '' : ' hidden'}"></i>`, 'blue small', () => this.h.wardrobe()),
-      btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()),
+      btn(`${ICON.hanger}<span>Wardrobe</span><i class="dot${d.wardrobeBadge || fresh.length ? '' : ' hidden'}"></i>`, `blue small${fresh.length ? ' res-new' : ''}`, () => this.h.wardrobe()),
+      btn(`${ICON.home}<span>Home</span>${keyHint(KEYS.back.kb, KEYS.back.pad)}`, 'blue small', () => this.h.home()),
     );
     buttons.append(this.again, small);
     // the meter lives inside the distance block so the landscape two-column grid keeps its rows
@@ -115,7 +120,9 @@ export class ResultsScreen {
     p.append(rows);
     p.append(xp);
     if (unlock) p.append(unlock);
-    p.append(buttons, el('div', 'res-skip', 'Tap to skip'));
+    // a new crab or hat this run: say so right above the buttons, so the Wardrobe is the obvious next stop
+    if (fresh.length) p.append(el('div', 'res-got', `${ICON.star}<span>Unlocked: <b>${fresh.join(', ')}</b></span><small>in your Wardrobe</small>`));
+    p.append(buttons, el('div', 'res-skip', '<span class="for-touch">Tap to skip</span><span class="for-kb">Click to skip</span>'));
 
     // ---- timeline
     let at = 250;

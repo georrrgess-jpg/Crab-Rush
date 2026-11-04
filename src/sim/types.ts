@@ -45,6 +45,11 @@ export interface Entity {
   /** hit by a shield / knocked away: lets the renderer play a tumble */
   knocked: number;
   spin: number;
+  /** Update 9 near-miss tracking (hop obstacles, blocks): the least clearance seen while the crab was
+   * over it (m above its top) and beside it (m of side gap), and whether its pass was judged */
+  clear: number;
+  sideGap: number;
+  judged: boolean;
 }
 
 export interface Shell {
@@ -62,6 +67,10 @@ export interface Shell {
   x0: number;
   y0: number;
   rel0: number;
+  /** Update 9: the shell line it belongs to (0 = none; see World.beginLine) */
+  line: number;
+  /** it slipped past the crab uncollected (judged once, for the combo) */
+  missed: boolean;
 }
 
 export interface PlayerState {

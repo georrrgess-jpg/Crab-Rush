@@ -3,7 +3,8 @@ import { GOAL_POOL, Goals, goalById, type RunSnapshot } from '../src/sim/goals';
 
 const stats = (o: Partial<RunSnapshot['stats']> = {}): RunSnapshot['stats'] => ({
   shells: 0, fevers: 0, feverShells: 0, bonus: 0, closeShaves: 0, hops: 0, laneChanges: 0, powerups: 0, powerKinds: { magnet: 0, shield: 0, rider: 0 },
-  wavesHopped: 0, obstaclesHopped: 0, maxStreak: 0, maxDistNoShell: 0, maxDistNoHop: 0, zonesReached: 0, bumps: 0, ...o,
+  wavesHopped: 0, obstaclesHopped: 0, maxStreak: 0, maxDistNoShell: 0, maxDistNoHop: 0, zonesReached: 0, bumps: 0,
+  maxCombo: 0, perfectLines: 0, perfectHops: 0, laneDodges: 0, ...o,
 });
 const run = (distance: number, o: Partial<RunSnapshot['stats']> = {}, zone = 0): RunSnapshot => ({ distance, stats: stats(o), zone });
 

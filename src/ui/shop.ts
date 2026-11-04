@@ -6,7 +6,7 @@ import { ITEMS, type Item, type Slot, owns, unseen } from '../meta/wardrobe';
 import type { CrabSkin } from '../render/models/crab';
 import { btn, el, fmt } from './dom';
 import { DANCE_SVG, ICON, TRAIL_SVG } from './icons';
-import { Sheet, Wallet } from './kit';
+import { Sheet, Wallet, backButton, tip } from './kit';
 import { tabIndicator } from './motion';
 
 export interface ShopHandlers {
@@ -79,7 +79,7 @@ export class ShopScreen {
     this.el = el('div', 'screen');
     this.el.id = 'shop';
     const top = el('div', 'top-bar');
-    const back = btn(ICON.back, 'blue round', () => this.h.back(), 'Back');
+    const back = backButton(() => this.h.back(), 'Back', 'blue round');
     const title = el('h2', '', 'Wardrobe');
     const tcard = el('div', 'wd-title');
     tcard.append(back, title);
@@ -270,13 +270,14 @@ export class ShopScreen {
     } else {
       action = el('div', 'w-lock', ICON.lock);
     }
-    const rnd = btn(`${DICE_ICON}<span>Randomize Owned</span>`, 'ghost wd-random surprise', () => this.h.surprise(), 'Wear a random outfit from what you own');
+    const rnd = tip(btn(`${DICE_ICON}<span class="wd-rl">Randomize Owned</span><span class="wd-rs">Random</span>`, 'ghost wd-random surprise', () => this.h.surprise(), 'Wear a random outfit from what you own'), 'Random outfit from what you own');
     d.append(txt, rnd, action);
     if (slot === 'hats' && owned && item.id !== 'none') {
       const owns = save.dyes[item.id] ?? [];
       const worn = save.hatDye[item.id] ?? 0;
       const sw = el('div', 'dyes');
       sw.setAttribute('aria-label', 'Hat colours');
+      sw.appendChild(el('span', 'dyes-l', 'Colours'));
       for (let n = 0; n < 4; n++) {
         const have = n === 0 || owns.includes(n);
         const [a, b] = DYE_COLORS[n] as [string, string];
@@ -294,7 +295,7 @@ export class ShopScreen {
       d.appendChild(sw);
     }
     if (slot === 'dances') {
-      const again = btn(ICON.restart, 'icon small blue', () => this.h.preview('dances', item.id), 'Play the dance again');
+      const again = tip(btn(ICON.restart, 'icon small blue', () => this.h.preview('dances', item.id), 'Play the dance again'), 'Play the dance again');
       d.insertBefore(again, action);
     }
     this.foot.appendChild(d);
@@ -316,6 +317,7 @@ export class ShopScreen {
       const sv = el('button', 'of-save', `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M9 6h18l6 6v22H9z" fill="#fff"/><rect x="14" y="8" width="11" height="8" fill="#1e5e8c"/><rect x="14" y="22" width="14" height="9" rx="2" fill="#1e5e8c"/></svg>`) as HTMLButtonElement;
       sv.type = 'button';
       sv.setAttribute('aria-label', `Save the current look as outfit ${i + 1}`);
+      tip(sv, 'Save your current look here');
       sv.addEventListener('click', (e) => {
         e.stopPropagation();
         this.h.saveOutfit(i);

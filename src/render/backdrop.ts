@@ -1,5 +1,7 @@
+import { CFG } from '../config';
 import * as THREE from 'three';
-import { GeoBuilder, mergeAll } from './geo';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { GeoBuilder } from './geo';
 import type { ZonePalette } from './palettes';
 import { boat } from './props';
 
@@ -23,15 +25,33 @@ void main() {
 
 // Update 7: clouds get volume. Undersides sink toward the zone's shadow colour, sun-facing puffs
 // warm up, and edges seen against the light pick up a silver lining.
+/** Update 9 cloud drift (to move into CFG.sky): loop width (m), drift speed range (m/s, toward -x:
+ *  the breeze comes off the sea), and how far from the loop's ends a cloud starts to thin away */
+const CLOUD_SPAN = CFG.clouds.cloudSpan;
+const CLOUD_SPEED_MIN = CFG.clouds.cloudSpeedMin;
+const CLOUD_SPEED_MAX = CFG.clouds.cloudSpeedMax;
+const CLOUD_EDGE = CFG.clouds.cloudEdge;
+
+// Update 9: every cloud drifts on the GPU (aCloud = its centre and speed), wrapping round a loop
+// wider than the view; near the loop's ends it shrinks away, and its puffs billow slowly
 const cloudVert = /* glsl */ `
 attribute vec3 color;
+attribute vec4 aCloud;
+uniform float uTime;
+uniform float uSpan;
+uniform float uEdge;
 varying vec3 vColor;
 varying vec3 vNormal;
 varying vec3 vWorld;
 void main() {
   vColor = color;
   vNormal = normalize(mat3(modelMatrix) * normal);
-  vec4 w = modelMatrix * vec4(position, 1.0);
+  vec3 c = aCloud.xyz;
+  float x = mod(c.x + uTime * aCloud.w + uSpan * 0.5, uSpan) - uSpan * 0.5;
+  float k = smoothstep(uSpan * 0.5, uSpan * 0.5 - uEdge, abs(x));
+  float billow = 1.0 + 0.04 * sin(uTime * 0.23 + c.x * 0.1 + position.y * 0.35 + position.x * 0.05);
+  vec3 p = vec3(x, c.y, c.z) + (position - c) * k * billow;
+  vec4 w = modelMatrix * vec4(p, 1.0);
   vWorld = w.xyz;
   gl_Position = projectionMatrix * viewMatrix * w;
 }`;
@@ -67,6 +87,9 @@ function cloudMat(): THREE.ShaderMaterial {
       uTint: { value: new THREE.Color(1, 1, 1) },
       uShade: { value: new THREE.Color(0x9fb4dc) },
       uSunColor: { value: new THREE.Color(1, 1, 1) },
+      uTime: { value: 0 },
+      uSpan: { value: CLOUD_SPAN },
+      uEdge: { value: CLOUD_EDGE },
     },
   });
 }
@@ -124,8 +147,9 @@ function cloud(seed: number): THREE.BufferGeometry {
     s = (s * 16807) % 2147483647;
     return s / 2147483647;
   };
-  for (let i = 0; i < 6; i++) b.sphere(0xffffff, 3 + r() * 3, [(i - 2.5) * 3.2, r() * 2, r() * 2], [1, 0.75, 0.6], 10);
-  b.sphere(0xf2f8ff, 5, [0, -1.4, 0], [3.2, 0.35, 0.8], 10);
+  // Update 9: 8 segments a puff (was 10): overlapping puffs hide the facets, and it frees ~1k triangles
+  for (let i = 0; i < 6; i++) b.sphere(0xffffff, 3 + r() * 3, [(i - 2.5) * 3.2, r() * 2, r() * 2], [1, 0.75, 0.6], 8);
+  b.sphere(0xf2f8ff, 5, [0, -1.4, 0], [3.2, 0.35, 0.8], 8);
   return b.build();
 }
 
@@ -160,16 +184,27 @@ export class Backdrop {
       this.boats.push(m);
       this.group.add(m);
     }
-    // all clouds share one merged mesh (one draw call); the group sways slowly
+    // all clouds share one merged mesh (one draw call); each drifts on its own (aCloud)
     const parts: THREE.BufferGeometry[] = [];
     for (let i = 0; i < 7; i++) {
       const g = cloud(11 + i * 7);
       const s = 1 + (i % 3) * 0.3;
       g.scale(s, s, s);
-      g.translate(-130 + i * 44, 28 + (i % 3) * 9, -170 + (i % 2) * 15);
-      parts.push(g);
+      const cx = -CLOUD_SPAN / 2 + (i + 0.5) * (CLOUD_SPAN / 7);
+      const cy = 28 + (i % 3) * 9;
+      const cz = -170 + (i % 2) * 15;
+      g.translate(cx, cy, cz);
+      const speed = -(CLOUD_SPEED_MIN + (CLOUD_SPEED_MAX - CLOUD_SPEED_MIN) * (((i * 5) % 7) / 6));
+      const n = g.attributes.position!.count;
+      const a = new Float32Array(n * 4);
+      for (let k = 0; k < n; k++) a.set([cx, cy, cz, speed], k * 4);
+      g.setAttribute('aCloud', new THREE.BufferAttribute(a, 4));
+      for (const key of Object.keys(g.attributes)) if (!['position', 'normal', 'color', 'aCloud'].includes(key)) g.deleteAttribute(key);
+      parts.push(g.index ? g.toNonIndexed() : g);
     }
-    this.clouds = new THREE.Mesh(mergeAll(parts), this.cloudMat);
+    const merged = mergeGeometries(parts, false);
+    if (!merged) throw new Error('Backdrop: cloud merge failed');
+    this.clouds = new THREE.Mesh(merged, this.cloudMat);
     this.group.add(this.clouds);
     for (const m of this.group.children) m.frustumCulled = false;
   }
@@ -206,6 +241,6 @@ export class Backdrop {
       b.position.y = -0.5 + Math.sin(time * 1.2 + i) * 0.25;
       b.rotation.z = Math.sin(time * 0.9 + i) * 0.05;
     }
-    this.clouds.position.x = Math.sin(time * 0.012) * 22;
+    (this.cloudMat.uniforms.uTime as { value: number }).value = time;
   }
 }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CFG, type QualityPreset, zoneAt } from '../config';
 import type { GameEvent, PowerKind } from '../sim/events';
+import type { Entity, Shell } from '../sim/types';
 import type { World } from '../sim/world';
 import { zoneBlend } from '../sim/zones';
 import { Backdrop } from './backdrop';
@@ -13,7 +14,7 @@ import { BODY_SKINS, CRAB_SKINS, type CrabDrive, CrabModel, type CrabSkin, type 
 import { greatWave, powerupIcon, riderWave } from './models/obstacles';
 import { Spring } from './anim/spring';
 import { cues, sample, type Key } from './anim/timeline';
-import { Ocean } from './ocean';
+import { Ocean, rollerOffset, rollerPhase } from './ocean';
 import * as P from './props';
 import { GeoBuilder } from './geo';
 import { NIGHT_PALETTE, ZONE_PALETTES, clonePalette, lerpPalette } from './palettes';
@@ -28,6 +29,8 @@ import { Rivals } from './rivals';
 export type CamMode = 'title' | 'intro' | 'run' | 'shop' | 'map';
 
 const POWER_COLORS: Record<PowerKind, number> = { magnet: 0xff5a4a, shield: 0x6fd0ff, rider: 0x3fd6d0 };
+const NO_SHELLS: readonly Shell[] = [];
+const NO_ENTITIES: readonly Entity[] = [];
 
 /** Everything visual. Reads the sim; never writes to it. */
 export class GameView {
@@ -139,6 +142,14 @@ export class GameView {
     this.world.add(this.feet.mesh);
     this.life = new LivingWorld(this.mats);
     this.world.add(this.life.group);
+    // Update 9: a leaping fish throws up a splash of droplets where it leaves and re-enters the water
+    this.life.onSplash = (x, wz) => {
+      if (this.reduceMotion || this.sparks.room < 24) return;
+      for (let i = 0; i < 7; i++) {
+        const r = Math.random;
+        this.sparks.spawn(x + (r() - 0.5) * 0.3, 0.05, wz + (r() - 0.5) * 0.3, (r() - 0.5) * 1.8, 1.8 + r() * 2.2, (r() - 0.5) * 1.8, 0.45 + r() * 0.2, 0.14 + r() * 0.1, 0xe8fbff, 9, 0.3);
+      }
+    };
     {
       const mound = new GeoBuilder()
         .lathe(0xf6dda6, [[0, 0.22], [0.7, 0.2], [1.05, 0.12], [1.35, 0.02], [1.5, 0]], 22)
@@ -160,7 +171,7 @@ export class GameView {
       this.world.add(this.homeSet);
     }
     this.shells = new ShellRenderer(this.mats);
-    this.world.add(this.shells.mesh, this.shells.glow, this.shells.sparkle, this.shells.pops);
+    this.world.add(this.shells.group);
     this.dust = new Particles(this.mats.dustTex, false, 160);
     this.sparks = new Particles(this.mats.sparkTex, true, 160);
     this.dust.limit = Math.floor(quality.maxParticles * 0.6);
@@ -338,7 +349,7 @@ export class GameView {
     this.entities.setOutlines(full);
     this.crab.setDetail(full);
     this.feet.mesh.visible = full;
-    this.shells.sparkle.visible = full;
+    this.shells.setLite(!full);
     this.life.lite = !full;
     this.life.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.maxDpr));
   }
@@ -367,6 +378,7 @@ export class GameView {
     this.life.reset(0);
     this.sparks.clear();
     this.trail.clear();
+    this.shells.clear();
     this.entities.setBest(best);
     this.crab.reset();
     this.celebrating = false;
@@ -480,8 +492,10 @@ export class GameView {
       switch (ev.t) {
         case 'shell':
           if (ev.big) this.crab.happy();
+          // Update 9: the shell punches up and pops (ring + star burst in the shell sprite batch);
+          // a few gold flecks still fall away
           this.shells.addPop(ev.x, ev.y + 0.15, ev.big, this.time);
-          for (let i = 0, n = (ev.big ? 12 : 5) >> (this.renderer.quality.name === 'low' ? 1 : 0); i < n; i++) {
+          for (let i = 0, n = (ev.big ? 8 : 3) >> (this.renderer.quality.name === 'low' ? 1 : 0); i < n; i++) {
             const a = Math.random() * Math.PI * 2;
             const sp = 1.2 + Math.random() * 1.8;
             // player-relative (local) so the burst stays with the crab instead of streaming at the camera
@@ -557,14 +571,32 @@ export class GameView {
             this.sparks.spawn(ev.x + Math.cos(a) * 0.8, ev.y + Math.sin(a) * 0.8, w.dist, Math.cos(a) * 2, Math.sin(a) * 2 + 1, 0, 0.5, 0.25, i % 2 ? 0xfff0a0 : 0xffffff, 2);
           }
           break;
+        case 'perfectLine':
+          // Update 9: the whole line collected: a gold pop where its last shell was
+          this.shells.bigPop(ev.x, ev.y + 0.2, 0, 0xffd23a, this.time);
+          break;
+        case 'perfectHop':
+          // a whoosh ring under the crab and a happy squint
+          this.crab.happy();
+          for (let i = 0; i < 14; i++) {
+            const a = (i / 14) * Math.PI * 2;
+            this.sparks.spawn(p.x + Math.cos(a) * 0.5, 0.15, w.dist + Math.sin(a) * 0.5, Math.cos(a) * 3.5, 0.6, Math.sin(a) * 3.5, 0.35, 0.22, 0xffffff, 2);
+          }
+          break;
+        case 'laneDodge':
+          // speed lines on the side the obstacle passed
+          for (let i = 0; i < 6; i++) this.sparks.spawn(p.x + ev.side * (0.7 + Math.random() * 0.4), 0.3 + Math.random() * 0.9, w.dist, 0, 0, 7 + Math.random() * 4, 0.22, 0.16, 0xffffff, 0, 2);
+          break;
         case 'closeShave':
           // the obstacle was in the lane just left behind
           this.crab.flinch(Math.sign(p.prevLane - p.lane) * this.faceSign);
           for (let i = 0; i < 8; i++) this.sparks.spawn(p.x + (Math.random() - 0.5), 0.4 + Math.random() * 0.8, w.dist, 0, 0, 6 + Math.random() * 4, 0.25, 0.18, 0xffffff, 0, 2);
           break;
         case 'powerup':
-          for (let i = 0; i < 18; i++) {
-            const a = (i / 18) * Math.PI * 2;
+          // Update 9: the bubble bursts: a coloured ring, a white flash ring and a star burst
+          this.shells.bigPop(p.x, Math.max(0.7, p.y + 0.7), 0.1, POWER_COLORS[ev.kind], this.time);
+          for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2;
             this.sparks.spawn(p.x + Math.cos(a) * 0.4, 0.7, w.dist + Math.sin(a) * 0.4, Math.cos(a) * 4, 1.5, Math.sin(a) * 4, 0.45, 0.3, POWER_COLORS[ev.kind], 2);
           }
           break;
@@ -602,6 +634,7 @@ export class GameView {
         // ---- Island Hop
         case 'dollar':
           this.shake(0.05, 0.08);
+          this.shells.bigPop(ev.x, ev.y + 0.2, 0.1, 0xffd23a, this.time);
           for (let i = 0; i < 18; i++) {
             const a = (i / 18) * Math.PI * 2;
             this.sparks.spawn(ev.x, ev.y + 0.2, -0.2, Math.cos(a) * 3, Math.sin(a) * 3 + 2, -0.5, 0.5, 0.3, i % 2 ? 0xffd23a : 0xffffff, 3, 0, true);
@@ -679,14 +712,18 @@ export class GameView {
     const ahead = 6 + Math.random() * 26;
     const wz = dist + ahead;
     let x: number;
+    let crest = false;
     if (zone === 1) x = (Math.random() < 0.5 ? -1 : 1) * (4.7 + Math.random() * 0.6);
     else {
       const shore = zone === 2 ? 7.4 : 8.4;
-      x = shore - wash + Math.sin(wz * 0.25 + t * 1.1) * 0.5 + 0.2 + Math.random() * 0.6;
+      // Update 9: where a roller is breaking, the spray flies off its crest instead
+      const rp = rollerPhase(wz, t);
+      crest = rp > 0.6 && rp < 0.88;
+      x = crest ? shore + rollerOffset(rp) + (Math.random() - 0.5) * 0.4 : shore - wash + Math.sin(wz * 0.25 + t * 1.1) * 0.5 + 0.2 + Math.random() * 0.6;
     }
-    const n = 3 + Math.floor(Math.random() * 3);
+    const n = (crest ? 5 : 3) + Math.floor(Math.random() * 3);
     for (let i = 0; i < n; i++) {
-      this.sparks.spawn(x + (Math.random() - 0.5) * 0.5, 0.05, wz + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.9, 1.2 + Math.random() * 1.4, (Math.random() - 0.5) * 0.6, 0.45 + Math.random() * 0.2, 0.14 + Math.random() * 0.12, 0xdff6ff, 6, 0.4);
+      this.sparks.spawn(x + (Math.random() - 0.5) * 0.5, 0.05, wz + (Math.random() - 0.5) * (crest ? 2.4 : 0.8), (Math.random() - 0.5) * 0.9 - (crest ? 0.8 : 0), (crest ? 1.8 : 1.2) + Math.random() * 1.4, (Math.random() - 0.5) * 0.6, 0.45 + Math.random() * 0.2, 0.14 + Math.random() * 0.12, 0xdff6ff, 6, 0.4);
     }
   }
 
@@ -749,7 +786,7 @@ export class GameView {
       this.entities.group.visible = true;
       this.entities.sync(w.entities, dist, this.time, dt, this.shadows);
     }
-    this.shells.update(running ? w.shells : [], dist, this.time, this.renderer.camera.quaternion, q.fogFar + 5);
+    this.shells.update(running ? w.shells : NO_SHELLS, dist, this.time, q.fogFar + 5, px, py, running ? w.entities : NO_ENTITIES);
 
     // crab
     const crashT = w.mode === 'crashing' ? w.crashT : -1;
@@ -946,13 +983,14 @@ export class GameView {
     cam.updateMatrixWorld();
     this.mats.lighting.update(cam);
     this.mats.lighting.uniforms.uTime.value = this.time;
+    this.mats.lighting.uniforms.uWindScroll.value = dist;
     this.sky.mesh.position.copy(cam.position);
     this.sky.stars.position.copy(cam.position);
     this.sky.update(this.time, this.night, this.renderer.quality.name !== 'low');
     this.ocean.mesh.position.x = 0;
 
     if (this.feet.mesh.visible) this.feet.update(dt, dist);
-    this.life.update(dt, this.time, dist, zone, this.night);
+    this.life.update(dt, this.time, dist, zone, this.night, px);
     this.updateChase(w, dt);
     this.dust.update(dt, dist, cam.quaternion);
     this.sparks.update(dt, dist, cam.quaternion);

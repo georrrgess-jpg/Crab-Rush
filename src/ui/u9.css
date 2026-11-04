@@ -1,0 +1,232 @@
+/* =================================================================== Update 9 (UPDATE9_PLAN.md, UI track): hints that
+   match the device, the controls card, tooltips, focus rings and hover, a HUD that reads at a glance.
+   Imported by ui.ts, so it loads after theme6.css. `<html data-input>` is touch | mouse | keyboard | pad
+   (kit.installInputMode). Motion is transform / opacity only and stops under Reduce Motion. */
+
+/* ---- keycaps and key hints (computer only; pad buttons with a controller; nothing on touch) */
+.kc { display: inline-flex; align-items: center; justify-content: center; min-width: 1.85em; height: 1.85em; padding: 0 0.42em; border-radius: 0.42em; background: #fff; color: var(--u-ink); box-shadow: inset 0 -0.16em 0 #c5d3e3, 0 1px 2px rgba(20, 37, 79, 0.25); font-family: var(--font-body); font-weight: 700; font-size: 13px; line-height: 1; letter-spacing: 0; text-shadow: none; -webkit-text-stroke: 0; white-space: nowrap; vertical-align: middle; }
+.kc.wide { padding: 0 0.6em; }
+.kc .ka { width: 1.1em; height: 1.1em; }
+.kc.pad { min-width: 1.85em; border-radius: 50%; padding: 0; background: var(--pc, #4a5a80); color: #fff; box-shadow: inset 0 -0.16em 0 rgba(0, 0, 0, 0.25), 0 1px 2px rgba(20, 37, 79, 0.25); }
+.khint { display: inline-flex; align-items: center; gap: 3px; flex: none; pointer-events: none; }
+.kh-kb, .kh-pad { display: inline-flex; align-items: center; gap: 3px; }
+.kh-pad { display: none; }
+html[data-input='pad'] .kh-kb { display: none; }
+html[data-input='pad'] .kh-pad { display: inline-flex; }
+html[data-input='touch'] .khint { display: none !important; }
+/* inside a button: a quiet chip after the label (the label never wraps; big buttons trade a little
+   side padding for it) */
+.btn .khint { margin-left: 0.35em; opacity: 0.92; }
+.btn .khint .kc { font-size: 13px; background: rgba(255, 255, 255, 0.92); }
+.btn.big > .khint .kc { font-size: 14px; }
+html:not([data-input='touch']) .btn:has(> .khint) { white-space: nowrap; }
+html:not([data-input='touch']) .btn.big:has(> .khint) { padding-left: 0.9em; padding-right: 0.8em; }
+
+/* ---- tooltips for icon buttons (mouse hover, keyboard focus) */
+.u9-tip { position: fixed; left: 0; top: 0; z-index: 60; display: inline-flex; align-items: center; gap: 8px; max-width: min(320px, 90vw); padding: 6px 10px 7px 12px; border-radius: 12px; background: var(--u-ink); color: #fff; font-family: var(--font-display); font-size: 15px; line-height: 1.1; white-space: nowrap; box-shadow: 0 6px 16px rgba(20, 37, 79, 0.3); pointer-events: none; opacity: 0; transition: opacity 0.12s ease-out; }
+.u9-tip.on { opacity: 1; }
+.u9-tip .kc { font-size: 12px; background: rgba(255, 255, 255, 0.95); }
+html[data-input='touch'] .u9-tip { display: none; }
+
+/* ---- focus: clear rings for keyboard and pad, none for touch (programmatic focus on a phone is not a cue) */
+html[data-input='keyboard'] :focus-visible, html[data-input='pad'] :focus-visible { outline: 3px solid var(--u-teal); outline-offset: 3px; }
+html[data-input='keyboard'] .btn:focus-visible, html[data-input='pad'] .btn:focus-visible { outline: 3px solid var(--u-ink); outline-offset: 3px; box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.85); }
+html[data-input='keyboard'] .page-head .btn:focus-visible, html[data-input='keyboard'] #hud .btn:focus-visible, html[data-input='keyboard'] #home.h6 .h6-top .btn:focus-visible, html[data-input='pad'] .page-head .btn:focus-visible, html[data-input='pad'] #hud .btn:focus-visible { outline-color: #fff; box-shadow: 0 0 0 6px var(--u-ink); }
+html[data-input='touch'] :focus-visible, html[data-input='touch'] #home.h6 .h6-row:focus-visible, html[data-input='touch'] #home.h6 .mode-card:focus-visible, html[data-input='touch'] #hud .btn:focus-visible, html[data-input='touch'] .page-head .btn:focus-visible { outline: none; }
+html[data-input='touch'] #home.h6 .h6-start.focus { box-shadow: inset 0 -6px 0 #dc5f08, inset 0 3px 0 rgba(255, 255, 255, 0.55), 0 8px 20px rgba(255, 130, 20, 0.35); }
+html[data-input='touch'] #home.h6 .h6-row.focus { box-shadow: var(--u-shadow-s); }
+
+/* ---- hover (computers only): lift the colour, never the layout */
+@media (hover: hover) and (pointer: fine) {
+  #app:not(.reduce-motion) .home-nav .tab:not(.on):hover .ti { transform: translateY(-2px); }
+  .home-nav .tab .ti { transition: transform var(--d-fast) var(--ease-out); }
+  .home-nav .tab:not(.on):hover { color: var(--u-teal); }
+  .page-head .btn.back:hover, .wd-title .btn.round:hover, .ks-close:hover { filter: brightness(1.1); }
+  .chip:not(.on):hover, .u-pill:hover { box-shadow: 0 0 0 2px var(--u-teal), var(--u-shadow-s); }
+  .h6-profile:hover, .h6-gear:hover, .h6-goals-head:hover, .h6-goals-chip:hover { filter: brightness(1.04); box-shadow: 0 0 0 3px rgba(24, 184, 196, 0.45), var(--u-shadow); }
+  #home.h6 .h6-start:hover { filter: brightness(1.05) saturate(1.05); }
+  .dt:not(.dug):not(:disabled):hover { filter: brightness(1.06); }
+  .seg button:not(.on):hover { background: rgba(255, 255, 255, 0.6); }
+}
+
+@media (prefers-reduced-motion: reduce) { .home-nav .tab:hover .ti { transform: none !important; } }
+
+/* =================================================================== the controls card */
+.ctl-card { display: flex; flex-direction: column; gap: 8px; color: var(--u-ink); font-family: var(--font-display); }
+.ctl-head { display: flex; align-items: center; gap: 8px; }
+.ctl-h { position: relative; padding-left: 12px; font-size: 17px; }
+.ctl-h::before { content: ''; position: absolute; left: 0; top: 15%; bottom: 15%; width: 5px; border-radius: 3px; background: linear-gradient(180deg, #46dbe0, #10a2b4); }
+.ctl-dev { display: none; align-items: center; gap: 5px; margin-left: auto; padding: 2px 10px 2px 4px; border-radius: var(--r-pill); background: var(--u-ink); color: #fff; font-family: var(--font-body); font-weight: 700; font-size: 12px; }
+.ctl-dev svg { width: 20px; height: 20px; }
+.ctl-sets { display: grid; }
+.ctl-set { display: none; }
+.ctl { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ctl-k { display: inline-flex; align-items: center; justify-content: center; gap: 3px; flex: none; }
+.ctl-l { font-size: 15px; line-height: 1.1; min-width: 0; }
+.ctl-or { font-style: normal; font-family: var(--font-body); font-weight: 700; font-size: 12px; color: var(--u-muted); margin: 0 2px; }
+.ctl-ges { width: 46px; height: 30px; display: block; }
+.ctl-pad { width: 28px; height: 28px; display: block; }
+.ctl-pause { width: 30px; height: 30px; display: inline-grid; place-items: center; border-radius: 50%; background: linear-gradient(180deg, #46dbe0, #10a2b4); border: 2px solid #fff; box-shadow: 0 2px 4px rgba(16, 162, 180, 0.4); }
+.ctl-pause svg { width: 70%; height: 70%; }
+/* the matching device only (keyboard + mouse share the keyboard set) */
+.ctl-card:not(.all) .ctl-set.for-kb { display: grid; }
+.ctl-card .ctl-dev.for-kb { display: inline-flex; }
+html[data-input='touch'] .ctl-card:not(.all) .ctl-set.for-kb, html[data-input='pad'] .ctl-card:not(.all) .ctl-set.for-kb { display: none; }
+html[data-input='touch'] .ctl-card .ctl-dev.for-kb, html[data-input='pad'] .ctl-card .ctl-dev.for-kb { display: none; }
+html[data-input='touch'] .ctl-card:not(.all) .ctl-set.for-touch { display: grid; }
+html[data-input='touch'] .ctl-card .ctl-dev.for-touch { display: inline-flex; }
+html[data-input='pad'] .ctl-card:not(.all) .ctl-set.for-pad { display: grid; }
+html[data-input='pad'] .ctl-card .ctl-dev.for-pad { display: inline-flex; }
+
+/* compact: the pause sheet (2 × 2) */
+.ctl-card.compact { padding: 10px 14px 12px; border-radius: 20px; background: #fff; box-shadow: var(--u-shadow-s); }
+.ctl-card.compact .ctl-set { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.ctl-card.compact .ctl { min-height: 34px; }
+.ctl-card.compact .ctl-l { font-size: 14px; }
+html[data-size='compact'] .ctl-card.compact .ctl-ges { width: 40px; height: 26px; }
+html[data-size='compact'] .ctl-card.compact .ctl-set { gap: 6px 8px; }
+
+/* coach: a strip along the bottom of the run at the start of the first runs (never takes input) */
+#hud .ctl-card.coach { position: absolute; left: 50%; bottom: calc(16px + var(--safe-b)); z-index: 3; width: max-content; max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: 20px; background: rgba(255, 250, 242, 0.94); border: 3px solid #fff; box-shadow: var(--u-shadow); pointer-events: none; transform: translateX(-50%); animation: u9coach 0.4s var(--ease-back) both; }
+#hud .ctl-card.coach.out { animation: u9coachout 0.25s ease-in both; }
+#hud .ctl-card.coach .ctl-head { display: none; }
+#hud .ctl-card.coach .ctl-set { grid-auto-flow: column; grid-auto-columns: auto; gap: 6px 18px; align-items: end; }
+#hud .ctl-card.coach .ctl { flex-direction: column; gap: 4px; }
+#hud .ctl-card.coach .ctl-l { font-size: 15px; }
+@media (min-width: 1200px) and (min-height: 700px) {
+  #hud .ctl-card.coach { padding: 10px 20px 12px; }
+  #hud .ctl-card.coach .ctl-set { gap: 8px 26px; }
+  #hud .ctl-card.coach .kc { font-size: 16px; }
+  #hud .ctl-card.coach .ctl-l { font-size: 19px; }
+  #hud .ctl-card.coach .ctl-or { font-size: 14px; }
+  #pause .ctl-card.compact .kc { font-size: 14px; }
+  #pause .ctl-card.compact .ctl-l { font-size: 16px; }
+}
+@keyframes u9coach { from { opacity: 0; transform: translate(-50%, 24px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes u9coachout { to { opacity: 0; transform: translate(-50%, 16px); } }
+#app.reduce-motion #hud .ctl-card.coach, #app.reduce-motion #hud .ctl-card.coach.out { animation-duration: 1ms; }
+@media (prefers-reduced-motion: reduce) { #hud .ctl-card.coach, #hud .ctl-card.coach.out { animation-duration: 1ms; } }
+/* phones held upright: above the touch arrows, in the sand under the crab */
+html[data-orient='port'] #hud .ctl-card.coach { bottom: calc(22px + var(--safe-b)); padding: 6px 10px; }
+html[data-orient='port'] #hud:has(.touch-btn:not(.hidden)) .ctl-card.coach { bottom: calc(30px + clamp(72px, 13vmin, 104px) + var(--safe-b)); }
+html[data-orient='port'] #hud .ctl-card.coach .ctl-set { gap: 4px 12px; }
+html[data-orient='port'] #hud .ctl-card.coach .ctl-l { font-size: 13px; }
+html[data-size='short'] #hud .ctl-card.coach { bottom: calc(8px + var(--safe-b)); padding: 5px 10px; }
+html[data-size='short'] #hud .ctl-card.coach .ctl { flex-direction: row; }
+html[data-size='short'] #hud .ctl-card.coach .ctl-l { font-size: 13px; }
+html[data-size='short'] #hud .ctl-card.coach .ctl-ges { width: 38px; height: 24px; }
+
+/* all: How to Play, every device side by side (the one in hand first) */
+.ctl-card.all .ctl-sets { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ctl-card.all .ctl-set { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 12px; border-radius: 16px; background: #fff; box-shadow: var(--u-shadow-s); }
+.ctl-card.all .ctl-st { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; font-family: var(--font-display); font-weight: 400; font-size: 17px; color: var(--u-teal); }
+.ctl-sti { width: 28px; height: 28px; display: inline-grid; place-items: center; border-radius: 9px; background: var(--u-ink); }
+.ctl-sti svg { width: 80%; height: 80%; }
+.ctl-card.all .ctl-l { font-size: 14px; }
+html[data-input='touch'] .ctl-card.all .for-touch, html[data-input='pad'] .ctl-card.all .for-pad { order: -1; box-shadow: 0 0 0 3px var(--u-teal), var(--u-shadow-s); }
+html:not([data-input='touch']):not([data-input='pad']) .ctl-card.all .for-kb { order: -1; box-shadow: 0 0 0 3px var(--u-teal), var(--u-shadow-s); }
+@media (max-width: 760px) { .ctl-card.all .ctl-sets { grid-template-columns: minmax(0, 1fr); } }
+html[data-size='short'] .ctl-card.all .ctl-sets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+html[data-size='short'] .ctl-card.all .ctl-set { padding: 8px; }
+html[data-size='short'] .ctl-card.all .ctl-l { font-size: 13px; }
+
+/* =================================================================== run HUD: readable at a glance */
+/* the pause key under the pause button (computers) */
+#hud > .right, #hud.lefty > .right { flex-direction: column; align-items: center; gap: 4px; }
+#hud .pause-key { display: inline-flex; pointer-events: none; }
+#hud .pause-key .kc { font-size: 12px; background: rgba(255, 252, 245, 0.95); }
+/* a bigger, easier pause target on phones (the visible disc stays round) */
+html[data-size='compact'] #hud .pause-btn, html[data-size='short'] #hud .pause-btn { width: 54px; height: 54px; min-width: 54px; min-height: 54px; }
+#hud .pause-btn svg { width: 56%; height: 56%; }
+/* the Fever meter: a thicker bar and a label you can read */
+#hud .fever-meter { height: 34px; gap: 6px; padding: 0 12px 0 3px; font-size: 14px; }
+#hud .fever-meter .fv-ico { width: 28px; height: 28px; }
+#hud .fever-meter .fv-bar { width: 96px; height: 14px; box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35); }
+#hud .fever-meter .fv-lbl { opacity: 0.95; }
+#hud .fever-meter.full .fv-bar { box-shadow: 0 0 0 2px #fff3b0, 0 0 10px rgba(255, 200, 60, 0.8); }
+/* desktops: the whole top row scales with the screen */
+@media (min-width: 1200px) and (min-height: 700px) {
+  #hud .pill.shells { height: 62px; font-size: 36px; padding-right: 26px; }
+  #hud .hud-mid .pill.dist { height: 62px; font-size: 40px; min-width: 170px; }
+  #hud .pause-btn { width: 62px; height: 62px; }
+  #hud .fever-meter { height: 38px; font-size: 15px; }
+  #hud .fever-meter .fv-bar { width: 132px; height: 16px; }
+  .best-pill { height: 32px; font-size: 16px; }
+}
+html[data-size='short'] #hud .fever-meter { height: 30px; font-size: 13px; }
+html[data-size='short'] #hud .fever-meter .fv-bar { width: 80px; height: 12px; }
+html[data-size='compact'] #hud .fever-meter .fv-bar { width: 84px; }
+
+/* =================================================================== pause: resume key, controls reminder */
+#pause .btn.big .khint { margin-left: 0.5em; }
+#pause .ctl-card.compact { width: 100%; }
+html[data-size='short'] #pause .ctl-card.compact { padding: 8px 12px; }
+html[data-size='short'] #pause .ctl-card.compact .ctl { min-height: 30px; }
+
+/* =================================================================== Home: the key that starts the focused card */
+#home.h6 .h6-start .khint, #home.h6 .h6-row .khint { display: none; }
+#home.h6 .mode-card.focus .khint { display: inline-flex; }
+html[data-input='touch'] #home.h6 .mode-card .khint { display: none !important; }
+#home.h6 .h6-start .khint .kc { font-size: 14px; background: rgba(255, 255, 255, 0.9); }
+#home.h6 .h6-row .khint { margin-right: -4px; }
+html[data-orient='port'] #home.h6 .h6-row .khint { position: absolute; left: 6px; top: 6px; }
+html[data-size='short'] #home.h6 .h6-start .khint .kc { font-size: 12px; }
+
+/* =================================================================== results: keys for the next step, skip wording */
+.res-buttons .btn .khint { margin-left: 0.4em; }
+.res-skip .for-touch { display: none; }
+html[data-input='touch'] .res-skip .for-touch { display: inline; }
+html[data-input='touch'] .res-skip .for-kb { display: none; }
+.res-next { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 16px; margin: 2px 0 0; font-family: var(--font-body); font-weight: 700; font-size: 13px; color: var(--u-ink-2); }
+.res-next .kl { display: inline-flex; align-items: center; gap: 6px; }
+.res-next .khint .kc { font-size: 12px; }
+html[data-input='touch'] .res-next { display: none; }
+
+/* =================================================================== How to Play: the controls card replaces the old table */
+#howto .ctl-card.all { margin-top: 12px; }
+
+/* =================================================================== pages: a one-line helper under the title */
+.u9-help { margin: 0 0 10px; padding: 8px 12px; border-radius: 14px; background: #fff; box-shadow: var(--u-shadow-s); color: var(--u-ink-2); font-family: var(--font-body); font-weight: 600; font-size: 14px; line-height: 1.35; }
+.u9-help b { color: var(--u-ink); }
+html[data-size='short'] .u9-help { margin-bottom: 6px; padding: 6px 10px; font-size: 13px; }
+
+/* =================================================================== Treasure Dig: Play says what it is for */
+.dig-side-btns .dig-play .dm-col { flex: 0 1 auto; align-items: flex-start; line-height: 1; text-align: left; }
+.dig-side-btns .dig-play .dm-col small { margin-top: 3px; font-size: 13px; opacity: 0.95; white-space: nowrap; }
+.dig-side-btns .dig-play { gap: 10px; }
+html[data-size='short'] .dig-side-btns .dig-play .dm-col small { font-size: 12px; }
+html[data-size='short'] .dig-side-btns .dig-play { gap: 6px; padding-left: 8px; padding-right: 8px; }
+
+/* =================================================================== toasts on the run, landscape phones: at the side */
+#toasts.side { left: calc(10px + var(--safe-l)); right: auto; align-items: flex-start; max-width: 38vw; }
+#toasts.side.side-r { left: auto; right: calc(10px + var(--safe-r)); align-items: flex-end; }
+#toasts.side .toast { max-width: 38vw; font-size: 15px; padding: 4px 12px 5px; text-align: left; }
+#toasts.side .toast.big { font-size: 20px; padding: 4px 14px 6px; }
+#toasts.side .toast small { font-size: 12px; }
+
+/* =================================================================== Settings: the controls card in the Controls section */
+.set-sec .ctl-card.compact { margin: 2px 0 6px; box-shadow: none; }
+html[data-size='short'] .race-end .res-next, html[data-size='regular'][data-orient='land'] .race-end .res-next, html[data-size='short'] .lv-end .res-next { grid-column: 2; }
+
+/* portrait phones with the touch arrows showing: bottom strips (Shell Dash, the coach) sit above them */
+html[data-orient='port'] #hud:has(.touch-btn:not(.hidden)) .rh-dash { bottom: calc(30px + clamp(72px, 13vmin, 104px) + var(--safe-b)); }
+
+/* =================================================================== results: what this run unlocked */
+.res-got { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 8px 12px; border-radius: 16px; background: linear-gradient(90deg, #fff3d0, #ffe2a8); box-shadow: inset 0 0 0 2px #ffc45c; color: var(--u-ink); font-family: var(--font-display); font-size: 16px; }
+.res-got svg { width: 24px; height: 24px; flex: none; filter: drop-shadow(0 1px 0 rgba(180, 100, 0, 0.5)); }
+.res-got b { font-weight: 400; color: #e8670a; }
+.res-got small { margin-left: auto; font-family: var(--font-body); font-weight: 700; font-size: 12px; color: var(--u-ink-2); }
+.res-buttons .btn.res-new { box-shadow: 0 0 0 3px #ffd23a, inset 0 -5px 0 #0a7d8e, 0 6px 14px rgba(16, 162, 180, 0.28); }
+@media (orientation: landscape) and (max-height: 520px) { .res-got { grid-column: 1; padding: 4px 10px; font-size: 14px; } }
+
+/* =================================================================== tutorial: the pause button, drawn inline */
+#tutorial .tut-pause { display: inline-grid; place-items: center; width: 1.5em; height: 1.5em; margin: 0 0.15em; border-radius: 50%; background: linear-gradient(180deg, #46dbe0, #10a2b4); border: 0.12em solid #fff; vertical-align: middle; }
+#tutorial .tut-pause svg { width: 60%; height: 60%; }
+/* left-handed races: the position badge sits under the pause button, so the key hint steps aside */
+#hud.racing.lefty .pause-key { display: none; }
+
+/* =================================================================== Wardrobe: short labels where the long ones don't fit */
+.wd-random .wd-rs { display: none; }
+html[data-orient='port'] .wd-random .wd-rs, html[data-size='short'] .wd-random .wd-rs { display: inline; font-size: 14px; }
+html[data-orient='port'] .wd-random, html[data-size='short'] .wd-random { gap: 6px; }
+.dyes .dyes-l { align-self: center; margin-right: auto; padding-right: 6px; font-family: var(--font-body); font-weight: 700; font-size: 13px; color: var(--u-ink-2); }

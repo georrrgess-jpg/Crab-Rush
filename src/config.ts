@@ -202,8 +202,57 @@ export const CFG = {
   rowSpacingRefSpeed: 12,
 
   // ---- shells ----
-  shell: { spacing: 2.5, radius: 0.9, big: 10, streakWindow: 0.5, y: 0.65 },
+  // Update 9: spacing 2.5 → 3.2 (shell lines run continuously through arcs and turns now, and the
+  // spacing grows with speed; see `lines`)
+  shell: { spacing: 3.2, radius: 0.9, big: 10, streakWindow: 0.5, y: 0.65 },
   closeShave: { window: 0.25, reward: 3 },
+  /**
+   * Update 9 shell lines (spawner): every strand of shells is a "line" the player can follow.
+   * - lane changes: two lean shells `lean` m off their lane centres (one reachable from each lane),
+   *   at least `leanGapT` s apart, kept `clearAfter` m (+ `clearAfterT` s of travel) past the row
+   *   being left and `clearBefore` m (+ `clearBeforeT` s) short of the next one. The turn sits at
+   *   `turnAt` of that free stretch, or `turnEarly` when a block waits in the lane being left.
+   * - arcs over hop obstacles follow the real hop arc at the row's speed, taking off half an
+   *   airtime before the obstacle (the middle of its hop window).
+   * - `bigChance`: per pattern, one Big Shell on the riskiest point of its lines (a hop's apex, or
+   *   right beside a block). Breathers lay a `riverRows`-row river with a Big Shell at its end
+   *   (`riverBig` chance).
+   * - a line of `perfectMin`+ shells collected whole pays `bonus[kind]` and `fever` of the Fever meter.
+   */
+  lines: {
+    /** line spacing grows with speed like row spacing: shell.spacing × max(1, v/12)^spacingExp */
+    spacingExp: 0.75,
+    lean: 0.8,
+    leanGapT: 0.16,
+    clearAfter: 1.1,
+    clearAfterT: 0.06,
+    clearBefore: 1.1,
+    clearBeforeT: 0.05,
+    /** a turn always ends at least this long (s of travel) before the line point it leads to */
+    leadT: 0.1,
+    turnAt: 0.5,
+    turnEarly: 0.3,
+    bigChance: 0.06,
+    riverRows: 5,
+    riverBig: 0.1,
+    /** a 'perfectLine' needs at least this many shells (and a turn, an arc or a river: not a plain trail) */
+    perfectMin: 8,
+    bonus: { trail: 0, zig: 1, arc: 0, hopTurn: 2, river: 1 } as Record<string, number>,
+    fever: 0.04,
+  },
+  /**
+   * Update 9 combo: shells collected in a row without letting one slip by. A shell slips by once it
+   * is `behind` m behind the crab uncollected; that breaks the combo when it belongs to the line of
+   * the last pickup, or when it passed within `reach` m sideways (right through the crab's lane).
+   * A 'combo' event fires every `every`; a 'comboBreak' only for combos of `breakMin` or more.
+   */
+  combo: { behind: 1.5, reach: 0.75, every: 10, breakMin: 5 },
+  /** Update 9: a hop that clears a hop obstacle with less than `tight` of the hop's spare height
+   *  (apex − obstacle top) left over is a perfect hop (+`reward`, and `fever` of the meter) */
+  perfectHop: { tight: 0.35, reward: 2, fever: 0.06 },
+  /** Update 9: a lane change that gets the crab out of an obstacle's way at the last moment: it
+   *  passed less than `gap` m from the crab's side, `window` s or less after the move (+`reward`) */
+  laneDodge: { gap: 0.45, window: 0.3, reward: 2, fever: 0.06 },
 
   // ---- power-ups ----
   powerupInterval: [300, 450] as readonly number[],
@@ -221,7 +270,8 @@ export const CFG = {
   /** Shell Fever (Beach Run, Daily Tide): `shells` of shell value fill the meter (close shaves add
    * `shave`); a Fever lasts `time` s with 2× shells and a short pull (`reach` m); the meter drains at
    * `decay`/s after `idle` s without a pickup */
-  fever: { shells: 45, shave: 0.12, time: 6, reach: 7, idle: 3, decay: 0.05 },
+  // (Update 9: shells 45 → 62, as shell lines are easier to follow: about as many Fevers per km as before)
+  fever: { shells: 62, shave: 0.12, time: 6, reach: 7, idle: 3, decay: 0.05 },
   /** Second Chance: clear obstacles this far ahead (m), blink for `invuln` s, restart at `speed` × pace;
    * pearl cost per use today after the daily free one */
   revive: { clear: 32, invuln: 2.2, speed: 0.6, costs: [5, 10, 20, 30], window: 5 },
@@ -302,6 +352,18 @@ export const CFG = {
    *  the logo, burst and crab all land; a tap skips the wait), the wave wipe lasts `wipeMs`
    *  (match `sp-wipe` in splash.css), and the sun has `rays` rays */
   splash: { minMs: 2700, wipeMs: 1100, rays: 18 },
+
+  // ---- Update 9 render knobs: shell (coin) animation and pickup FX, ambient life, ocean rollers,
+  //      cloud drift, obstacle LOD/shadow distances and the scuttler rig, wind sway ----
+  shellFx: { shellRowPhase: 0.55, shellBob: 0.075, shellBobRate: 3.4, shellFlipEvery: 2.6, shellFlipTime: 0.5, shellFlipWave: 0.045, shellGlintEvery: 1.9, shellGlintTime: 0.42, bigScale: 1.75, bigPingEvery: 1.3, bigOrbiters: 3, magnetStretch: 0.8, magnetSpin: 16, magnetTrail: 3, ghostLife: 0.24, popLife: 0.32, bigPopLife: 0.45, burstStars: 7, popLift: 0.35, bigBurstStars: 12, powerTwinkles: 5, powerShimmerEvery: 1.6 },
+  life: { overheadGulls: 3, overheadY: 6.5, overheadSpeed: 5, overheadWait: 5, fishWait: 2.6, hermits: 2, hermitSpeed: 0.35, hermitShy: 4.5, skyGulls: 5, miniCrabs: 5 },
+  ocean: { rollEvery: 5.6, rollFrom: 14, rollSkew: 0.006 },
+  clouds: { cloudSpan: 340, cloudSpeedMin: 1.6, cloudSpeedMax: 3.2, cloudEdge: 50 },
+  obstacleView: { richDist: 24, shadowDist: 26, scuttleAnim: { stride: 0.7, legLift: 0.6, legSwing: 0.22, roll: 0.14, yaw: 0.2, bob: 0.035, clawRaise: 1.05, clawSpread: 0.55, snapHz: 2.4, snapOpen: 0.6, blend: 9 } },
+  wind: { palmSway: 0.26, frondSway: 0.09 },
+
+  /** UI (Update 9): the controls coach strip shows at the start of the player's first `coachRuns` runs */
+  ui: { coachRuns: 3 },
 
   // ---- fixed step ----
   simHz: 120,

@@ -1,8 +1,10 @@
 import { ICON } from './icons';
 
 const CROWN_SVG = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M6 30l3-18 8 9 3-12 3 12 8-9 3 18z" fill="#ffc93a" stroke="#c4840a" stroke-width="2" stroke-linejoin="round"/><rect x="6" y="30" width="28" height="5" rx="2" fill="#ffb020"/></svg>`;
-import { toastCorner, toastTop } from './kit';
+import { KEYS, installInputMode, installTips, keyHint, sizeClass, tip, toastCorner, toastTop } from './kit';
 import { installPress, staggerIn } from './motion';
+import { controlsCard } from './controls';
+import './u9.css';
 import { btn, el, fmt } from './dom';
 import type { PowerKind } from '../sim/events';
 import { HomeScreen, type HomeData, type HomeHandlers } from './home';
@@ -62,6 +64,9 @@ export class UI {
   private lastFeverOn = false;
   private streakNum: HTMLElement;
   private pauseGoals: HTMLElement;
+  /** the controls coach: a card at the bottom of the screen at the start of a player's first runs */
+  private coach: HTMLElement;
+  private coachTimer = 0;
   // Island Hop HUD
   private lvBar: HTMLElement;
   private lvFill: HTMLElement;
@@ -107,14 +112,15 @@ export class UI {
       this.flyers.push({ el: f, busy: false });
     }
     const right = el('div', 'right');
-    const pauseBtn = btn(ICON.pause, 'blue pause-btn', () => this.h.pause(), 'Pause');
+    const pauseBtn = tip(btn(ICON.pause, 'blue pause-btn', () => this.h.pause(), 'Pause'), 'Pause', 'Esc');
     // distance at the top centre with the run's best under it (UPDATE6_PLAN.md §2)
     const dist = el('div', 'pill dist', `<b>0</b><span class="unit">m</span>`);
     this.distVal = dist.querySelector('b') as HTMLElement;
     this.bestPill = el('div', 'best-pill hidden', `<span class="bp-ico">${CROWN_SVG}</span><span>Best</span><b></b>`);
     const mid = el('div', 'hud-mid');
     mid.append(dist, this.bestPill);
-    right.append(pauseBtn);
+    // on a computer the pause key sits under the button
+    right.append(pauseBtn, el('span', 'pause-key', keyHint(['Esc'], KEYS.pause.pad)));
     this.hud.append(left, mid, right);
     // the active power-up: a round badge at the bottom left with the seconds left
     this.powerSecs = el('b', 'pp-secs');
@@ -148,6 +154,10 @@ export class UI {
       b.addEventListener('pointerleave', off);
     }
     this.hud.append(this.touchL, this.touchR);
+    this.coach = controlsCard('coach', 'How to play');
+    this.coach.classList.add('coach', 'hidden');
+    this.coach.setAttribute('aria-live', 'polite');
+    this.hud.append(this.coach);
 
     // ---------------- tutorial, toasts, countdown
     this.tutorial = el('div', 'screen hidden');
@@ -174,9 +184,10 @@ export class UI {
       btn(`${ICON.gear}<span>Settings</span>`, 'blue small', () => this.h.openSettings()),
       btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()),
     );
-    pcol.append(btn(`${ICON.play}<span>Resume</span>`, 'big', () => this.h.resume()), row);
+    pcol.append(btn(`${ICON.play}<span>Resume</span>${keyHint(['Esc'], KEYS.pause.pad)}`, 'big', () => this.h.resume()), row);
     this.pauseGoals = el('div', 'goals-card');
-    sheet.append(this.pauseStats, pcol, this.pauseGoals);
+    // a controls reminder for the device in hand (Update 9)
+    sheet.append(this.pauseStats, pcol, controlsCard('compact'), this.pauseGoals);
     this.pauseEl.append(pdim, sheet);
 
     this.fade = el('div');
@@ -186,6 +197,8 @@ export class UI {
     this.wipe.setAttribute('aria-hidden', 'true');
 
     installPress(root);
+    installInputMode();
+    installTips(root);
     root.append(this.foam, this.home.el, this.hud, this.tutorial, this.countdown, this.pauseEl, this.results.el, this.toasts, this.fade, this.wipe);
   }
 
@@ -198,7 +211,11 @@ export class UI {
     this.hud.classList.toggle('hidden', !(name === 'hud' || name === 'pause'));
     this.pauseEl.classList.toggle('hidden', name !== 'pause');
     if (name !== 'results') this.results.hide();
-    if (name !== 'hud') this.hideTutorial();
+    if (name !== 'hud') {
+      this.hideTutorial();
+      clearTimeout(this.coachTimer);
+      this.coach.classList.add('hidden');
+    }
     if (name === 'title' || name === 'results') this.clearToasts();
     for (const s of this.extraScreens) s.classList.add('hidden');
     if (name === 'pause' && prev !== 'pause') {
@@ -469,25 +486,32 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ tutorial
-  showTutorial(step: string, device: 'touch' | 'keyboard' | 'mouse'): void {
+  /** Tutorial prompts in the words of the device in hand: keys on a computer, swipes on a phone, pad buttons. */
+  showTutorial(step: string, device: 'touch' | 'keyboard' | 'mouse' | 'gamepad'): void {
     const touch = device === 'touch';
+    const pad = device === 'gamepad';
+    const k = ICON.key;
     let html = '';
     switch (step) {
       case 'move':
         html = touch
           ? `<div class="row"><span class="arr">${ICON.left}</span>Swipe<span class="arr">${ICON.right}</span></div><span class="hand lr">${ICON.hand}</span><div class="sub">or tap the side you want to go</div>`
-          : `<div class="row">Press ${ICON.key('◄')}${ICON.key('►')}</div><div class="sub">or A / D to change lanes</div>`;
+          : pad
+            ? `<div class="row">Press ${k('◄')}${k('►')}</div><div class="sub">on the d-pad or stick to change lanes</div>`
+            : `<div class="row">Press ${k('◄')}${k('►')}</div><div class="sub">or ${k('A')} ${k('D')} to change lanes</div>`;
         break;
       case 'hop':
         html = touch
           ? `<div class="row">Swipe<span class="arr">${ICON.up}</span>to hop</div><span class="hand up">${ICON.hand}</span>`
-          : `<div class="row">Press ${ICON.key('▲')} or ${ICON.key('Space')}</div><div class="sub">to hop over the wave</div>`;
+          : pad
+            ? `<div class="row">Press ${k('A')} to hop</div><div class="sub">over the wave</div>`
+            : `<div class="row">Press ${k('▲')} or ${k('Space')}</div><div class="sub">to hop over the wave</div>`;
         break;
       case 'move2':
         html = `<div class="row">Follow the shells!</div>`;
         break;
       case 'log':
-        html = `<div class="row">Hop logs to grab shells</div>`;
+        html = `<div class="row">Hop logs to grab shells</div><div class="sub">${touch ? 'swipe up' : pad ? `press ${k('A')}` : `press ${k('▲')} or ${k('Space')}`}</div>`;
         break;
       case 'ball':
         html = `<div class="row">Hop or dodge!</div>`;
@@ -496,13 +520,34 @@ export class UI {
         html = `<div class="row">Grab the power-up!</div>`;
         break;
       case 'complete':
-        html = `<div class="row">Nice! You're on your own now</div>`;
+        html = `<div class="row">Nice! You're on your own now</div><div class="sub">${touch ? `tap <span class="tut-pause">${ICON.pause}</span> to pause` : pad ? 'Start pauses' : `${k('Esc')} pauses`}</div>`;
         break;
       default:
         html = '';
     }
     this.tutorial.innerHTML = `<div class="bubble">${html}</div>`;
     this.tutorial.classList.remove('hidden');
+  }
+
+  /**
+   * The controls coach (Update 9): a compact card along the bottom at the start of a player's first
+   * runs, for the device in hand. It never takes input and goes after a few seconds or the first move.
+   */
+  showCoach(ms = 5200): void {
+    clearTimeout(this.coachTimer);
+    this.coach.classList.remove('hidden', 'out');
+    this.coachTimer = window.setTimeout(() => this.hideCoach(), ms);
+  }
+
+  hideCoach(): void {
+    clearTimeout(this.coachTimer);
+    if (this.coach.classList.contains('hidden') || this.coach.classList.contains('out')) return;
+    this.coach.classList.add('out');
+    this.coachTimer = window.setTimeout(() => this.coach.classList.add('hidden'), 260);
+  }
+
+  get coachVisible(): boolean {
+    return !this.coach.classList.contains('hidden') && !this.coach.classList.contains('out');
   }
 
   hideTutorial(): void {
@@ -518,6 +563,11 @@ export class UI {
     // the toast lane: just under whatever header, wallet or HUD row is showing
     const corner = toastCorner() && [...document.querySelectorAll<HTMLElement>('.res-card, .chest-card')].some((n) => n.offsetParent !== null);
     this.toasts.classList.toggle('corner', corner);
+    // landscape phones on the run: the lanes ahead fill the middle of the short screen, so toasts sit
+    // at the side under the shell counter instead of over the track (Update 9)
+    const side = !corner && this.current === 'hud' && sizeClass() === 'short';
+    this.toasts.classList.toggle('side', side);
+    this.toasts.classList.toggle('side-r', side && this.hud.classList.contains('lefty'));
     this.toasts.style.top = corner ? '' : `${Math.round(toastTop())}px`;
     this.toasts.appendChild(t);
     while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();

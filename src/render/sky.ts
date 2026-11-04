@@ -38,7 +38,8 @@ void main() {
   // high cirrus streaks: stretched noise on a plane above the camera, drifting slowly
   if (uCirrus > 0.0 && d.y > 0.02) {
     vec2 uv = d.xz / (d.y + 0.12);
-    uv = vec2(uv.x * 0.6 + uTime * 0.004, uv.y * 3.2);
+    // Update 9: the streaks drift with the breeze (off the sea, toward -x) and slowly stretch
+    uv = vec2(uv.x * 0.6 + uTime * 0.011, uv.y * 3.2 + uTime * 0.0025);
     float n = noise(uv * 2.0) * 0.6 + noise(uv * 4.3 + 3.1) * 0.3 + noise(uv * 9.0) * 0.1;
     float c = smoothstep(0.55, 0.85, n) * smoothstep(0.02, 0.2, d.y) * (1.0 - smoothstep(0.5, 0.9, d.y));
     col = mix(col, mix(vec3(1.0), uSunColor, 0.35 + 0.4 * s), c * 0.42 * uCirrus);

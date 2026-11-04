@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PALETTE } from '../config';
+import { CFG, PALETTE } from '../config';
 import { GeoBuilder, addWind } from './geo';
 
 /** Deterministic tiny RNG for prop variation. */
@@ -15,6 +15,18 @@ export function prng(seed: number): () => number {
 }
 
 type V3 = [number, number, number];
+
+/**
+ * Update 9 wind modes (the TOY_WIND block in shaders/toy.ts): added to a sway amount in the `wind`
+ * attribute. LEAF sways and flutters (fronds, grass), FLOAT bobs, rocks and drifts on the water,
+ * FLAP beats a wing (the amount is the distance from the shoulder).
+ */
+export const WIND_LEAF = 4;
+export const WIND_FLOAT = 8;
+export const WIND_FLAP = 12;
+/** palm sway at the top of the trunk (m), and the extra per metre out along a frond */
+const PALM_SWAY = CFG.wind.palmSway;
+const FROND_SWAY = CFG.wind.frondSway;
 
 const hash = (x: number, y: number, z: number): number => {
   const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
@@ -256,8 +268,21 @@ export function palm(seed: number, h = 6, lean = 1.2, trunkCol: number = PALETTE
       b.ico(i === 3 ? 0x7a8a2a : 0x5a3a1c, 0.15, [top[0] + Math.cos(a) * rr, top[1] - 0.2 - (i % 2) * 0.1, top[2] + Math.sin(a) * rr], [1, 1.12, 1], 0, 0.08, seed + i);
     }
   }
-  // sway grows up the trunk; fronds hang off the top so they swing furthest
-  return addWind(b.build(), (x, y) => Math.pow(Math.max(0, y) / h, 2) * 0.2);
+  // sway grows up the trunk; the fronds (green) swing further the further out they reach and flutter
+  const g = b.build();
+  const pa = g.attributes.position as THREE.BufferAttribute;
+  const ca = g.attributes.color as THREE.BufferAttribute;
+  const w = new Float32Array(pa.count);
+  const crown = Math.pow(Math.max(0, top[1]) / h, 2) * PALM_SWAY;
+  for (let i = 0; i < pa.count; i++) {
+    const y = pa.getY(i);
+    const out = Math.hypot(pa.getX(i) - top[0], pa.getZ(i) - top[2]);
+    // green and clear of the coconut cluster
+    const leaf = ca.getY(i) > ca.getX(i) * 1.04 && y > top[1] - 2.2 && out > 0.42;
+    w[i] = leaf ? WIND_LEAF + crown + out * FROND_SWAY : Math.pow(Math.max(0, y) / h, 2) * PALM_SWAY;
+  }
+  g.setAttribute('wind', new THREE.BufferAttribute(w, 1));
+  return g;
 }
 
 function canopy(colA: number, colB: number, r: number, h: number, panels = 8): THREE.BufferGeometry {
@@ -464,7 +489,7 @@ export function tinyCrab(): THREE.BufferGeometry {
 export function seaweed(): THREE.BufferGeometry {
   const b = new GeoBuilder();
   for (let i = 0; i < 4; i++) b.cone(0x3f8f4a, 0.06, 0.5 + i * 0.12, [(i - 1.5) * 0.12, 0.25, (i % 2) * 0.08], [0.1 * (i - 1.5), 0, 0.15 * (i - 1.5)], 4);
-  return addWind(b.build(), (x, y) => Math.max(0, y) * 0.12);
+  return addWind(b.build(), (x, y) => (y > 0.05 ? WIND_LEAF + y * 0.12 : 0));
 }
 
 // --------------------------------------------------------------- zone 1: boardwalk
@@ -522,7 +547,8 @@ export function boat(col: number): THREE.BufferGeometry {
   b.box(0xfff4dc, 1.0, 0.1, 2.6, [0, 0.42, 0]);
   b.cyl(0x8a5a2b, 0.05, 0.05, 2.6, [0, 1.6, 0.2], [0, 0, 0], 5);
   b.cone(0xffffff, 0.8, 2.2, [0.05, 1.7, -0.2], [0, Math.PI / 2, 0], 3, [0.08, 1, 1]);
-  return addWind(b.build(), (x, y) => (y > 0.7 ? -0.03 * (y - 0.7) : 0));
+  // Update 9: the whole boat bobs, rocks and drifts on the swell
+  return addWind(b.build(), () => WIND_FLOAT + 1);
 }
 
 export function buoy(): THREE.BufferGeometry {
@@ -537,7 +563,7 @@ export function buoy(): THREE.BufferGeometry {
   }
   b.cone(0xe53935, 0.16, 0.3, [0, 1.25, 0], [0, 0, 0], 6);
   b.sphere(0xfff3c4, 0.07, [0, 1.42, 0], [1, 1, 1], 5);
-  return b.build();
+  return addWind(b.build(), () => WIND_FLOAT + 0.7);
 }
 
 // --------------------------------------------------------------- zone 2: cove
@@ -971,7 +997,8 @@ export function duneGrass(seed: number): THREE.BufferGeometry {
   }
   b.raw(p.build());
   b.lathe(0xe9c37e, [[0.34, 0], [0.22, 0.06], [0, 0.08]], 6);
-  return addWind(b.build(), (x, y) => Math.max(0, y) * 0.16);
+  // Update 9: blades sway and flutter (the sand mound stays put)
+  return addWind(b.build(), (x, y) => (y > 0.09 ? WIND_LEAF + y * 0.2 : 0));
 }
 
 /** a beach volleyball net between two posts, with a ball in the sand */
@@ -1008,7 +1035,7 @@ export function windsock(): THREE.BufferGeometry {
   const b = new GeoBuilder();
   b.cyl(0xe8e8e0, 0.05, 0.06, 3.2, [0, 1.6, 0], [0, 0, 0], 6);
   for (let i = 0; i < 4; i++) b.cyl(i % 2 ? 0xffffff : 0xff5a3a, 0.2 - i * 0.03, 0.17 - i * 0.03, 0.3, [0.32 + i * 0.3, 3.0 - i * 0.04, 0], [0, 0, Math.PI / 2 + 0.1], 8);
-  return addWind(b.build(), (x) => Math.max(0, x) * 0.2);
+  return addWind(b.build(), (x) => (x > 0.08 ? WIND_LEAF + x * 0.16 : 0));
 }
 
 /** a stack of barrels for the pier */
@@ -1077,7 +1104,7 @@ export function sailboat(col: number): THREE.BufferGeometry {
   b.cyl(0x8a5a2b, 0.04, 0.04, 3.2, [0, 1.6, 0], [0, 0, 0], 5);
   b.cone(col, 1.0, 2.6, [0, 1.6, -0.45], [0, 0, 0], 3, [0.05, 1, 1]);
   b.cone(0xffffff, 0.7, 1.9, [0, 1.3, 0.55], [0, 0, 0], 3, [0.05, 1, 1]);
-  return b.build();
+  return addWind(b.build(), () => WIND_FLOAT + 1.3);
 }
 
 // --------------------------------------------------------------- Update 8 hero scenery (UPDATE8_PLAN.md, map track)
@@ -1294,13 +1321,46 @@ export function sandcastle(): THREE.BufferGeometry {
   return addWind(b.build(), (x, y) => (y > 1.55 && x > 0.02 ? -0.02 * x * 6 : 0));
 }
 
+/**
+ * Update 9: a tall feather beach flag on a sprung pole. The banner (a tapering strip with a curled
+ * top and a pale band by the pole) flutters harder the further it reaches from the pole. ~80 tris.
+ */
+export function featherFlag(colA: number, colB = 0xfff4dc): THREE.BufferGeometry {
+  const b = new GeoBuilder();
+  b.cyl(0xd8d8d0, 0.028, 0.035, 3.35, [0, 1.67, 0], [0, 0, 0], 5);
+  b.cone(0x8a8a82, 0.1, 0.1, [0, 0.05, 0], [0, 0, 0], 6);
+  const p = new Poly();
+  const rows = 6;
+  const y0 = 0.75;
+  const len = 2.55;
+  // banner edge: narrow at the foot, widest high up, the top curling down off the pole tip
+  const outer = (t: number): V3 => {
+    const w = 0.22 + 0.4 * Math.sin(Math.min(1, t * 1.25) * Math.PI * 0.5);
+    const drop = t > 0.75 ? (t - 0.75) * 1.6 : 0;
+    return [w, y0 + t * len - 0.08 - drop, 0];
+  };
+  const pole = (t: number): V3 => [0.035, y0 + t * len, 0];
+  const mid = (t: number): V3 => {
+    const o = outer(t);
+    return [0.035 + (o[0] - 0.035) * 0.22, (pole(t)[1] * 0.78 + o[1] * 0.22), 0];
+  };
+  for (let i = 0; i < rows; i++) {
+    const t0 = i / rows;
+    const t1 = (i + 1) / rows;
+    p.quad(pole(t0), mid(t0), mid(t1), pole(t1), colB, 0.8);
+    p.quad(mid(t0), outer(t0), outer(t1), mid(t1), colA, 0.8);
+  }
+  b.raw(p.build());
+  return addWind(b.build(), (x, y) => (x > 0.05 && y > y0 - 0.1 ? -(0.03 + x * 0.12) : 0));
+}
+
 /** A line of floats on a rope, marking the swimming area (lies along z, centred on 0). */
 export function floatLine(n = 9, gap = 1.4): THREE.BufferGeometry {
   const b = new GeoBuilder();
   const L = (n - 1) * gap;
   b.segOpen(0xe9dfc8, [0, 0.06, -L / 2], [0, 0.06, L / 2], 0.02, 0.02, 3);
   for (let i = 0; i < n; i++) b.ico(i % 2 ? 0xffffff : 0xff5a3a, 0.14, [0, 0.07, -L / 2 + i * gap], [1, 0.8, 1.3], 0);
-  return addWind(b.build(), () => 0.02);
+  return addWind(b.build(), () => WIND_FLOAT + 0.45);
 }
 
 /** Stacked wire crab pots with a buoy and rope, for the pier. */

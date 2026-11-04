@@ -1,6 +1,6 @@
 import { MODIFIERS, type Modifier } from '../meta/daily';
 import { btn, el, fmt } from './dom';
-import { Sheet, actionBar, pageHead } from './kit';
+import { KEYS, Sheet, actionBar, keyHint, pageHead } from './kit';
 import { countdown } from './home';
 import { ICON } from './icons';
 
@@ -95,7 +95,7 @@ export class DailyScreen {
     const alm = d.almanac ? this.almanac(d.almanac) : null;
     this.actions.innerHTML = '';
     const pc = el('div', 'dt-playcol');
-    const play = btn(`${ICON.play}<span>${d.playedToday ? 'Play Again' : "Play Today's Tide"}</span>`, 'big daily-play', () => this.h.play());
+    const play = btn(`${ICON.play}<span>${d.playedToday ? 'Play Again' : "Play Today's Tide"}</span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}`, 'big daily-play', () => this.h.play());
     const more = el('div', 'dt-more6');
     if (cal) more.appendChild(btn(`${ICON.chart}<span>History</span>`, 'ghost dt-chip', () => this.openSheet('Last 30 days', cal), 'Show the last 30 days'));
     if (alm) more.appendChild(btn(`${BOOK}<span>Tide Almanac</span>`, 'ghost dt-chip', () => this.openSheet('Tide almanac', alm), 'Show the coming tides'));

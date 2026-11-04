@@ -5,7 +5,7 @@
 import { CUPS, type CupDef, type CupState, cupTable, cupUnlocked, nextRace, pointsFor } from '../meta/cup';
 import { btn, el, fmt } from './dom';
 import { ICON } from './icons';
-import { Wallet, actionBar, pageHead } from './kit';
+import { KEYS, Wallet, actionBar, keyHint, keyLine, pageHead } from './kit';
 
 export const CUP_ICON = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M12 6h16v8a8 8 0 0 1-16 0z" fill="#fff"/><path d="M12 9H6c0 6 3 9 7 9M28 9h6c0 6-3 9-7 9" stroke="#fff" stroke-width="3" fill="none"/><rect x="18" y="21" width="4" height="7" fill="#fff"/><rect x="12" y="28" width="16" height="5" rx="2" fill="#fff"/></svg>`;
 const TROPHY = (cls: string): string => `<svg class="cup-trophy ${cls}" viewBox="0 0 64 64" aria-hidden="true"><path d="M18 8h28v14a14 14 0 0 1-28 0z" fill="currentColor" stroke="rgba(0,0,0,.25)" stroke-width="2"/><path d="M18 13H8c0 10 5 15 12 15M46 13h10c0 10-5 15-12 15" stroke="currentColor" stroke-width="5" fill="none"/><rect x="28" y="35" width="8" height="10" fill="currentColor"/><rect x="18" y="45" width="28" height="9" rx="3" fill="currentColor" stroke="rgba(0,0,0,.25)" stroke-width="2"/><path d="M25 14l3 6 6 1-4 4 1 6-6-3-6 3 1-6-4-4 6-1z" fill="#fff" opacity=".7"/></svg>`;
@@ -59,7 +59,7 @@ export class CupScreen {
     this.actions.innerHTML = '';
     const cup = CUPS.find((c) => c.id === this.selected) as CupDef;
     const nr = nextRace(st, cup.id);
-    const go = btn(`${ICON.play}<span>${st.current?.cup === cup.id ? 'Next race' : 'Start cup'}</span>`, 'big cup-go', () => this.h.race(cup.id), `Race: ${nr?.name ?? ''}`);
+    const go = btn(`${ICON.play}<span>${st.current?.cup === cup.id ? 'Next race' : 'Start cup'}</span>${keyHint(KEYS.confirm.kb, KEYS.confirm.pad)}`, 'big cup-go', () => this.h.race(cup.id), `Race: ${nr?.name ?? ''}`);
     go.disabled = !cupUnlocked(st, cup.id);
     const sub = el('div', 'cup-next', nr ? `<span>${cup.name} · race ${cup.races.indexOf(nr) + 1}/3</span><b>${nr.name}</b>` : '');
     const col = el('div', 'cup-playcol');
@@ -161,6 +161,8 @@ export class RaceEndScreen {
     const more = !d.outcome;
     bar.append(btn(`${ICON.home}<span>Home</span>`, 'blue small', () => this.h.home()), btn(`${more ? ICON.play : CUP_ICON}<span>${more ? 'Next race' : 'Cups'}</span>`, 'big', () => (more ? this.h.next() : this.h.cup())));
     this.card.appendChild(bar);
+    // the two buttons share one row: their keys go on a line underneath (computers)
+    this.card.insertAdjacentHTML('beforeend', keyLine([[KEYS.confirm.kb, KEYS.confirm.pad, more ? 'Next race' : 'Cups'], [KEYS.back.kb, KEYS.back.pad, 'Home']]));
     this.el.classList.remove('hidden');
     (bar.querySelector('.btn.big') as HTMLElement).focus({ preventScroll: true });
   }

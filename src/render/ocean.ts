@@ -2,10 +2,30 @@ import * as THREE from 'three';
 import { CFG } from '../config';
 import type { ZonePalette } from './palettes';
 
+/**
+ * Update 9 rollers (to move into CFG.ocean): a swell line rolls in every ROLL_EVERY s from ROLL_FROM
+ * m out, slowing as it nears the beach, and breaks white over the last stretch. ROLL_SKEW (cycles per
+ * metre along the shore) sets them slightly oblique to the beach.
+ */
+export const ROLL_EVERY = CFG.ocean.rollEvery;
+export const ROLL_FROM = CFG.ocean.rollFrom;
+export const ROLL_SKEW = CFG.ocean.rollSkew;
+/** the roller's phase (0..1, 1 = reaching the shore) at track position `w` and time `t` (s) */
+export function rollerPhase(w: number, t: number): number {
+  const v = t / ROLL_EVERY + w * ROLL_SKEW + Math.sin(w * 0.045) * 0.06;
+  return v - Math.floor(v);
+}
+/** the crest's distance from the shoreline (m) at phase `rp` */
+export function rollerOffset(rp: number): number {
+  return 0.4 + ROLL_FROM * Math.pow(1 - rp, 1.3);
+}
+const f1 = (v: number): string => (Number.isInteger(v) ? `${v}.0` : `${v}`);
+
 const vert = /* glsl */ `
 uniform float uTime;
 uniform float uDist;
 uniform float uWaves;
+uniform vec3 uZones;
 varying vec2 vWorld;
 varying float vViewZ;
 varying vec3 vWorldPos;
@@ -14,7 +34,9 @@ void main() {
   // plane lies in x/z; z is "toward the player"; world scroll via uDist
   float wz = p.z - uDist;               // fixed coordinate along the track (plane scrolls with the player)
   vWorld = vec2(p.x, -wz);
-  p.y += uWaves * (sin(p.x * 0.35 + uTime * 0.9 + wz * 0.05) * 0.12 + sin(wz * 0.22 + uTime * 1.3) * 0.09);
+  // Update 9: the swell lies flat under the pier deck and its side platforms (it used to poke through)
+  float calm = (-wz >= uZones.x - 4.0 && -wz < uZones.y + 4.0) ? smoothstep(11.5, 16.0, abs(p.x)) : 1.0;
+  p.y += uWaves * calm * (sin(p.x * 0.35 + uTime * 0.9 + wz * 0.05) * 0.12 + sin(wz * 0.22 + uTime * 1.3) * 0.09);
   vWorldPos = (modelMatrix * vec4(p, 1.0)).xyz;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   vViewZ = -mv.z;
@@ -22,6 +44,9 @@ void main() {
 }`;
 
 const frag = /* glsl */ `
+#define ROLL_EVERY ${f1(ROLL_EVERY)}
+#define ROLL_FROM ${f1(ROLL_FROM)}
+#define ROLL_SKEW ${f1(ROLL_SKEW)}
 uniform float uTime;
 uniform vec3 uZones;      // zone start distances (pier, cove, sunset)
 uniform vec3 uShallow; uniform vec3 uMid; uniform vec3 uDeep; uniform vec3 uFoam; uniform vec3 uFog;
@@ -55,6 +80,19 @@ void main() {
   float wave = fract(x * 0.09 - uTime * 0.07 + n * 0.25);
   float line = smoothstep(0.0, 0.03, wave) * (1.0 - smoothstep(0.03, 0.09, wave));
   col = mix(col, uFoam, line * (1.0 - depth) * 0.55);
+  // Update 9: rollers. A swell line rolls in, slowing as it nears the beach; its steep face darkens,
+  // then it breaks into a widening white crest with lacy foam left behind, and fades into the wash
+  float rp = fract(uTime / ROLL_EVERY + W * ROLL_SKEW + sin(W * 0.045) * 0.06);
+  float rx = 0.4 + ROLL_FROM * pow(1.0 - rp, 1.3);
+  float rd = x - rx + (n - 0.5) * 0.9;
+  float brk = smoothstep(0.4, 0.82, rp);
+  float crest = (1.0 - smoothstep(0.0, 0.3 + brk * 0.9, abs(rd))) * smoothstep(0.0, 0.18, rp) * (1.0 - smoothstep(0.86, 1.0, rp));
+  float face = smoothstep(-2.4, -0.2, rd) * (1.0 - smoothstep(-0.2, 0.3, rd)) * (1.0 - brk);
+  float near = 1.0 - smoothstep(ROLL_FROM - 2.0, ROLL_FROM + 4.0, x);
+  float wake = 0.0;
+  if (uDetail > 0.5) wake = smoothstep(0.1, 0.7, rd) * (1.0 - smoothstep(0.7, 3.6, rd)) * brk * smoothstep(0.45, 0.75, noise(vWorld * vec2(1.7, 0.8) + vec2(uTime * 0.3, 0.0))) * (1.0 - smoothstep(0.9, 1.0, rp));
+  col = mix(col, col * 0.82 + uDeep * 0.1, face * 0.6 * near);
+  col = mix(col, uFoam, clamp(crest * mix(0.3, 0.95, brk) + wake * 0.7, 0.0, 1.0) * near);
   // Fresnel: grazing angles reflect the sky
   vec3 V = normalize(cameraPosition - vWorldPos);
   float fres = pow(1.0 - clamp(V.y, 0.0, 1.0), 4.0);
@@ -117,7 +155,8 @@ function oceanGrid(w: number, l: number): THREE.BufferGeometry {
   for (let x = 64; x <= w; x += 24) xs.push(x);
   if (xs[xs.length - 1] !== w) xs.push(w);
   const zs: number[] = [];
-  for (let z = 20; z > -112; z -= 3.3) zs.push(z);
+  // Update 9: 4.4 m rows (was 3.3): the swell's 28 m wavelength along the track keeps its shape
+  for (let z = 20; z > -112; z -= 4.4) zs.push(z);
   for (let z = -112; z >= 20 - l; z -= 30) zs.push(z);
   if (zs[zs.length - 1] !== 20 - l) zs.push(20 - l);
   const pos: number[] = [];

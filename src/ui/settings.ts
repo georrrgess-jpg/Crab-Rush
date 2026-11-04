@@ -2,6 +2,7 @@ import type { QualitySetting, Settings, TouchButtons } from '../core/save';
 import { btn, el, fmt } from './dom';
 import { ICON } from './icons';
 import { pageHead } from './kit';
+import { controlsCard } from './controls';
 
 /** a speaker for the Sound section (white on the section's icon disc) */
 const SOUND_SVG = `<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M8 16h6l8-7v22l-8-7H8z" fill="#fff"/><path d="M27 14c3 3 3 9 0 12M31 10c5 5 5 15 0 20" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/></svg>`;
@@ -109,8 +110,10 @@ export class SettingsScreen {
       section(
         'Controls',
         ICON.hand,
-        seg<'low' | 'normal' | 'high'>('Swipe sensitivity', [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], s.swipeSensitivity, (v) => (s.swipeSensitivity = v)),
-        seg<TouchButtons>('Touch arrows', [['auto', 'Auto'], ['show', 'Show'], ['hide', 'Hide']], s.touchButtons, (v) => (s.touchButtons = v)),
+        // the controls for the device in hand, so they are one tap away from the options (Update 9)
+        controlsCard('compact', 'Your controls'),
+        seg<'low' | 'normal' | 'high'>('Swipe sensitivity', [['low', 'Low'], ['normal', 'Normal'], ['high', 'High']], s.swipeSensitivity, (v) => (s.swipeSensitivity = v), 'Touch screens: how far a swipe goes'),
+        seg<TouchButtons>('Touch arrows', [['auto', 'Auto'], ['show', 'Show'], ['hide', 'Hide']], s.touchButtons, (v) => (s.touchButtons = v), 'Big arrow buttons on the run'),
         toggle('Left-handed HUD', s.leftHanded, (v) => (s.leftHanded = v), 'Pause button on the left'),
         toggle('Vibration', s.haptics, (v) => (s.haptics = v), 'Where your device supports it'),
       ),

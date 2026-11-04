@@ -24,6 +24,8 @@ export interface ToyLightingUniforms {
   uGrade: THREE.IUniform<THREE.Vector4>;
   /** seconds, for wind and other vertex animation */
   uTime: THREE.IUniform<number>;
+  /** Update 9: the run distance, so wind phases are fixed to the beach rather than to the scrolling tiles */
+  uWindScroll: THREE.IUniform<number>;
 }
 
 const vert = /* glsl */ `
@@ -37,6 +39,7 @@ varying vec3 vViewPos;
 #ifdef TOY_WIND
 attribute float wind;
 uniform float uTime;
+uniform float uWindScroll;
 #endif
 void main() {
   #include <uv_vertex>
@@ -48,15 +51,52 @@ void main() {
   #include <begin_vertex>
   #include <skinning_vertex>
   #ifdef TOY_WIND
-    // living world (UPDATE2_PLAN.md §1.7): wind > 0 sways (palms, seaweed), wind < 0 flutters (flags)
+    // living world (UPDATE2_PLAN.md §1.7, Update 9). The wind attribute picks the motion:
+    //   (0, 4)   sway by height (trunks, bushes)            [4, 8)   sway (w - 4) + leaf flutter (fronds, grass)
+    //   (-4, 0)  flutter (flags, bunting, cloth)            [8, 12)  float: bob, rock and drift (w - 8) (boats, buoys)
+    //   [12, 16) flap: wing tips (w - 12 = distance from the shoulder) beat and glide (gulls)
     if (wind != 0.0) {
-      vec4 wp = modelMatrix * vec4(transformed, 1.0);
-      float ph = wp.x * 0.37 + wp.z * 0.23;
-      if (wind > 0.0) {
-        transformed.x += (sin(uTime * 1.6 + ph) + 0.35 * sin(uTime * 3.7 + ph * 2.1)) * wind;
-        transformed.z += sin(uTime * 1.13 + ph * 1.3) * wind * 0.45;
+      #ifdef USE_INSTANCING
+        vec4 wp = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+      #else
+        vec4 wp = modelMatrix * vec4(transformed, 1.0);
+      #endif
+      // track-space z (uWindScroll is the run distance) so the phase does not race as the world scrolls
+      float tz = uWindScroll - wp.z;
+      float ph = wp.x * 0.37 + tz * 0.23;
+      // gusts roll down the beach: the sway swells and eases in long waves
+      float gust = 0.72 + 0.3 * sin(uTime * 0.45 + wp.x * 0.02 - tz * 0.035) + 0.18 * sin(uTime * 1.07 - tz * 0.09);
+      if (wind >= 12.0) {
+        // flyers move, so their beat is phased per instance rather than by position
+        float fp = 0.0;
+        #ifdef USE_INSTANCING
+          fp = float(gl_InstanceID) * 2.17;
+        #endif
+        float a = wind - 12.0;
+        float beat = sin(uTime * 8.5 + fp);
+        float glide = smoothstep(-0.2, 0.4, sin(uTime * 0.8 + fp * 1.3));
+        float ang = mix(0.12, beat * 0.62 + 0.1, glide);
+        transformed.y += a * sin(ang);
+        transformed.x -= sign(transformed.x) * a * (1.0 - cos(ang));
+      } else if (wind >= 8.0) {
+        float a = wind - 8.0;
+        float lp = tz * 0.021 + wp.x * 0.043;
+        float lever = max(0.0, wp.y + 0.35);
+        transformed.y += sin(uTime * 1.25 + lp * 7.0) * a * 0.12;
+        transformed.x += sin(uTime * 0.92 + lp * 5.0) * lever * a * 0.06 + sin(uTime * 0.11 + lp * 9.0) * a * 0.7;
+        transformed.z += cos(uTime * 0.71 + lp * 6.0) * lever * a * 0.035;
+      } else if (wind > 0.0) {
+        float leaf = step(4.0, wind);
+        float w = (wind - leaf * 4.0) * gust;
+        transformed.x += (sin(uTime * 1.6 + ph) + 0.35 * sin(uTime * 3.7 + ph * 2.1)) * w;
+        transformed.z += sin(uTime * 1.13 + ph * 1.3) * w * 0.45;
+        transformed.y -= abs(w) * 0.12;
+        // leaves and blades: a quick flutter that runs along each frond
+        float lq = dot(transformed, vec3(2.3, 1.7, 2.9));
+        transformed.y += sin(uTime * 5.3 + lq + ph) * w * 0.32 * leaf;
+        transformed.x += sin(uTime * 4.1 + lq * 1.3) * w * 0.12 * leaf;
       } else {
-        float f = -wind;
+        float f = -wind * (0.65 + 0.55 * gust);
         transformed.z += sin(uTime * 9.0 + transformed.x * 7.0 + transformed.y * 3.0 + ph) * f;
         transformed.y += sin(uTime * 7.0 + transformed.x * 5.0 + ph) * f * 0.35;
       }
@@ -182,6 +222,7 @@ export class ToyLighting {
     uRimColor: { value: new THREE.Color(1, 0.95, 0.85) },
     uGrade: { value: new THREE.Vector4(1, 1.05, 0, 0.35) },
     uTime: { value: 0 },
+    uWindScroll: { value: 0 },
   };
   /** world-space sun direction (normalised) */
   readonly sunDir = new THREE.Vector3(-0.4, 0.8, 0.45).normalize();

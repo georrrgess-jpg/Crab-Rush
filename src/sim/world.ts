@@ -2,7 +2,7 @@ import { CFG, speedAt, tierAt, zoneAt, type HitShape } from '../config';
 import type { Modifier } from '../meta/daily';
 import { Rng } from '../core/rng';
 import type { Entity, EntityKind, PlayerState, Shell } from './types';
-import type { GameEvent, PowerKind } from './events';
+import { LINE_KINDS, type GameEvent, type LineKind, type PowerKind } from './events';
 import { Spawner } from './spawner';
 import { levelSpeed, type CompiledLevel } from './levels';
 import { emptyLevelStats, type LevelRunStats } from './objectives';
@@ -47,6 +47,11 @@ export interface RunStats {
   maxDistNoHop: number;
   zonesReached: number;
   bumps: number;
+  /** Update 9: best line combo, lines collected whole, perfect hops, last-moment lane dodges */
+  maxCombo: number;
+  perfectLines: number;
+  perfectHops: number;
+  laneDodges: number;
 }
 
 export interface TutorialStep {
@@ -102,6 +107,34 @@ export function solveArc(apex: number, airtime: number, fallMul: number, hangSpe
 }
 
 export const HOP_ARC: HopArc = solveArc(CFG.hop.apex, CFG.hop.airtime, CFG.hop.fallMul, CFG.hop.hangSpeed, CFG.hop.hangMul);
+
+/** Update 9: the hop arc's height t seconds after take-off (0 before it and after landing). Shell arcs follow it. */
+export function hopHeight(t: number): number {
+  const A = HOP_ARC;
+  if (t <= 0) return 0;
+  const t1 = (A.v0 - A.hang) / A.g;
+  if (t < t1) return A.v0 * t - 0.5 * A.g * t * t;
+  const y1 = A.v0 * t1 - 0.5 * A.g * t1 * t1;
+  const u = t - t1;
+  const t2 = (2 * A.hang) / A.gHang;
+  if (u < t2) return y1 + A.hang * u - 0.5 * A.gHang * u * u;
+  const f = u - t2;
+  return Math.max(0, y1 - A.hang * f - 0.5 * A.gFall * f * f);
+}
+
+/** Update 9: how long after take-off the hop first reaches height y (rising), or null above the apex */
+export function hopRiseTime(y: number): number | null {
+  if (y <= 0) return 0;
+  if (y > CFG.hop.apex + 1e-6) return null;
+  let lo = 0;
+  let hi = HOP_ARC.rise;
+  for (let i = 0; i < 40; i++) {
+    const m = (lo + hi) / 2;
+    if (hopHeight(m) < y) lo = m;
+    else hi = m;
+  }
+  return (lo + hi) / 2;
+}
 
 /** gravity on the hop arc at vertical speed vy */
 function arcGravity(vy: number): number {
@@ -191,8 +224,18 @@ function freshStats(): RunStats {
     maxDistNoHop: 0,
     zonesReached: 0,
     bumps: 0,
+    maxCombo: 0,
+    perfectLines: 0,
+    perfectHops: 0,
+    laneDodges: 0,
   };
 }
+
+/** Update 9: shell lines live in a ring of slots indexed by id & LINE_MASK (far more slots than lines alive at once) */
+const LINE_SLOTS = 256;
+const LINE_MASK = LINE_SLOTS - 1;
+/** near-miss trackers start (and, once judged, stay) above any real clearance */
+const FAR = 99;
 
 function freshPlayer(): PlayerState {
   return {
@@ -262,6 +305,15 @@ export class World {
 
   power: { kind: PowerKind | null; t: number; dur: number } = { kind: null, t: 0, dur: 0 };
   streak = 0;
+  /** Update 9: shells collected in a row without letting one slip by (see CFG.combo) */
+  combo = 0;
+  /** the line of the last shell picked up (0 = none) */
+  private comboLine = 0;
+  private nextLine = 1;
+  private lineIds = new Int32Array(LINE_SLOTS);
+  private lineLen = new Int16Array(LINE_SLOTS);
+  private lineGot = new Int16Array(LINE_SLOTS);
+  private lineKind = new Uint8Array(LINE_SLOTS);
   private lastShellTime = -10;
   private nextId = 1;
   private pool: Entity[] = [];
@@ -304,6 +356,13 @@ export class World {
     this.timeScale = 1;
     this.power = { kind: null, t: 0, dur: 0 };
     this.streak = 0;
+    this.combo = 0;
+    this.comboLine = 0;
+    this.nextLine = 1;
+    this.lineIds.fill(0);
+    this.lineLen.fill(0);
+    this.lineGot.fill(0);
+    this.lineKind.fill(0);
     this.lastShellTime = -10;
     this.distSinceShell = 0;
     this.distSinceHop = 0;
@@ -351,7 +410,7 @@ export class World {
       kind === 'block' ? O.block : kind === 'low' ? O.low : kind === 'sweep' ? O.sweep : kind === 'roller' ? O.roller : kind === 'gull' ? O.gull : kind === 'scuttle' ? O.scuttle : { w: 1, d: 1, h: 1 };
     const e: Entity =
       this.pool.pop() ??
-      ({ id: 0, kind, lane, x: 0, prevX: 0, wz: 0, prevWz: 0, vz: 0, y: 0, w: 1, d: 1, h: 1, hit: null, skin: 0, state: 0, passed: false, dead: false, knocked: 0, spin: 0 } as Entity);
+      ({ id: 0, kind, lane, x: 0, prevX: 0, wz: 0, prevWz: 0, vz: 0, y: 0, w: 1, d: 1, h: 1, hit: null, skin: 0, state: 0, passed: false, dead: false, knocked: 0, spin: 0, clear: FAR, sideGap: FAR, judged: false } as Entity);
     e.id = this.nextId++;
     e.kind = kind;
     e.lane = lane;
@@ -369,6 +428,9 @@ export class World {
     e.dead = false;
     e.knocked = 0;
     e.spin = 0;
+    e.clear = FAR;
+    e.sideGap = FAR;
+    e.judged = false;
     e.power = undefined;
     e.meetWz = undefined;
     e.alt = undefined;
@@ -401,10 +463,26 @@ export class World {
     return false;
   }
 
-  addShell(x: number, y: number, wz: number, big: boolean): void {
+  /** Update 9: open a new shell line (its shells are added with addShell(..., line)); returns its id */
+  beginLine(kind: LineKind): number {
+    const id = this.nextLine++;
+    const k = id & LINE_MASK;
+    this.lineIds[k] = id;
+    this.lineLen[k] = 0;
+    this.lineGot[k] = 0;
+    this.lineKind[k] = Math.max(0, LINE_KINDS.indexOf(kind));
+    return id;
+  }
+
+  /** Update 9: the line of the last shell picked up, while the combo lasts (0 = none) */
+  get followingLine(): number {
+    return this.comboLine;
+  }
+
+  addShell(x: number, y: number, wz: number, big: boolean, line = 0): boolean {
     // a power-up's spot stays clear: no shell on top of it
-    for (const e of this.entities) if (e.kind === 'powerup' && !e.dead && Math.abs(e.wz - wz) < CFG.powerupClear && Math.abs(e.x - x) < 1.2) return;
-    const s = this.shellPool.pop() ?? ({ id: 0, x: 0, y: 0, wz: 0, big: false, dead: false, magnet: false, pullT: 0, pullDur: 0, x0: 0, y0: 0, rel0: 0 } as Shell);
+    for (const e of this.entities) if (e.kind === 'powerup' && !e.dead && Math.abs(e.wz - wz) < CFG.powerupClear && Math.abs(e.x - x) < 1.2) return false;
+    const s = this.shellPool.pop() ?? ({ id: 0, x: 0, y: 0, wz: 0, big: false, dead: false, magnet: false, pullT: 0, pullDur: 0, x0: 0, y0: 0, rel0: 0, line: 0, missed: false } as Shell);
     s.id = this.nextId++;
     s.x = x;
     s.y = y;
@@ -412,8 +490,15 @@ export class World {
     s.big = big;
     s.dead = false;
     s.magnet = false;
+    s.missed = false;
+    s.line = 0;
+    if (line > 0 && this.lineIds[line & LINE_MASK] === line) {
+      s.line = line;
+      this.lineLen[line & LINE_MASK]++;
+    }
     this.shells.push(s);
     if (this.level) this.levelStats.shellsTotal++;
+    return true;
   }
 
   // ---------------------------------------------------------------- input
@@ -787,10 +872,10 @@ export class World {
       // stepping off the board: a hop pressed in the next moment still fires
       this.player.coyote = CFG.hop.coyote;
       this.slamming = false;
-      // clear the track just ahead so the landing is safe
+      // clear the track just ahead so the landing is safe (Update 9: scuttlers too, like Second Chance)
       for (const e of this.entities) {
         const rel = e.wz - this.dist;
-        if ((e.kind === 'block' || e.kind === 'low' || e.kind === 'sweep' || e.kind === 'roller' || e.kind === 'gull') && rel > -2 && rel < 25) {
+        if ((e.kind === 'block' || e.kind === 'low' || e.kind === 'sweep' || e.kind === 'roller' || e.kind === 'gull' || e.kind === 'scuttle') && !e.dead && rel > -2 && rel < 25) {
           e.dead = true;
           this.events.push({ t: 'knock', id: e.id });
         }
@@ -866,6 +951,17 @@ export class World {
       const dx = p.x - e.x;
       const dx0 = p.prevX - e.prevX;
       const halfX = s.w / 2 + pw / 2;
+      // Update 9 near misses: the least side gap while alongside it, the least clearance while over it
+      if (!rider && Math.abs(rel) < halfZ) {
+        if (p.y < s.h) {
+          const gap = Math.abs(dx) - halfX;
+          if (gap < e.sideGap) e.sideGap = gap;
+        }
+        if (!p.grounded || p.y > 0) {
+          const t = topOver(s, dx, rel, pw, pd);
+          if (t > 0 && p.y - t < e.clear) e.clear = p.y - t;
+        }
+      }
       if ((dx >= halfX && dx0 >= halfX) || (dx <= -halfX && dx0 <= -halfX)) continue;
       if (p.y >= s.h && p.prevY >= s.h) continue;
       if (rider || p.invuln > 0 || this.opts.god) continue;
@@ -995,6 +1091,7 @@ export class World {
     this.lastShellTime = -10;
     this.stats.bumps++;
     this.events.push({ t: 'bump', x: p.x });
+    this.breakCombo(p.x);
     if (this.chaseGap !== null) this.chaseGap -= CFG.island.chase.bump;
   }
 
@@ -1020,6 +1117,7 @@ export class World {
     this.events.push({ t: 'knock', id: e.id });
     this.events.push({ t: 'stumble', kind: e.kind });
     this.streak = 0;
+    this.breakCombo(this.player.x);
   }
 
   private crash(kind: string): void {
@@ -1031,6 +1129,8 @@ export class World {
     this.mode = 'crashing';
     this.crashT = 0;
     this.crashKind = kind;
+    this.combo = 0;
+    this.comboLine = 0;
     this.timeScale = 1;
     this.waitingStep = null;
     this.events.push({ t: 'crash', kind });
@@ -1123,10 +1223,16 @@ export class World {
     const p = this.player;
     const R = CFG.shell.radius;
     const rider = this.power.kind === 'rider';
+    const behind = -CFG.combo.behind;
     for (const s of this.shells) {
       if (s.dead) continue;
       const rel = s.wz - this.dist;
-      if (rel > 3 || rel < -2) continue;
+      if (rel < behind) {
+        // Update 9: it slipped by uncollected
+        if (!s.missed && !s.magnet) this.missShell(s);
+        continue;
+      }
+      if (rel > 3) continue;
       const dx = p.x - s.x;
       const dy = p.y + 0.45 - s.y;
       let hit: boolean;
@@ -1200,26 +1306,65 @@ export class World {
     else this.streak = 1;
     this.lastShellTime = this.time;
     if (this.streak > stats.maxStreak) stats.maxStreak = this.streak;
-    this.events.push({ t: 'shell', big: s.big, streak: this.streak, x: s.x, y: s.y, wz: s.wz });
+    // Update 9 line combo
+    this.combo++;
+    if (this.combo > stats.maxCombo) stats.maxCombo = this.combo;
+    this.events.push({ t: 'shell', big: s.big, streak: this.streak, combo: this.combo, x: s.x, y: s.y, wz: s.wz });
     if (this.streak > 0 && this.streak % 10 === 0) this.events.push({ t: 'streak', n: this.streak });
+    if (this.combo % CFG.combo.every === 0) this.events.push({ t: 'combo', n: this.combo });
+    if (s.line > 0) {
+      this.comboLine = s.line;
+      const k = s.line & LINE_MASK;
+      if (this.lineIds[k] === s.line) {
+        const got = ++this.lineGot[k];
+        if (got === this.lineLen[k] && got >= CFG.lines.perfectMin && this.lineKind[k] !== 0) this.perfectLine(k, got, s);
+      }
+    }
+  }
+
+  /** Update 9: a shell that slipped by: it breaks the combo if it was on the line being followed or right in the crab's lane */
+  private missShell(s: Shell): void {
+    s.missed = true;
+    if (this.combo === 0 || this.mode !== 'running') return;
+    if ((s.line !== 0 && s.line === this.comboLine) || Math.abs(s.x - this.player.x) < CFG.combo.reach) this.breakCombo(s.x);
+  }
+
+  private breakCombo(x: number): void {
+    if (this.combo >= CFG.combo.breakMin) this.events.push({ t: 'comboBreak', n: this.combo, x });
+    this.combo = 0;
+    this.comboLine = 0;
+  }
+
+  /** every shell of a line collected */
+  private perfectLine(k: number, n: number, s: Shell): void {
+    const kind = (LINE_KINDS[this.lineKind[k] as number] ?? 'trail') as LineKind;
+    const bonus = CFG.lines.bonus[kind] ?? 0;
+    this.stats.perfectLines++;
+    this.stats.bonus += bonus;
+    this.addFever(CFG.lines.fever);
+    this.events.push({ t: 'perfectLine', kind, n, bonus, x: s.x, y: s.y });
   }
 
   // ---------------------------------------------------------------- passes, zones
   private detectPasses(): void {
     const p = this.player;
+    const pd = CFG.player.d;
     for (const e of this.entities) {
-      if (e.passed || e.dead) continue;
+      if (e.dead) continue;
       const rel = e.wz - this.dist;
-      if (rel > 0) continue;
+      // Update 9: once it is fully behind the crab, judge the near miss (perfect hop, last-moment dodge)
+      if (!e.judged && e.hit && rel < -(e.hit.d / 2 + pd / 2)) this.judgeNearMiss(e);
+      if (e.passed || rel > 0) continue;
       e.passed = true;
       switch (e.kind) {
         case 'block':
         case 'roller':
         case 'gull':
-          if (e.lane === p.prevLane && p.lane !== e.lane && this.time - p.laneChangeAt <= CFG.closeShave.window && p.y < e.h) {
+          // (Update 9: not when the crab was just bounced off something: a bump is not a dodge)
+          if (e.lane === p.prevLane && p.lane !== e.lane && this.time - p.laneChangeAt <= CFG.closeShave.window && p.y < e.h && p.bumpT <= 0) {
             this.stats.closeShaves++;
             this.stats.bonus += CFG.closeShave.reward;
-            this.events.push({ t: 'closeShave', reward: CFG.closeShave.reward });
+            this.events.push({ t: 'closeShave', reward: CFG.closeShave.reward, kind: e.kind === 'gull' && e.alt === 1 ? 'coconut' : e.kind, side: e.x < p.x ? -1 : 1, x: e.x });
             this.addFever(CFG.fever.shave);
           } else if (e.kind === 'roller' && p.y > 0.05 && Math.abs(p.x - e.x) < 1.2) {
             this.stats.obstaclesHopped++;
@@ -1252,6 +1397,39 @@ export class World {
         default:
           break;
       }
+    }
+  }
+
+  /**
+   * Update 9 near misses, judged once an obstacle is fully behind the crab. Hopped over it with less
+   * than `perfectHop.tight` of the spare height left: a perfect hop. Left its lane at the last
+   * moment and it passed within `laneDodge.gap` of the crab's side: a lane dodge.
+   */
+  private judgeNearMiss(e: Entity): void {
+    e.judged = true;
+    const p = this.player;
+    if (this.mode !== 'running' || this.power.kind === 'rider') return;
+    const kind = e.kind === 'gull' && e.alt === 1 ? 'coconut' : e.kind;
+    if (e.clear < FAR) {
+      const H = CFG.perfectHop;
+      const spare = CFG.hop.apex - e.h;
+      if (e.clear > 0.01 && spare > 0 && e.clear < H.tight * spare) {
+        this.stats.perfectHops++;
+        this.stats.bonus += H.reward;
+        this.addFever(H.fever);
+        this.events.push({ t: 'perfectHop', kind, margin: e.clear, reward: H.reward, x: e.x });
+      }
+      return;
+    }
+    if (e.kind === 'sweep' || e.sideGap >= FAR) return;
+    const D = CFG.laneDodge;
+    // (an overlap of a few cm is a rounded corner missed, not a touch; while blinking it is a pass-through)
+    const minGap = p.invuln > 0 ? 0 : -0.1;
+    if (e.sideGap < D.gap && e.sideGap > minGap && e.lane === p.prevLane && p.lane !== e.lane && p.bumpT <= 0 && this.time - p.laneChangeAt <= D.window) {
+      this.stats.laneDodges++;
+      this.stats.bonus += D.reward;
+      this.addFever(D.fever);
+      this.events.push({ t: 'laneDodge', kind, side: e.x < p.x ? -1 : 1, gap: Math.max(0, e.sideGap), reward: D.reward, x: e.x });
     }
   }
 

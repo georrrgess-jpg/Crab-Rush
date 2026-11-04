@@ -1,10 +1,10 @@
 import { CFG, tierAt, tierProgress, zoneAt } from '../config';
-import type { Rng } from '../core/rng';
+import { Rng } from '../core/rng';
 import { HAZARDS, INTRO_PATTERNS, PATTERNS, PATTERN_BY_ID, patternRows, rowSpacing, toSolverRows, type Pattern } from './patterns';
-import { initialStates, solveRows, type SolverState } from './solver';
-import type { PowerKind } from './events';
+import { advance, initialStates, solveRows, type SolverRow, type SolverState } from './solver';
+import type { LineKind, PowerKind } from './events';
 import { POWER_KINDS } from './events';
-import { PAD_APEX_T, type World } from './world';
+import { PAD_APEX_T, hopHeight, type World } from './world';
 import type { Block } from './levels';
 import type { Modifier } from '../meta/daily';
 
@@ -35,8 +35,182 @@ function themed(pt: Pattern, mod: Modifier | null): boolean {
   return false;
 }
 
-interface Strand {
-  pts: { lane: number; wz: number; big: boolean }[];
+/** Update 9: one point of a shell line, from a pattern cell */
+export interface LinePt {
+  lane: number;
+  wz: number;
+  /** row index in the pattern */
+  row: number;
+  /** a hop obstacle in this lane and row: the line arcs over it (else a shell on the sand) */
+  arc: boolean;
+  big: boolean;
+  /** a block or gull right beside it in its row (the risky line) */
+  risky: boolean;
+}
+
+export interface Strand {
+  pts: LinePt[];
+}
+
+const isMark = (c: string | undefined): boolean => c === 's' || c === 'S' || c === 'P';
+const OBSTACLE = 'BLWRGlrwC<>^T';
+
+/** Update 9: lanes (bit mask) a row puts an obstacle in; scuttlers count in both of their lanes */
+export function busyLanes(row: string | undefined): number {
+  if (!row) return 0;
+  let m = 0;
+  for (let l = 0; l < 3; l++) {
+    const c = row[l] as string;
+    if (!OBSTACLE.includes(c)) continue;
+    m |= 1 << l;
+    if (c === '<' && l > 0) m |= 1 << (l - 1);
+    if (c === '>' && l < 2) m |= 1 << (l + 1);
+  }
+  return m;
+}
+
+/** lanes (bit mask) with a dodge-only obstacle (block, gull, coconut) */
+function solidLanes(row: string | undefined): number {
+  if (!row) return 0;
+  let m = 0;
+  for (let l = 0; l < 3; l++) if ('BGC'.includes(row[l] as string)) m |= 1 << l;
+  return m;
+}
+
+/**
+ * Update 9: the line points of a pattern row. Shell marks (s, S, P) are points on the sand; a hop
+ * obstacle with an arc (l, r, the lanes of a www row next to the line, a scuttler's landing lane next
+ * to the line) is an arc point.
+ */
+export function rowPoints(rows: readonly string[], i: number, wz: number): LinePt[] {
+  const row = rows[i] as string;
+  const prev = rows[i - 1];
+  const next = rows[i + 1];
+  const near = (l: number): boolean => isMark(prev?.[l]) || isMark(next?.[l]) || 'lr'.includes(prev?.[l] ?? '.') || 'lr'.includes(next?.[l] ?? '.');
+  const solid = solidLanes(row);
+  const pts: LinePt[] = [];
+  const add = (lane: number, arc: boolean, big: boolean): void => {
+    if (pts.some((q) => q.lane === lane)) return;
+    pts.push({ lane, wz, row: i, arc, big, risky: !arc && (solid & (lane > 0 ? 1 << (lane - 1) : 0) | solid & (lane < 2 ? 1 << (lane + 1) : 0)) !== 0 });
+  };
+  if (row === 'www') {
+    // over the lane(s) the line arrives in; else the lane(s) it leaves in; else the middle
+    const into = (r: string | undefined, l: number): boolean => isMark(r?.[l]) || 'lr'.includes(r?.[l] ?? '.');
+    for (let l = 0; l < 3; l++) if (into(prev, l)) add(l, true, false);
+    if (pts.length === 0) for (let l = 0; l < 3; l++) if (into(next, l)) add(l, true, false);
+    if (pts.length === 0) add(1, true, false);
+    return pts.sort((a, b) => a.lane - b.lane);
+  }
+  if (row === 'WWW') return pts;
+  // a scuttler lands in the next lane before it reaches the crab: an arc there when the line runs into it
+  for (let l = 0; l < 3; l++) {
+    const c = row[l] as string;
+    if (c !== '<' && c !== '>') continue;
+    const to = l + (c === '>' ? 1 : -1);
+    if (near(to) && !(solid & (1 << to))) add(to, true, false);
+  }
+  for (let l = 0; l < 3; l++) {
+    const c = row[l] as string;
+    if (c === 'l' || c === 'r') add(l, true, false);
+    else if (isMark(c)) add(l, false, c === 'S');
+  }
+  return pts.sort((a, b) => a.lane - b.lane);
+}
+
+/** Island Hop cells the solver doesn't see (pickups, pads, pools) are free; coconuts play like gulls */
+export function solverChars(r: string): string {
+  return r.replace(/[dDH^To]/g, '.').replace(/C/g, 'G');
+}
+
+/**
+ * Update 9: is following this strand a fair path? The fairness solver runs over the pattern with the
+ * player held to the strand's lane at each of its rows (and hopping its arcs, which are hop cells),
+ * from any lane, and must come out alive at the end. `dts[0]` is the lead-in before the first row.
+ */
+export function followable(sr: readonly SolverRow[], dts: readonly number[], pts: readonly LinePt[]): boolean {
+  const at: number[] = sr.map(() => -1);
+  for (const q of pts) at[q.row] = q.lane;
+  let states: SolverState[] = initialStates();
+  for (let i = 0; i < sr.length; i++) {
+    states = advance(states, sr[i] as SolverRow, dts[i] as number);
+    const lane = at[i] as number;
+    if (lane >= 0) states = states.filter((st) => st.lane === lane);
+    if (states.length === 0) return false;
+  }
+  return true;
+}
+
+/**
+ * Update 9: keep every strand a fair path at speed v: a strand that isn't is cut before its first
+ * point the solver can't reach (the rest becomes a strand of its own, checked the same way); an arc
+ * point that can't be followed even alone loses its arc shells. Returns the strands to lay.
+ */
+export function fairStrands(strands: Strand[], rows: readonly string[], sp: number, v: number): Strand[] {
+  const sr = toSolverRows(rows.map(solverChars), v);
+  const dts = rows.map((_, i) => (i === 0 ? 1.0 : sp / v));
+  const out: Strand[] = [];
+  const queue = strands.slice();
+  while (queue.length > 0) {
+    const st = queue.shift() as Strand;
+    if (st.pts.length === 0) continue;
+    if (followable(sr, dts, st.pts)) {
+      out.push(st);
+      continue;
+    }
+    // the longest followable head
+    let k = st.pts.length - 1;
+    while (k > 0 && !followable(sr, dts, st.pts.slice(0, k))) k--;
+    if (k === 0) {
+      // even its first point alone is unfair: skip it (an arc), or keep a lone sand shell
+      const q = st.pts[0] as LinePt;
+      if (!q.arc) out.push({ pts: [q] });
+      queue.unshift({ pts: st.pts.slice(1) });
+      continue;
+    }
+    out.push({ pts: st.pts.slice(0, k) });
+    queue.unshift({ pts: st.pts.slice(k) });
+  }
+  return out;
+}
+
+/** Update 9: link the line points of consecutive rows into strands (same lane first, else a neighbouring lane). */
+export function buildStrands(rows: readonly string[], wzOf: (i: number) => number): Strand[] {
+  const strands: Strand[] = [];
+  let active = new Map<number, Strand>();
+  for (let i = 0; i < rows.length; i++) {
+    const next = new Map<number, Strand>();
+    const claimed = new Set<Strand>();
+    const pts = rowPoints(rows, i, wzOf(i));
+    // straight continuations claim their strands first, so a diagonal never steals one
+    for (const pass of [0, 1]) {
+      for (const q of pts) {
+        if (next.has(q.lane)) continue;
+        let st: Strand | undefined;
+        if (pass === 0) {
+          const c = active.get(q.lane);
+          if (c && !claimed.has(c)) st = c;
+          else continue;
+        } else {
+          for (const d of [-1, 1]) {
+            const c = active.get(q.lane + d);
+            if (c && !claimed.has(c)) {
+              st = c;
+              break;
+            }
+          }
+        }
+        if (!st) {
+          st = { pts: [] };
+          strands.push(st);
+        }
+        claimed.add(st);
+        st.pts.push(q);
+        next.set(q.lane, st);
+      }
+    }
+    active = next;
+  }
+  return strands;
 }
 
 /** Update 7: a per-tier [lo, hi] range at track position d, gliding toward the next tier's across the tier. */
@@ -51,11 +225,6 @@ function tierRange(table: readonly (readonly [number, number])[], d: number): [n
 const INTRO_IDS = new Set<string>(Object.values(INTRO_PATTERNS));
 /** exactly one bit set */
 const single = (m: number): boolean => m !== 0 && (m & (m - 1)) === 0;
-
-const smooth = (a: number, b: number, x: number): number => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
 
 /** Chooses, validates and places patterns ahead of the player. */
 export class Spawner {
@@ -78,7 +247,12 @@ export class Spawner {
   private sinceIntro = 99;
   private flagDone = false;
 
+  /** Update 9: shell-only choices (Big Shells, river shapes) roll their own dice, so tuning the shell
+   *  lines never reshuffles the obstacles a seed deals (Daily Tide and Crab Cup courses stay put) */
+  private shellRng: Rng;
+
   constructor(private w: World, private rng: Rng, startDist: number, tutorial: TutorialFlags | null) {
+    this.shellRng = new Rng((w.opts.seed ^ 0x5bd1e995) >>> 0);
     this.lastRowWz = startDist + 30;
     this.breatherEvery = this.pickBreather();
     const script = tutorialQueue(tutorial);
@@ -242,23 +416,38 @@ export class Spawner {
     return [...out.values()];
   }
 
+  /**
+   * A breather: no obstacles, just a shell river (Update 9: `riverRows` rows that wander a lane or
+   * two, sometimes ending in a Big Shell), with the power-up in its middle when one is due.
+   */
   private breather(wz0: number, withPower: boolean): void {
     const rng = this.rng;
-    const lane = rng.int(3);
-    const weave = rng.next() < 0.4;
+    const sr = this.shellRng;
+    const n = Math.max(2, CFG.lines.riverRows);
     const L = CFG.breatherLength;
-    const rows = ['.s.', '.s.', '.s.'].map(() => '...');
-    const mk = (l: number): string => '.'.repeat(l) + 's' + '.'.repeat(2 - l);
-    const lanes = weave ? [lane, (lane + (lane === 0 ? 1 : -1) + 3) % 3, lane] : [lane, lane, lane];
-    for (let i = 0; i < 3; i++) rows[i] = mk(lanes[i] as number);
+    // (the course's dice: the river's lane, and a roll kept so the obstacle sequence matches earlier updates)
+    const lanes: number[] = [rng.int(3)];
+    const weave = rng.next() < 0.4;
+    let turns = 0;
+    for (let i = 1; i < n; i++) {
+      const cur = lanes[i - 1] as number;
+      let nl = cur;
+      if (turns < (weave ? 2 : 1) && sr.next() < 0.55) nl = cur !== 1 ? 1 : sr.next() < 0.5 ? 0 : 2;
+      if (nl !== cur) turns++;
+      lanes.push(nl);
+    }
+    const mk = (l: number, c: string): string => '.'.repeat(l) + c + '.'.repeat(2 - l);
+    const rows = lanes.map((l) => mk(l, 's'));
+    if (sr.next() < CFG.lines.riverBig) rows[n - 1] = mk(lanes[n - 1] as number, 'S');
     const pt: Pattern = {
-      def: { id: 'breather', minTier: 0, weight: 0, spacing: L / 2, template: '' },
+      def: { id: 'breather', minTier: 0, weight: 0, spacing: L / (n - 1), template: '' },
       rows,
       hasPower: false,
     };
     if (withPower) {
-      // power-up sits in the middle row of the shell line
-      pt.rows[1] = '.'.repeat(lanes[1] as number) + 'P' + '.'.repeat(2 - (lanes[1] as number));
+      // the power-up sits in the middle of the river
+      const k = n >> 1;
+      pt.rows[k] = mk(lanes[k] as number, 'P');
       this.schedulePower(wz0 + L);
     }
     this.place(pt, false, wz0, this.w.speedForDist(wz0), false);
@@ -277,8 +466,6 @@ export class Spawner {
     const sp = pt.def.id === 'breather' || block ? pt.def.spacing : rowSpacing(pt.def.spacing, v);
     this.lastPattern = pt.def.id;
     this.seen |= pt.hazards ?? 0;
-    const strands: Strand[] = [];
-    let active = new Map<number, Strand>();
     let firstObstacleWz = Infinity;
 
     for (let i = 0; i < rows.length; i++) {
@@ -287,14 +474,6 @@ export class Spawner {
       if (row === 'WWW' || row === 'www') {
         w.addEntity('sweep', 1, wz, { skin: zoneAt(wz) });
         firstObstacleWz = Math.min(firstObstacleWz, wz);
-        if (row === 'www') {
-          // arcs over the lane(s) the shell path arrives in, else the middle
-          const prev = rows[i - 1] as string | undefined;
-          const lanes: number[] = [];
-          if (prev) for (let l = 0; l < 3; l++) if (prev[l] === 's' || prev[l] === 'S') lanes.push(l);
-          if (lanes.length === 0) lanes.push(1);
-          for (const l of lanes) this.arc(l, wz, CFG.obstacle.sweep.h);
-        }
       } else {
         for (let l = 0; l < 3; l++) {
           const ch = row[l] as string;
@@ -307,14 +486,12 @@ export class Spawner {
             case 'l':
               w.addEntity('low', l, wz, { skin: zoneAt(wz) });
               firstObstacleWz = Math.min(firstObstacleWz, wz);
-              if (ch === 'l') this.arc(l, wz, CFG.obstacle.low.h);
               break;
             case 'R':
             case 'r': {
               // the ball rolls toward the player and meets them exactly at this row (see World.rollerWz)
               w.addEntity('roller', l, wz, { skin: zoneAt(wz), vz: -CFG.rollerSpeed, meetWz: wz });
               firstObstacleWz = Math.min(firstObstacleWz, wz);
-              if (ch === 'r') this.arc(l, wz, CFG.obstacle.roller.h);
               break;
             }
             case 'G':
@@ -367,37 +544,17 @@ export class Spawner {
           }
         }
       }
-
-      // shell strands: link marks in consecutive rows
-      const next = new Map<number, Strand>();
-      const claimed = new Set<Strand>();
-      for (let l = 0; l < 3; l++) {
-        const ch = row[l] as string;
-        const isShell = ch === 's' || ch === 'S' || ch === 'P';
-        if (!isShell) continue;
-        let st = active.get(l);
-        if (!st || claimed.has(st)) {
-          st = undefined;
-          for (const d of [-1, 1]) {
-            const cand = active.get(l + d);
-            if (cand && !claimed.has(cand) && !Array.from(next.values()).includes(cand)) {
-              st = cand;
-              break;
-            }
-          }
-        }
-        if (!st) {
-          st = { pts: [] };
-          strands.push(st);
-        }
-        claimed.add(st);
-        st.pts.push({ lane: l, wz, big: ch === 'S' });
-        next.set(l, st);
-      }
-      active = next;
     }
 
-    for (const st of strands) this.layStrand(st);
+    // Update 9: shell lines (strands of shells, arcs over hop obstacles, lane changes that lead the way)
+    const river = pt.def.id === 'breather';
+    const strands = river ? buildStrands(rows, (i) => wz0 + i * sp) : fairStrands(buildStrands(rows, (i) => wz0 + i * sp), rows, sp, v);
+    if (!scripted && !block && !river && this.shellRng.next() < CFG.lines.bigChance) {
+      // one Big Shell on the riskiest point: a hop's apex or right beside a block
+      const risky = strands.flatMap((st) => st.pts.filter((q) => q.arc || q.risky));
+      if (risky.length > 0) (risky[this.shellRng.int(risky.length)] as LinePt).big = true;
+    }
+    for (const st of strands) this.layLine(st, rows, v, river);
 
     if (scripted) {
       const idx = TUTORIAL_SCRIPT.findIndex((s) => s.id === pt.def.id);
@@ -407,33 +564,113 @@ export class Spawner {
     this.lastRowWz = wz0 + (rows.length - 1) * sp;
   }
 
-  private layStrand(st: Strand): void {
-    const w = this.w;
-    const X = CFG.laneX;
-    const y = CFG.shell.y;
-    for (let i = 0; i < st.pts.length; i++) {
-      const a = st.pts[i]!;
-      const b = st.pts[i + 1];
-      if (!b) {
-        w.addShell(X[a.lane] as number, y, a.wz, a.big);
-        break;
-      }
-      const dz = b.wz - a.wz;
-      const n = Math.max(1, Math.round(dz / (CFG.shell.spacing * (w.modifier === 'lowTide' ? CFG.daily.lowTideShells : 1))));
-      for (let j = 0; j < n; j++) {
-        const u = j / n;
-        const x = (X[a.lane] as number) + ((X[b.lane] as number) - (X[a.lane] as number)) * smooth(0.3, 0.7, u);
-        w.addShell(x, y, a.wz + dz * u, j === 0 && a.big);
-      }
-    }
+  /** Update 9: what a strand is made of (see LineKind) */
+  static lineKind(st: Strand, river: boolean): LineKind {
+    if (river) return 'river';
+    const arc = st.pts.some((q) => q.arc);
+    let turn = false;
+    for (let i = 1; i < st.pts.length; i++) if ((st.pts[i] as LinePt).lane !== (st.pts[i - 1] as LinePt).lane) turn = true;
+    return arc && turn ? 'hopTurn' : arc ? 'arc' : turn ? 'zig' : 'trail';
   }
 
-  /** Five shells arcing over an obstacle, following a well-timed hop. */
-  private arc(lane: number, wz: number, h: number): void {
-    const x = CFG.laneX[lane] as number;
-    for (let k = -2; k <= 2; k++) {
-      const y = h + 0.1 + (CFG.hop.apex - h - 0.1) * (1 - (k / 2) * (k / 2));
-      this.w.addShell(x, y, wz + k * 1.4, false);
+  /**
+   * Update 9: lay one strand as a shell line. Points on the sand are single shells; arc points are a
+   * hop's arc (taking off half an airtime before the obstacle, the middle of its hop window, so the
+   * shells trace the hop that clears it). Between points the line is filled at the shell spacing; a
+   * lane change becomes two lean shells, each reachable from its own lane, placed clear of the rows'
+   * obstacles (early when a block waits in the lane being left).
+   */
+  private layLine(st: Strand, rows: readonly string[], v: number, river: boolean): void {
+    const w = this.w;
+    const X = CFG.laneX;
+    const L = CFG.lines;
+    const y0 = CFG.shell.y;
+    const T = CFG.hop.airtime;
+    const half = (v * T) / 2;
+    const sp = CFG.shell.spacing * Math.pow(Math.max(1, v / CFG.rowSpacingRefSpeed), L.spacingExp) * (w.modifier === 'lowTide' ? CFG.daily.lowTideShells : 1);
+    const line = w.beginLine(Spawner.lineKind(st, river));
+
+    // anchors: a shell on the sand (z0 = z1) or a hop arc from take-off z0 to landing z1
+    const an: { lane: number; z0: number; z1: number; arc: boolean; big: boolean; row: number }[] = [];
+    for (const q of st.pts) {
+      const prev = an[an.length - 1];
+      if (q.arc) {
+        let c = q.wz;
+        let big = q.big;
+        if (prev?.arc && prev.lane === q.lane && prev.z1 > c - half) {
+          // too close for two hops: one hop clears both (the solver groups them), centred between them
+          c = (prev.z0 + half + c) / 2;
+          big ||= prev.big;
+          an.pop();
+        } else if (prev && !prev.arc && prev.z1 > c - half - 0.5) {
+          // a sand shell under the take-off
+          big ||= prev.big;
+          an.pop();
+        }
+        an.push({ lane: q.lane, z0: c - half, z1: c + half, arc: true, big, row: q.row });
+      } else {
+        if (prev?.arc && q.wz < prev.z1 + 1.0) continue; // under the landing
+        an.push({ lane: q.lane, z0: q.wz, z1: q.wz, arc: false, big: q.big, row: q.row });
+      }
+    }
+
+    const add = (x: number, y: number, z: number, big = false): void => {
+      w.addShell(x, y, z, big, line);
+    };
+    for (let i = 0; i < an.length; i++) {
+      const a = an[i]!;
+      const xa = X[a.lane] as number;
+      if (a.arc) {
+        const n = Math.max(4, Math.round((v * T) / sp));
+        let apex = 0;
+        for (let k = 1; k <= n; k++) if (hopHeight((T * k) / n) > hopHeight((T * apex) / n)) apex = k;
+        for (let k = 0; k <= n; k++) {
+          const t = (T * k) / n;
+          add(xa, y0 + hopHeight(t), a.z0 + v * t, a.big && k === apex);
+        }
+      } else add(xa, y0, a.z0, a.big);
+
+      const b = an[i + 1];
+      if (!b) break;
+      // fill the stretch between a's end and b's start
+      const z0 = a.z1;
+      const z1 = b.z0;
+      const len = z1 - z0;
+      if (len <= 0.05) continue;
+      const fillSame = (lane: number, from: number, to: number): void => {
+        const n = Math.round((to - from) / sp);
+        for (let j = 1; j < n; j++) add(X[lane] as number, y0, from + ((to - from) * j) / n);
+      };
+      if (a.lane === b.lane) {
+        fillSame(a.lane, z0, z1);
+        continue;
+      }
+      // a lane change: lean shells, clear of the obstacles of the rows on either side
+      const xb = X[b.lane] as number;
+      const dir = Math.sign(xb - xa);
+      const lanes = (1 << a.lane) | (1 << b.lane);
+      const cA = a.arc ? 0.5 : busyLanes(rows[a.row]) & lanes ? L.clearAfter + L.clearAfterT * v : 0;
+      const cB = Math.max(L.leadT * v, b.arc || busyLanes(rows[b.row]) & lanes ? L.clearBefore + L.clearBeforeT * v : 0);
+      let g = Math.max(sp, v * L.leanGapT);
+      let r0 = z0 + cA;
+      let r1 = z1 - cB;
+      if (r1 - r0 < g) {
+        if (r1 - r0 >= 1.5) g = r1 - r0; // a quicker turn that still keeps the clearances
+        else {
+          // no room for the clearances: the middle of the stretch
+          g = Math.min(g, len * 0.6);
+          r0 = z0 + (len - g) / 2;
+          r1 = r0 + g;
+        }
+      }
+      const early = b.arc ? busyLanes(rows[b.row]) & (1 << a.lane) : solidLanes(rows[b.row]) & (1 << a.lane);
+      const zA = r0 + (r1 - r0 - g) * (early ? L.turnEarly : L.turnAt);
+      const zB = zA + g;
+      fillSame(a.lane, z0, zA);
+      // (a lean shell right on top of its neighbour is left out)
+      if (zA - z0 > 1.0) add(xa + dir * L.lean, y0, zA);
+      if (z1 - zB > 1.0) add(xb - dir * L.lean, y0, zB);
+      fillSame(b.lane, zB, z1);
     }
   }
 }

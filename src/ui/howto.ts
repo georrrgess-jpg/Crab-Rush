@@ -1,5 +1,7 @@
 import { btn, el } from './dom';
 import { ICON } from './icons';
+import { backButton } from './kit';
+import { controlsCard } from './controls';
 
 const crab = (x: number, y: number, s = 1, op = 1): string =>
   `<g transform="translate(${x} ${y}) scale(${s})" opacity="${op}"><ellipse cx="0" cy="0" rx="16" ry="11" fill="#e5452b"/><ellipse cx="0" cy="4" rx="11" ry="5" fill="#f7a76c"/><circle cx="-6" cy="-10" r="4" fill="#fff"/><circle cx="6" cy="-10" r="4" fill="#fff"/><circle cx="-6" cy="-9" r="2" fill="#14141c"/><circle cx="6" cy="-9" r="2" fill="#14141c"/><path d="M-16 -2c-8-3-9-10-4-13 1 4 3 6 6 6M16 -2c8-3 9-10 4-13-1 4-3 6-6 6" fill="#e5452b"/><ellipse cx="0" cy="-15" rx="15" ry="4" fill="#f2cf7a"/><path d="M-8 -15c0-7 16-7 16 0z" fill="#f2cf7a"/><rect x="-8" y="-17" width="16" height="2.5" fill="#2c4fa3"/></g>`;
@@ -24,18 +26,17 @@ export class HowToScreen {
     const dim = el('div', 'page-dim');
     const panel = el('div', 'page-card wide');
     const head = el('div', 'page-head');
-    head.append(btn(ICON.back, 'icon ghost back', back, 'Back'), el('h2', '', 'How to Play'));
+    head.append(backButton(back), el('h2', '', 'How to Play'));
     panel.appendChild(head);
     const body = el('div', 'page-body');
     body.innerHTML = `<div class="howto-cards">
-      <div class="howto-card"><div class="hd"><span class="num">1</span>Move left or right</div>${D1}<p>Swipe or tap a side to switch lanes. You can switch in mid-air too.</p></div>
+      <div class="howto-card"><div class="hd"><span class="num">1</span>Move left or right</div>${D1}<p>Swipe, tap a side or use the arrow keys to switch lanes. You can switch in mid-air too.</p></div>
       <div class="howto-card"><div class="hd"><span class="num">2</span>Dodge obstacles</div>${D2}<p>Tall things: dodge. Low things: hop or dodge. Waves: hop! Clipping something from the side only bumps you.</p></div>
       <div class="howto-card"><div class="hd"><span class="num">3</span>Collect shells &amp; unlock</div>${D3}<p>Shells unlock new crabs and upgrade power-ups. Finish goals for bonus shells.</p></div>
     </div>
-    <div class="controls">
-      <div><h4>Touch</h4>Swipe ◂ ▸ or tap a side: move<br>Swipe up: hop<br>Swipe down: drop fast</div>
-      <div><h4>Keyboard</h4>${ICON.key('←')}${ICON.key('→')} or ${ICON.key('A')}${ICON.key('D')}: move<br>${ICON.key('↑')} ${ICON.key('W')} ${ICON.key('Space')}: hop<br>${ICON.key('↓')} ${ICON.key('S')}: drop · ${ICON.key('Esc')}: pause</div>
-    </div>`;
+    `;
+    // every device's controls, the one in hand first (Update 9)
+    body.appendChild(controlsCard('all'));
     const done = btn('Got it!', 'big', back);
     done.style.width = '100%';
     done.style.marginTop = '12px';

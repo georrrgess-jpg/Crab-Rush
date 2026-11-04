@@ -322,6 +322,8 @@ class PropKit {
   tikiBars = [0xff7a1a, 0xff4a8a].map((c) => P.tikiBar(c));
   outriggers = [0xe53935, 0x22a8e0].map((c) => P.outrigger(c));
   braces = P.pilingBraces((CFG.trackHalfWidth + 0.8) * 2);
+  /** Update 9: fluttering feather flags along the beach (near tiles only) */
+  featherFlags = [0xff3d6e, 0x22a8e0, 0xffb020].map((c) => P.featherFlag(c));
   torchLo = P.tikiTorch(true);
   lifeguardLo = P.lifeguardTower(true);
   umbrellaRedLo = P.umbrella(PALETTE.umbrellaRed, PALETTE.umbrellaCream, 0.12, true);
@@ -341,7 +343,7 @@ class PropKit {
     this.farMap.set(this.lifeguard, this.lifeguardLo);
     this.farMap.set(this.umbrellaRed, this.umbrellaRedLo);
     this.farMap.set(this.umbrellaBlue, this.umbrellaBlueLo);
-    for (const g of [...this.driftwood, this.sandcastle, this.floatLine, this.crabPots, this.hangingBuoys, ...this.outriggers, this.braces]) this.farMap.set(g, null);
+    for (const g of [...this.driftwood, this.sandcastle, this.floatLine, this.crabPots, this.hangingBuoys, ...this.outriggers, this.braces, ...this.featherFlags]) this.farMap.set(g, null);
     for (const g of [this.starfish, this.starfishPurple, this.pinkShell, this.tinyCrab, this.seaweed, this.towelA, this.towelB, this.miniCastle, ...this.buckets, ...this.burrows, ...this.starClusters, ...this.corals, this.urchins, this.postGull, this.net, this.bench, this.buoy, ...this.grass, this.lifeRing, ...this.planters, ...this.anemones, this.barrels, this.windsock, ...this.flowerBushes, ...this.kayaks, ...this.sailboats]) this.farMap.set(g, null);
   }
 }
@@ -570,6 +572,9 @@ export class Scenery {
             }
           }
           if (r() < 0.55) pl.add(K.sandcastle, -5.3 - r() * 1.6, rz(2, 22), r() * 6, 0.9 + r() * 0.3);
+          // Update 9: feather flags on the beach, banners streaming in the breeze off the sea
+          pl.add(K.featherFlags[v % 3] as THREE.BufferGeometry, -4.95 - r() * 0.5, rz(3, 22), Math.PI + (r() - 0.5) * 0.4, 1, 0, true);
+          if (rich && v % 2 === 0) pl.add(K.featherFlags[(v + 1) % 3] as THREE.BufferGeometry, 5.0 + r() * 0.6, rz(3, 22), Math.PI + (r() - 0.5) * 0.4, 0.95, 0, true);
           if (r() < 0.55) pl.add(K.driftwood[Math.floor(r() * 3)] as THREE.BufferGeometry, -6.5 - r() * 4, rz(), r() * 6, 0.9 + r() * 0.3);
           if (rich) for (let i = 0; i < 3; i++) pl.add(K.grass[Math.floor(r() * 3)] as THREE.BufferGeometry, -8 - r() * 9, rz(), r() * 6, 1 + r() * 0.5);
         }

@@ -1,3 +1,4 @@
+import { CFG } from '../config';
 /**
  * Screen kit (UPDATE4_PLAN.md §2): size classes, the wallet chip, the pinned action bar, bottom sheets,
  * number roll and the toast lane. Every overlay screen builds its chrome from these so headers, wallets
@@ -35,6 +36,131 @@ export function onSizeClass(f: (s: SizeClass) => void): void {
 }
 export function sizeClass(): SizeClass {
   return (document.documentElement.dataset.size as SizeClass | undefined) ?? 'regular';
+}
+
+/**
+ * Input mode (Update 9): `<html data-input>` follows the last thing the player used, so hints match
+ * the device: keycaps on a computer, swipes on a phone, pad buttons with a controller. CSS shows the
+ * matching `.khint` / `.for-*` parts and hides focus rings for touch. Touch-first screens start in
+ * `touch`, everything else in `mouse`.
+ */
+export type InputMode = 'touch' | 'mouse' | 'keyboard' | 'pad';
+const inputCb: ((m: InputMode) => void)[] = [];
+export function inputMode(): InputMode {
+  return (document.documentElement.dataset.input as InputMode | undefined) ?? 'mouse';
+}
+export function setInputMode(m: InputMode): void {
+  if (document.documentElement.dataset.input === m) return;
+  document.documentElement.dataset.input = m;
+  for (const f of inputCb) f(m);
+}
+export function onInputMode(f: (m: InputMode) => void): void {
+  inputCb.push(f);
+}
+let inputInstalled = false;
+export function installInputMode(): void {
+  if (inputInstalled || typeof window === 'undefined') return;
+  inputInstalled = true;
+  const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+  if (!document.documentElement.dataset.input) setInputMode(coarse ? 'touch' : 'mouse');
+  window.addEventListener('pointerdown', (e) => setInputMode(e.pointerType === 'touch' || e.pointerType === 'pen' ? 'touch' : 'mouse'), { capture: true, passive: true });
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      // modifier taps (alt-tab, screenshots) are not a switch to the keyboard
+      if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt' || e.key === 'Meta') return;
+      setInputMode('keyboard');
+    },
+    { capture: true, passive: true },
+  );
+}
+
+/** UI knob: the controls coach shows at the start of this many first runs (Update 9) */
+export const COACH_RUNS = CFG.ui.coachRuns;
+
+/** the keys (and pad buttons) shown on menu buttons for each action: Enter / A confirms, Esc / B backs out */
+export const KEYS = {
+  confirm: { kb: ['Enter'], pad: 'A' },
+  back: { kb: ['Esc'], pad: 'B' },
+  pause: { kb: ['Esc'], pad: '☰' },
+} as const;
+
+/**
+ * A small key hint (`Enter`, `Esc`) that sits inside a button. It shows only on a computer, and with
+ * a controller it shows the pad button instead. Decorative: the button keeps its own label.
+ */
+export function keyHint(keys: readonly string[], pad?: string): string {
+  const kb = keys.map((k) => `<kbd class="kc">${k}</kbd>`).join('');
+  const pc = pad === 'A' ? '#3fbf55' : pad === 'B' ? '#e8432a' : '#4a5a80';
+  return `<span class="khint" aria-hidden="true"><span class="kh-kb">${kb}</span>${pad ? `<span class="kh-pad"><kbd class="kc pad" style="--pc:${pc}">${pad}</kbd></span>` : ''}</span>`;
+}
+
+/** A line of key hints under a tight row of buttons: `[Enter] Next race · [Esc] Home` (computers only). */
+export function keyLine(items: [keys: readonly string[], pad: string, label: string][]): string {
+  return `<div class="res-next khint-line" aria-hidden="true">${items.map(([k, p, l]) => `<span class="kl">${keyHint(k, p)}<span>${l}</span></span>`).join('')}</div>`;
+}
+
+/**
+ * Tooltips for icon buttons (Update 9): one floating label, shown on mouse hover (after a short
+ * delay) and on keyboard focus, for any element with `data-tip` (plus an optional `data-key`).
+ * Never shown for touch; pointer-events none so it can't block a tap.
+ */
+let tipInstalled = false;
+export function tip(node: HTMLElement, text: string, key?: string): HTMLElement {
+  node.dataset.tip = text;
+  if (key) node.dataset.key = key;
+  else delete node.dataset.key;
+  return node;
+}
+export function installTips(root: HTMLElement): void {
+  if (tipInstalled) return;
+  tipInstalled = true;
+  const t = el('div', 'u9-tip');
+  t.setAttribute('role', 'tooltip');
+  t.setAttribute('aria-hidden', 'true');
+  root.appendChild(t);
+  let cur: HTMLElement | null = null;
+  let timer = 0;
+  const hide = (): void => {
+    clearTimeout(timer);
+    cur = null;
+    t.classList.remove('on');
+  };
+  const show = (n: HTMLElement): void => {
+    if (!n.isConnected || n.getClientRects().length === 0) return hide();
+    const label = n.dataset.tip ?? '';
+    const key = n.dataset.key;
+    t.innerHTML = `<span>${label}</span>${key && inputMode() !== 'pad' ? `<kbd class="kc">${key}</kbd>` : ''}`;
+    const r = n.getBoundingClientRect();
+    t.classList.add('on');
+    const w = t.offsetWidth;
+    const h = t.offsetHeight;
+    const below = r.bottom + 10 + h < window.innerHeight - 4;
+    const x = Math.max(6, Math.min(window.innerWidth - w - 6, r.left + r.width / 2 - w / 2));
+    const y = below ? r.bottom + 10 : Math.max(6, r.top - h - 10);
+    t.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    t.classList.toggle('up', !below);
+  };
+  const find = (e: Event): HTMLElement | null => (e.target instanceof Element ? (e.target.closest('[data-tip]') as HTMLElement | null) : null);
+  document.addEventListener('pointerover', (e) => {
+    if (e.pointerType !== 'mouse') return;
+    const n = find(e);
+    if (n === cur) return;
+    hide();
+    if (!n) return;
+    cur = n;
+    timer = window.setTimeout(() => cur === n && show(n), 380);
+  });
+  document.addEventListener('focusin', (e) => {
+    const m = inputMode();
+    if (m !== 'keyboard' && m !== 'pad') return;
+    const n = find(e);
+    hide();
+    if (!n) return;
+    cur = n;
+    show(n);
+  });
+  for (const ev of ['pointerdown', 'focusout', 'wheel', 'resize']) window.addEventListener(ev, hide, { capture: true, passive: true });
 }
 
 export const PEARL_ICO = `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="21" r="14" fill="#e4d6fb" stroke="#8a72c0" stroke-width="2"/><circle cx="22.5" cy="23.5" r="9.5" fill="#cfbcf2"/><ellipse cx="15" cy="15" rx="4.5" ry="3.4" fill="#fff"/></svg>`;
@@ -91,11 +217,16 @@ export class Wallet {
   }
 }
 
+/** The round blue back button used on every page: labelled, with a "Back · Esc" tooltip on a computer. */
+export function backButton(onBack: () => void, label = 'Back', cls = 'icon ghost back'): HTMLButtonElement {
+  return tip(btn(ICON.back, cls, onBack, label), label, 'Esc') as HTMLButtonElement;
+}
+
 /** The standard page header: back, title, optional extra and wallet. Marked as a toast obstacle. */
 export function pageHead(title: string, onBack: (() => void) | null, extra: HTMLElement[] = []): { head: HTMLElement; title: HTMLElement } {
   const head = el('div', 'page-head kit-head');
   head.dataset.toastAvoid = '';
-  if (onBack) head.appendChild(btn(ICON.back, 'icon ghost back', onBack, 'Back'));
+  if (onBack) head.appendChild(backButton(onBack));
   const h = el('h2', 'kit-title', title);
   head.appendChild(h);
   const sp = el('span', 'kit-spacer');
@@ -133,7 +264,7 @@ export class Sheet {
     this.panel.setAttribute('aria-modal', 'true');
     const grab = el('div', 'ks-grab');
     this.titleEl = el('h3', 'ks-title');
-    const close = btn(ICON.back, 'icon ghost ks-close', () => this.close(), 'Close');
+    const close = tip(btn(ICON.back, 'icon ghost ks-close', () => this.close(), 'Close'), 'Close', 'Esc');
     const top = el('div', 'ks-top');
     top.append(this.titleEl, close);
     this.body = el('div', 'ks-body');

@@ -179,6 +179,10 @@ const GAIT_CAP1 = 0.1;
 /** leg phase offsets (fraction of a cycle) for legs 0..5 (left front, mid, rear, right front, mid, rear) */
 const GAIT_OFF = [2 / 3, 1 / 3, 0, 0, 2 / 3, 1 / 3];
 const frac = (x: number): number => x - Math.floor(x);
+/** idle beat lengths (s), by beat id (see CrabModel.poseBeat) */
+const BEAT_DUR = [0, 2.6, 1.3, 0.55, 1.45];
+/** Update 9: on the run the shell's yaw stays under this (rad), so a lane change reads as a lean */
+const YAW_CAP = 0.2;
 
 /** Hash noise for paint jobs. */
 const hash3 = (x: number, y: number, z: number): number => {
@@ -219,7 +223,8 @@ export class CrabModel {
   private time = 0;
   private wasGrounded = true;
   private readonly squash = new Spring(1, { freq: 20, damping: 0.42 });
-  private readonly lean = new Spring(0, { freq: 16, damping: 0.55 });
+  // Update 9: a stiffer, better damped lean, so a lane change reads as a quick lean that settles at once
+  private readonly lean = new Spring(0, { freq: 18, damping: 0.8 });
   private readonly hatX = new Spring(0, { freq: 11, damping: 0.25 });
   private readonly hatZ = new Spring(0, { freq: 11, damping: 0.25 });
   private readonly antX = [new Spring(0, { freq: 14, damping: 0.18 }), new Spring(0, { freq: 14, damping: 0.18 })];
@@ -229,6 +234,20 @@ export class CrabModel {
   private readonly eyeR = [new Spring(0, { freq: 15, damping: 0.3 }), new Spring(0, { freq: 16.5, damping: 0.3 })];
   private readonly clawLagR = [new Spring(0, { freq: 13, damping: 0.35 }), new Spring(0, { freq: 12, damping: 0.35 })];
   private readonly clawLagS = [new Spring(0, { freq: 13, damping: 0.35 }), new Spring(0, { freq: 12, damping: 0.35 })];
+  /** Update 9: the shell pitches forward on a stop and rocks back on a start (follow-through) */
+  private readonly bodyP = new Spring(0, { freq: 14, damping: 0.35 });
+  /** how far the run's yaw cap applies (eases in and out with the run states) */
+  private capK = 0;
+  /** ground speed as a 0..1 share of the speed range, for the run pose */
+  private runK = 0;
+  /** seconds since touchdown for the landing bounce, and how big it is */
+  private bounceT = 9;
+  private bounceA = 0;
+  /** Update 9 idle beats between emotes: 0 none, 1 look around, 2 claw snap, 3 double blink, 4 shuffle */
+  private beat = 0;
+  private beatT = 0;
+  private beatCd = 2.5;
+  private beatSide = 1;
   /** drive and body values last frame, for the accelerations that kick the springs */
   private prevVx = 0;
   private prevVy = 0;
@@ -482,9 +501,12 @@ export class CrabModel {
     // a quick crouch-and-spring (impulses, not snaps, so feet never teleport); the air pose takes the
     // squash from here through the stretch, the tuck and the reach (see poseAir)
     this.hopT = 0;
+    // Update 9: a harder crouch (the spring then pops it into the stretch); the heavy claws drop a beat
+    // behind the push and swing up into the tuck
     this.squash.velocity = Math.min(this.squash.velocity, 0) - 8;
-    this.hatX.impulse(-2.5);
-    for (const s of this.antX) s.impulse(-6);
+    this.hatX.impulse(-3);
+    for (const s of this.antX) s.impulse(-7);
+    for (const s of this.clawLagR) s.impulse(-2.2);
   }
   land(hard: boolean): void {
     this.landT = 0;
@@ -495,6 +517,9 @@ export class CrabModel {
     this.squash.velocity = Math.min(0, this.squash.velocity) * 0.5 + (hard ? -16 : -2 - 4 * fall);
     this.hatX.impulse(hard ? 5 : 3);
     for (const s of this.antX) s.impulse(hard ? 9 : 5);
+    // Update 9: after the squash, a little bounce off the sand (bigger for a bigger fall)
+    this.bounceT = 0;
+    this.bounceA = hard ? 0.02 : 0.025 + 0.025 * Math.min(1, fall);
     if (this.state === 'slam') this.setState('run');
   }
   lane(dir: number): void {
@@ -502,13 +527,13 @@ export class CrabModel {
     const reverse = this.laneT < 0.24 && dir !== 0 && dir === -this.laneDir;
     if (reverse) {
       this.reverseT = 0;
-      this.lean.velocity += dir * 5;
+      this.lean.velocity += dir * 4;
       this.squash.velocity -= 3;
       this.hatZ.impulse(dir * 5);
       for (const s of this.antZ) s.impulse(dir * 9);
     } else {
       // Update 8: lean into the turn at once (the drive's lateral speed then carries the lean)
-      this.lean.velocity += dir * 3;
+      this.lean.velocity += dir * 2.5;
       this.hatZ.impulse(dir * 3);
       for (const s of this.antZ) s.impulse(dir * 7);
     }
@@ -590,7 +615,12 @@ export class CrabModel {
     this.landT = 9;
     this.hopT = 9;
     this.reverseT = 9;
+    this.bounceT = 9;
     this.plantK = 0;
+    this.capK = 0;
+    this.beat = 0;
+    this.beatCd = 1.2 + Math.random() * 2;
+    this.bodyP.snap(0);
     this.laneT = 9;
     this.carryT = 9;
     this.laneOff.fill(0);
@@ -634,6 +664,7 @@ export class CrabModel {
     this.bumpT += dt;
     this.hopT += dt;
     this.reverseT += dt;
+    this.bounceT += dt;
 
     // state selection from the drive (event-driven states end on their own)
     if (d.crashT >= 0) {
@@ -658,11 +689,13 @@ export class CrabModel {
           this.emoteCd -= dt;
           if (this.emoteCd <= 0) {
             this.emoteCd = 7 + Math.random() * 5;
+            this.beat = 0;
             this.emote();
-          }
+          } else this.tickBeat(dt);
         }
       }
     }
+    if (this.state !== 'idle') this.beat = 0;
     if (!d.grounded && this.wasGrounded && this.state !== 'crash') {
       // left the ground without a hop event (thumbnails, ride): no-op
     }
@@ -672,6 +705,7 @@ export class CrabModel {
     // through a lane change while the legs scramble sideways
     const v = d.running ? Math.max(0, d.speed) : 0;
     const vk = clamp((v - 11) / 17, 0, 1);
+    this.runK = vk;
     // the stride opens up over the first steps of a run (a standing start, not a snap to full stride)
     this.gaitIn = d.running ? Math.min(1, this.gaitIn + dt / 0.3) : 0;
     this.gaitA = (GAIT_A0 + (GAIT_A1 - GAIT_A0) * vk) * (0.55 + 0.45 * smooth01(this.gaitIn));
@@ -694,6 +728,85 @@ export class CrabModel {
 
     this.applyOverlays(dt, d);
     this.writeRig(dt, d);
+  }
+
+  /**
+   * Update 9 idle beats: every few seconds between the emotes the idle crab does something small (a
+   * look around, a claw snap, a double blink or a foot shuffle). Never right before an emote, and no
+   * look around while the eyes follow the cursor.
+   */
+  private tickBeat(dt: number): void {
+    if (this.beat) {
+      this.beatT += dt;
+      if (this.beatT >= (BEAT_DUR[this.beat] as number)) {
+        this.beat = 0;
+        this.beatCd = 1.6 + Math.random() * 2.6;
+      }
+      return;
+    }
+    this.beatCd -= dt;
+    if (this.beatCd > 0 || this.emoteCd < 2.8) return;
+    const r = Math.random();
+    this.beat = r < 0.38 && this.lookHold <= 0 ? 1 : r < 0.66 ? 2 : r < 0.82 ? 3 : 4;
+    this.beatT = 0;
+    this.beatSide = Math.random() < 0.5 ? -1 : 1;
+  }
+
+  /** the current idle beat on top of the idle pose */
+  private poseBeat(p: Pose): void {
+    const t = this.beatT;
+    const sd = this.beatSide;
+    switch (this.beat) {
+      case 1: {
+        // look around: the eyes dart to one side and the shell turns after them, then the other side,
+        // then home; the feet hold their ground and the head tilts, curious
+        const eyes = smooth01(t / 0.08) - 2 * smooth01((t - 0.95) / 0.09) + smooth01((t - 1.95) / 0.09);
+        const yaw = 0.3 * (smooth01((t - 0.1) / 0.42) - 2 * smooth01((t - 1.02) / 0.5) + smooth01((t - 2.02) / 0.5));
+        p[P_BODY_RY] = (p[P_BODY_RY] as number) + sd * yaw;
+        p[P_BODY_RZ] = (p[P_BODY_RZ] as number) - sd * yaw * 0.18;
+        for (let l = 0; l < 6; l++) p[P_LEG + l * 4] = (p[P_LEG + l * 4] as number) - sd * yaw * (l < 3 ? -1 : 1) * 0.6;
+        if (this.lookHold <= 0) {
+          p[P_LOOK_X] = sd * eyes * 0.8;
+          p[P_LOOK_Y] = 0.08 * Math.abs(eyes);
+        }
+        break;
+      }
+      case 2: {
+        // claw snap: one claw comes up in front of the chest and clacks shut twice, eyes on it
+        const i = P_CLAW + (sd < 0 ? 0 : 4);
+        const up = smooth01(t / 0.24) * (1 - smooth01((t - 0.95) / 0.3));
+        const shut = Math.max(arc((t - 0.34) / 0.13), arc((t - 0.56) / 0.13));
+        p[i] = (p[i] as number) + 0.42 * up;
+        p[i + 1] = (p[i + 1] as number) + sd * 0.12 * up;
+        p[i + 2] = (p[i + 2] as number) + 0.3 * up;
+        p[i + 3] = 0.1 + 0.75 * up * (1 - shut);
+        p[P_BODY_RZ] = (p[P_BODY_RZ] as number) + sd * 0.04 * up;
+        p[P_BODY_Y] = (p[P_BODY_Y] as number) - 0.012 * shut;
+        if (this.lookHold <= 0) {
+          p[P_LOOK_X] = sd * 0.55 * up;
+          p[P_LOOK_Y] = -0.2 * up;
+        }
+        break;
+      }
+      case 3:
+        // a happy double blink with a little bob
+        p[P_LID] = Math.max(p[P_LID] as number, arc(t / 0.14), arc((t - 0.22) / 0.14));
+        p[P_BODY_Y] = (p[P_BODY_Y] as number) + 0.018 * arc(t / 0.45);
+        break;
+      case 4: {
+        // shuffle: a weight shift while the feet tap in a ripple down each side, twice
+        const k = smooth01(t / 0.2) * (1 - smooth01((t - 1.1) / 0.3));
+        p[P_BODY_RZ] = (p[P_BODY_RZ] as number) + Math.sin(t * 8) * 0.05 * k;
+        p[P_BODY_Y] = (p[P_BODY_Y] as number) - 0.012 * k;
+        for (let l = 0; l < 6; l++) {
+          const o = 0.12 + (l % 3) * 0.08 + (l < 3 ? 0 : 0.26);
+          const tap = (arc((t - o) / 0.2) + arc((t - o - 0.55) / 0.2)) * k;
+          p[P_LEG + l * 4 + 1] = (p[P_LEG + l * 4 + 1] as number) + 0.24 * tap;
+          p[P_LEG + l * 4 + 2] = (p[P_LEG + l * 4 + 2] as number) - 0.16 * tap;
+        }
+        break;
+      }
+    }
   }
 
   /** Fill `p` with the pose of state `s`. */
@@ -732,6 +845,7 @@ export class CrabModel {
         }
         for (let s2 = 0; s2 < 2; s2++) p[P_CLAW + s2 * 4 + 2] = 0.06 + breath * 0.04;
         this.idleLook(p);
+        if (this.beat) this.poseBeat(p);
         break;
       }
       case 'run': {
@@ -747,9 +861,16 @@ export class CrabModel {
           let swing: number;
           let lift = 0;
           let flick = 0;
+          let load = 0;
+          let press = 0;
           if (c < GAIT_DUTY) {
             const q = 1 - (2 * c) / GAIT_DUTY;
             swing = -Math.asin(q * sinA);
+            // Update 9 planting: the knee gives as the foot takes the weight, and the toe presses
+            // into the push-off at the end of the stance (plantFeet keeps the tip on the sand)
+            const st = c / GAIT_DUTY;
+            load = arc(st / 0.5);
+            press = smooth01((st - 0.55) / 0.45);
           } else {
             const s2 = (c - GAIT_DUTY) / (1 - GAIT_DUTY);
             // a near-even swing forward (eased only a little): the return is twice the stance speed
@@ -758,26 +879,33 @@ export class CrabModel {
             lift = sn * Math.sqrt(sn);
             const fl = Math.max(0, Math.sin(Math.PI * clamp((s2 - 0.15) / 0.85, 0, 1)));
             flick = fl * fl;
+            // the push-off lets go as the foot leaves the sand
+            press = 1 - smooth01(s2 / 0.3);
           }
           p[P_LEG + l * 4] = swing;
           p[P_LEG + l * 4 + 1] = 0.06 + lift * 0.28;
-          p[P_LEG + l * 4 + 2] = 0.05 - lift * 0.36;
-          p[P_LEG + l * 4 + 3] = flick * 0.3;
+          p[P_LEG + l * 4 + 2] = 0.05 - lift * 0.36 + load * 0.1;
+          p[P_LEG + l * 4 + 3] = flick * 0.3 - press * 0.14;
           this.liftRaise[l] = lift * 0.28;
         }
-        // a small bob as each pair lifts (three a cycle), a slower waddle and yaw once a cycle; the
-        // planted feet stay put (plantFeet), so only the shell rides it
-        const bob = 0.5 - 0.5 * Math.cos(ph * 3);
-        p[P_BODY_Y] = bob * 0.016;
+        // a small bob as each pair lifts (three a cycle), lowest just after each pair plants; a
+        // slower waddle and yaw once a cycle; the planted feet stay put (plantFeet), so only the shell
+        // rides it. Update 9: a little more bob, and the shell leans into the run as it speeds up
+        const vk = this.runK;
+        const bob = 0.5 - 0.5 * Math.cos(ph * 3 - 0.5);
+        p[P_BODY_Y] = bob * 0.02;
         p[P_BODY_RZ] = Math.sin(ph - 0.4) * 0.035;
         p[P_BODY_RY] = Math.sin(ph) * 0.03;
-        p[P_BODY_RX] = 0.06 + Math.sin(ph * 3 - 0.6) * 0.01;
+        p[P_BODY_RX] = 0.06 + vk * 0.035 + Math.sin(ph * 3 - 1.1) * 0.012;
+        // Update 9 claws: each sways in a small loop (raise and swing a quarter cycle apart), the
+        // forearm a beat behind the shoulder, carried a little higher and tighter at speed
         const ap = this.armPhase;
         for (let s2 = 0; s2 < 2; s2++) {
           const sg = s2 === 0 ? 1 : -1;
-          p[P_CLAW + s2 * 4] = 0.2 + Math.sin(ap + s2 * Math.PI) * 0.1;
-          p[P_CLAW + s2 * 4 + 1] = Math.sin(ap + s2 * Math.PI) * 0.18 * sg;
-          p[P_CLAW + s2 * 4 + 2] = 0.1;
+          const sw = ap + s2 * Math.PI;
+          p[P_CLAW + s2 * 4] = 0.22 + vk * 0.08 + Math.sin(sw) * 0.085;
+          p[P_CLAW + s2 * 4 + 1] = (Math.cos(sw) * 0.12 + 0.04 * vk) * sg;
+          p[P_CLAW + s2 * 4 + 2] = 0.12 + vk * 0.06 + Math.sin(sw - 0.8) * 0.06;
           p[P_CLAW + s2 * 4 + 3] = 0.1 + Math.max(0, Math.sin(ap * 0.5 + s2 * 2)) * 0.22;
         }
         p[P_LOOK_Y] = -0.1;
@@ -877,8 +1005,11 @@ export class CrabModel {
       p[i + 2] = key(0.05, 0.55, 0.15);
       p[i + 3] = key(0.15, 0.55, 0.35);
     }
-    p[P_BODY_RX] = key(-0.12, -0.04, 0.12);
+    // Update 9: nose up on the push, a little forward roll into the tuck, nose down for the reach;
+    // a happy squint at the top
+    p[P_BODY_RX] = key(-0.14, 0.05, 0.12);
     p[P_LOOK_Y] = key(0.25, 0.12, -0.45);
+    p[P_LID] = 0.28 * this.airA1 * (1 - this.airA2);
     this.mouth = 1;
   }
 
@@ -1118,8 +1249,10 @@ export class CrabModel {
     // lean follows lateral speed
     this.lean.target = d.running ? clamp(d.vx / 16, -1, 1) : 0;
     const lean = this.lean.update(dt);
-    o[P_BODY_RZ] = (o[P_BODY_RZ] as number) - lean * 0.38;
-    o[P_BODY_RY] = (o[P_BODY_RY] as number) + lean * 0.2;
+    // Update 9: the lean is a roll into the move with only a hint of yaw (a big yaw turned the face
+    // and the hat brim side-on to the run camera); YAW_CAP below bounds whatever else adds up
+    o[P_BODY_RZ] = (o[P_BODY_RZ] as number) - lean * 0.36;
+    o[P_BODY_RY] = (o[P_BODY_RY] as number) + lean * 0.07;
     // lane change, written as offsets (laneOff, laneLift) so a new lane change mid-move can fade the
     // old one out (laneCarry) instead of cutting it
     const lo = this.laneOff;
@@ -1137,7 +1270,7 @@ export class CrabModel {
       lo[P_CLAW + trail * 4] = -0.15 * k;
       lo[P_BODY_Y] = 0.04 * k;
       lo[P_BODY_RX] = -0.08 * k;
-      lo[P_LOOK_X] = this.laneDir * 0.5 * k;
+      lo[P_LOOK_X] = this.laneDir * 0.3 * k;
       // Update 8 legs: the leading legs lift and reach into the move, then plant; the trailing legs
       // stay planted and straighten (the push-off), flick their toes, then lift and gather in
       const t = this.laneT;
@@ -1179,7 +1312,7 @@ export class CrabModel {
         o[i + 2] = (o[i + 2] as number) + 0.25 * k;
         o[i + 3] = (o[i + 3] as number) - 0.35 * k;
       }
-      o[P_BODY_RY] = (o[P_BODY_RY] as number) + this.laneDir * 0.16 * k;
+      o[P_BODY_RY] = (o[P_BODY_RY] as number) + this.laneDir * 0.06 * k;
       o[P_BODY_Y] = (o[P_BODY_Y] as number) - 0.03 * k;
       if (k > 0.3) this.mouth = 2;
     }
@@ -1201,6 +1334,12 @@ export class CrabModel {
         for (let s2 = 0; s2 < 2; s2++) o[P_CLAW + s2 * 4 + 1] = (o[P_CLAW + s2 * 4 + 1] as number) + (s2 === 0 ? 1 : -1) * 0.5 * k;
       }
     }
+    // Update 9: the landing bounce: once the squash has given, the shell pops up a touch off the sand
+    // (feet and all) and settles, the stalks and claws following through
+    if (this.bounceT < 0.36 && this.state !== 'crash') {
+      const b = arc((this.bounceT - 0.07) / 0.26);
+      o[P_LIFT] = (o[P_LIFT] as number) + this.bounceA * b;
+    }
     // bump: head snap, eyes squeezed shut
     if (this.bumpT < 0.35) {
       const k = Math.min(1, this.bumpT / 0.04) * (1 - this.bumpT / 0.35);
@@ -1212,7 +1351,8 @@ export class CrabModel {
     this.blinkT -= dt;
     if (this.blinkT <= 0) {
       this.blinkPhase = 0.15;
-      this.blinkT = 2 + Math.random() * 3;
+      // Update 9: now and then a quick double blink
+      this.blinkT = Math.random() < 0.2 ? 0.24 : 2 + Math.random() * 3;
     }
     if (this.blinkPhase > 0) {
       this.blinkPhase = Math.max(0, this.blinkPhase - dt);
@@ -1226,9 +1366,11 @@ export class CrabModel {
     // near miss: head whips away, eyes squeeze, sweat flies
     if (this.flinchT < 0.5) {
       const k = Math.min(1, this.flinchT / 0.04) * (1 - smooth01((this.flinchT - 0.1) / 0.4));
-      o[P_BODY_RY] = (o[P_BODY_RY] as number) - this.flinchDir * 0.3 * k;
-      o[P_BODY_RZ] = (o[P_BODY_RZ] as number) + this.flinchDir * 0.12 * k;
-      o[P_LOOK_X] = (o[P_LOOK_X] as number) + this.flinchDir * 0.7 * k;
+      // Update 9: on the run the flinch is mostly a roll away (a yaw shows the face to the camera)
+      const run = d.running ? 1 : 0;
+      o[P_BODY_RY] = (o[P_BODY_RY] as number) - this.flinchDir * (0.3 - 0.2 * run) * k;
+      o[P_BODY_RZ] = (o[P_BODY_RZ] as number) + this.flinchDir * (0.12 + 0.04 * run) * k;
+      o[P_LOOK_X] = (o[P_LOOK_X] as number) + this.flinchDir * (0.7 - 0.3 * run) * k;
       o[P_LID] = Math.max(o[P_LID] as number, 0.55 * k);
       this.mouth = 2;
     }
@@ -1258,8 +1400,8 @@ export class CrabModel {
     // compression in the apex tuck and a lengthening reach on the fall; landing kicks it (land())
     if (this.airborne && this.state !== 'slam') {
       const u = clamp(0.5 - d.vy / AIR_V, 0, 1);
-      const takeoff = this.hopT < 0.05 ? 1 - this.hopT / 0.05 : 0;
-      this.squash.target = 1 - 0.14 * takeoff + 0.15 * (1 - smooth01(u / 0.42)) * (1 - takeoff) - 0.035 * arc((u - 0.3) / 0.4) + 0.04 * smooth01((u - 0.65) / 0.3);
+      const takeoff = this.hopT < 0.06 ? 1 - smooth01(this.hopT / 0.06) : 0;
+      this.squash.target = 1 - 0.18 * takeoff + 0.17 * (1 - smooth01(u / 0.42)) * (1 - takeoff) - 0.045 * arc((u - 0.3) / 0.4) + 0.04 * smooth01((u - 0.65) / 0.3);
     } else this.squash.target = 1;
     this.squash.update(dt);
     // foot planting follows the gait on the ground, and lets go in the air
@@ -1290,6 +1432,16 @@ export class CrabModel {
       az.impulse(dl * 0.12);
       ax.update(dt);
       az.update(dt);
+    }
+    // Update 9 yaw cap: while running, the shell's yaw (lean, waddle, skid, flinch) is softly bounded
+    // and so is the eyes' turn, so from the run camera a lane change reads as a lean, never a turn
+    const runLike = d.running && (this.state === 'run' || this.state === 'hopRise' || this.state === 'hopFall' || this.state === 'slam' || this.state === 'ride');
+    this.capK += ((runLike ? 1 : 0) - this.capK) * Math.min(1, dt * 8);
+    if (this.capK > 1e-3) {
+      const ry = o[P_BODY_RY] as number;
+      o[P_BODY_RY] = ry + (YAW_CAP * Math.tanh(ry / YAW_CAP) - ry) * this.capK;
+      const lx = o[P_LOOK_X] as number;
+      o[P_LOOK_X] = lx + (0.4 * Math.tanh(lx / 0.4) - lx) * this.capK;
     }
     this.followThrough(dt, d, vy);
   }
@@ -1354,6 +1506,13 @@ export class CrabModel {
         o[P_CLAW + s * 4 + 1] = (o[P_CLAW + s * 4 + 1] as number) + cs.value;
       }
     }
+    // Update 9: a stop tips the shell forward on its legs and it rocks back; a start rocks it back
+    const bp = this.bodyP;
+    bp.impulse(-0.06 * dsp * kick);
+    bp.update(dt);
+    if (crashed) bp.snap(0);
+    bp.value = clamp(bp.value, -0.16, 0.16);
+    o[P_BODY_RX] = (o[P_BODY_RX] as number) + bp.value;
   }
 
   /**
@@ -1662,6 +1821,74 @@ function smoothProfile(pts: [number, number][], n: number): [number, number][] {
   return c.getPoints(n).map((p) => [Math.max(0, p.x), p.y] as [number, number]);
 }
 
+/** carapace profile [radius, y] from the belly centre to the crown (tests/clip.test.ts keeps a copy) */
+const SHELL_PTS: [number, number][] = [[0.0, 0.12], [0.3, 0.13], [0.48, 0.2], [0.59, 0.31], [0.645, 0.43], [0.655, 0.5], [0.635, 0.57], [0.58, 0.67], [0.48, 0.78], [0.33, 0.87], [0.16, 0.915], [0.0, 0.93]];
+
+/**
+ * Update 9: the High carapace is sampled by arc length, densely through the rim band (y 0.4 to 0.64)
+ * where the bevelled lip, the groove above it and the mouth sit, and coarsely over the belly and crown.
+ */
+function rimProfile(): [number, number][] {
+  const c = new THREE.SplineCurve(SHELL_PTS.map(([r, y]) => new THREE.Vector2(r, y)));
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i <= 400; i++) {
+    const y = c.getPointAt(i / 400).y;
+    if (y < 0.4) lo = i / 400;
+    if (y < 0.64) hi = i / 400;
+  }
+  const us: number[] = [];
+  const span = (a: number, b: number, n: number): void => {
+    for (let i = 0; i < n; i++) us.push(a + ((b - a) * i) / n);
+  };
+  span(0, lo, 5);
+  span(lo, hi, 13);
+  span(hi, 1, 9);
+  us.push(1);
+  return us.map((u) => {
+    const p = c.getPointAt(u);
+    return [Math.max(0, p.x), p.y] as [number, number];
+  });
+}
+
+/** smooth 3D value noise (0..1) for the shell's mottling */
+function vnoise(x: number, y: number, z: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const iz = Math.floor(z);
+  const fx = x - ix;
+  const fy = y - iy;
+  const fz = z - iz;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const uz = fz * fz * (3 - 2 * fz);
+  let v = 0;
+  for (let k = 0; k < 8; k++) {
+    const dx = k & 1;
+    const dy = (k >> 1) & 1;
+    const dz = (k >> 2) & 1;
+    v += hash3(ix + dx, iy + dy, iz + dz) * (dx ? ux : 1 - ux) * (dy ? uy : 1 - uy) * (dz ? uz : 1 - uz);
+  }
+  return v;
+}
+
+/** the face (front) of the shell stays smooth: rim details fade in from ~30° round to ~55° */
+const faceFade = (a: number): number => smooth01((Math.abs(a) - 0.55) / 0.42);
+const bump = (v: number, c: number, w: number): number => Math.exp(-(((v - c) / w) ** 2));
+/**
+ * Update 9 carapace relief (lathe units, pushed out along the radius) at lathe angle a (0 = front) and
+ * lathe height y: a rounded lip at the rim with a tuck under it and a groove above it (the bevel), crab
+ * "teeth" scalloped along the lip, and two soft branchial lobes over the back.
+ */
+function shellRelief(a: number, y: number): number {
+  const ff = faceFade(a);
+  const side = Math.abs(Math.sin(a));
+  const sc = Math.max(0, Math.cos(a * 9)) ** 3 * (0.4 + side);
+  const lip = bump(y, 0.5, 0.034) * (0.024 + 0.016 * sc) - bump(y, 0.435, 0.03) * 0.012 - bump(y, 0.588, 0.022) * 0.013;
+  const lobes = bump(Math.abs(a), 2.15, 0.42) * bump(y, 0.71, 0.08) * 0.012;
+  return ff * lip + lobes;
+}
+
 const _ca = new THREE.Color();
 const _cb = new THREE.Color();
 
@@ -1671,6 +1898,33 @@ const _cb = new THREE.Color();
  */
 const _bn = new THREE.Vector3();
 const _bf = new THREE.Vector3(0.15, 0.35, 1).normalize();
+const _tv = new THREE.Vector3();
+/** unit offset from the polyline to the last point given to nearestOn */
+const _no = new THREE.Vector3();
+/** Parameter (0..1, per segment) of the point of polyline `pts` nearest to (x, y, z); the unit offset from it goes to _no. */
+function nearestOn(pts: V3[], x: number, y: number, z: number): number {
+  let best = Infinity;
+  let bt = 0;
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const a = pts[k] as V3;
+    const b = pts[k + 1] as V3;
+    const ex = b[0] - a[0];
+    const ey = b[1] - a[1];
+    const ez = b[2] - a[2];
+    const t = clamp(((x - a[0]) * ex + (y - a[1]) * ey + (z - a[2]) * ez) / Math.max(1e-9, ex * ex + ey * ey + ez * ez), 0, 1);
+    const ox = x - a[0] - ex * t;
+    const oy = y - a[1] - ey * t;
+    const oz = z - a[2] - ez * t;
+    const d = ox * ox + oy * oy + oz * oz;
+    if (d < best) {
+      best = d;
+      bt = (k + t) / (pts.length - 1);
+      _no.set(ox, oy, oz);
+    }
+  }
+  if (_no.lengthSq() > 1e-12) _no.normalize();
+  return bt;
+}
 
 export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: GeoBuilder, line: GeoBuilder): void {
   const outlineOnly = clay === line;
@@ -1680,6 +1934,11 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
   const belly = skin.belly;
   // a lighter tint of the body colour for the raised back plates
   const light = new THREE.Color(skin.body).offsetHSL(0, 0.04, 0.05).getHex();
+  // Update 9 accents: cream (claw insides), ivory (claw teeth), near-black tips, and the eyelid line
+  const cream = new THREE.Color(belly).lerp(_cb.set(0xffffff), 0.2).getHex();
+  const ivory = new THREE.Color(belly).lerp(_cb.set(0xfff6e2), 0.6).getHex();
+  const tipCol = new THREE.Color(dark).lerp(_cb.set(0x1a0806), 0.6).getHex();
+  const lidLine = new THREE.Color(dark).lerp(_cb.set(0x2a0c06), 0.55).getHex();
   // the outline hull only needs silhouettes: it is built from a low-detail pass of the same shapes
   let lineTo: GeoBuilder | null = line;
   if (hi) {
@@ -1697,28 +1956,34 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     return g.geo(new THREE.SphereGeometry(r, ws, Math.max(3, Math.round(ws * 0.6))), color, pos, rot, scale);
   };
   const tub = (n: number): number => (hi ? n : Math.max(2, Math.round(n * 0.6)));
+  /** a capless tube painted by `paint`, then its end cap (as GeoBuilder.tube makes it) painted the same way */
+  const tubeP = (g: GeoBuilder, color: number, pts: V3[], r: (t: number) => number, radial: number, tubular: number, cap: 'start' | 'end', paint: ((x: number, y: number, z: number, c: THREE.Color) => void) | null): void => {
+    g.tube(color, pts, r, radial, tubular, false);
+    if (paint) g.paint(paint);
+    const at = cap === 'start' ? 0 : 1;
+    g.geo(new THREE.SphereGeometry(r(at), radial, Math.max(3, Math.ceil(radial / 2))), color, pts[cap === 'start' ? 0 : pts.length - 1] as V3);
+    if (paint) g.paint(paint);
+  };
 
-  // carapace: a lathe with a flatter belly, a rim ridge and a domed top, painted
-  const profile = smoothProfile(
-    [[0.0, 0.12], [0.3, 0.13], [0.48, 0.2], [0.59, 0.31], [0.645, 0.43], [0.655, 0.5], [0.635, 0.57], [0.58, 0.67], [0.48, 0.78], [0.33, 0.87], [0.16, 0.915], [0.0, 0.93]],
-    hi ? 18 : 10,
-  );
+  // carapace: a lathe with a flatter belly, a rim ridge and a domed top, painted (Update 9: High is
+  // sampled densely through the rim band and sculpted with a bevelled lip, see shellRelief)
+  const profile = hi ? rimProfile() : smoothProfile(SHELL_PTS, 10);
   const shellPaint = (x: number, y: number, z: number, c: THREE.Color): void => {
     _ca.set(body);
-    // belly plate on the lower front, with segment lines
+    // belly on the lower front (High adds a raised, segmented belly plate; Low paints the seams)
     // the underside is belly-coloured too (seen when the crab ends up on its back)
     const bellyW = Math.max(smooth01((0.53 - y) / 0.06) * smooth01((z + 0.05) / 0.25), smooth01((0.3 - y) / 0.1));
     if (bellyW > 0) {
       _cb.set(belly);
-      const seam = Math.abs(((y - 0.2) / 0.085) % 1 - 0.5) < 0.08 && y < 0.45 ? 0.86 : 1;
+      const seam = !hi && Math.abs(((y - 0.2) / 0.085) % 1 - 0.5) < 0.08 && y < 0.45 ? 0.86 : 1;
       _cb.multiplyScalar(seam);
       _ca.lerp(_cb, bellyW);
     }
-    // darker top and a soft rim highlight
+    // darker top and a soft rim highlight (Low: High paints the bevel instead)
     const top = smooth01((y - 0.62) / 0.3);
     _cb.set(dark);
     _ca.lerp(_cb, top * 0.38);
-    if (Math.abs(y - 0.5) < 0.03) _ca.multiplyScalar(1.06);
+    if (!hi && Math.abs(y - 0.5) < 0.03) _ca.multiplyScalar(1.06);
     // painted patterns
     if (skin.pattern === 'rainbow') {
       // clean concentric bands from the crown of the shell down to the rim
@@ -1736,8 +2001,8 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     } else if (skin.pattern === 'gold') {
       _ca.multiplyScalar(0.92 + hash3(Math.round(x * 14), Math.round(y * 14), Math.round(z * 14)) * 0.16);
     }
-    // fine speckles on the top of the shell (every body; subtle)
-    if (y > 0.6 && skin.pattern !== 'rainbow' && hash3(Math.round(x * 30), Math.round(y * 30), Math.round(z * 30)) > 0.9) _ca.multiplyScalar(1.12);
+    // fine speckles on the top of the shell (every body; subtle; High mottles and speckles the lathe)
+    if (!hi && y > 0.6 && skin.pattern !== 'rainbow' && hash3(Math.round(x * 30), Math.round(y * 30), Math.round(z * 30)) > 0.9) _ca.multiplyScalar(1.12);
     // warm sides: a slightly lighter band just above the rim
     _ca.multiplyScalar(1 + 0.07 * Math.max(0, 1 - Math.abs(y - 0.58) / 0.08));
     // baked occlusion under the rim
@@ -1754,7 +2019,10 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     return 0;
   };
   /** a point on the shell surface at height y, angle a (0 = front, π = back), pushed out by `out` */
-  const onShell = (y: number, a: number, out = 0): V3 => [Math.sin(a) * (shellR(y) * 1.05 + out), y * 0.96, Math.cos(a) * (shellR(y) * 0.82 + out)];
+  const onShell = (y: number, a: number, out = 0): V3 => {
+    const r = shellR(y) + (hi ? shellRelief(a, y) : 0);
+    return [Math.sin(a) * (r * 1.05 + out), y * 0.96, Math.cos(a) * (r * 0.82 + out)];
+  };
   /** is a model-space point inside the (scaled) carapace? */
   const inShell = (p: V3): boolean => {
     const r = shellR(p[1] / 0.96);
@@ -1796,31 +2064,42 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
       c.multiplyScalar(1 - 0.2 * smooth01((d - 0.75) / 0.25));
     });
   };
-  /** Crab v3 carapace sculpt: a scalloped rim lip, a notch between the eyes and a raised crown. */
+  /**
+   * Carapace sculpt (High): the Update 9 relief (a bevelled, scalloped rim lip with a groove above it,
+   * two lobes over the back) and the Crab v3 notch between the eyes.
+   */
   const sculpt = (p: THREE.Vector3): void => {
-    const a = Math.atan2(p.x, p.z / 0.82);
-    const rimK = Math.max(0, 1 - Math.abs(p.y - 0.5) / 0.09);
-    // scallops all round the rim, stronger at the sides (crab "teeth")
-    const side = Math.abs(Math.sin(a));
-    const sc = Math.max(0, Math.cos(a * 9)) ** 3 * 0.035 * (0.4 + side) * rimK;
-    const r = Math.hypot(p.x, p.z);
-    if (r > 1e-4) {
-      p.x += (p.x / r) * sc;
-      p.z += (p.z / r) * sc;
-    }
+    const a = Math.atan2(p.x / 1.05, p.z / 0.82);
+    const d = shellRelief(a, p.y / 0.96);
+    p.x += Math.sin(a) * d * 1.05;
+    p.z += Math.cos(a) * d * 0.82;
     // front notch between the eye stalks
     const front = smooth01((p.z - 0.25) / 0.2) * Math.max(0, 1 - Math.abs(p.x) / 0.14) * smooth01((p.y - 0.62) / 0.1);
     p.y -= front * 0.04;
     p.z -= front * 0.02;
   };
+  const mottle = skin.pattern !== 'rainbow' && skin.pattern !== 'pearl' && skin.pattern !== 'lava';
   both(gloss, (g) => {
-    g.bone(B_BODY).lathe(body, profile, seg(hi ? 36 : 26), [0, 0, 0], [0, 0, 0], [1.05, 0.96, 0.82]);
+    g.bone(B_BODY).lathe(body, profile, seg(hi ? 40 : 26), [0, 0, 0], [0, 0, 0], [1.05, 0.96, 0.82]);
     if (hi && g === gloss) g.warp(sculpt);
     if (g === gloss) g.paint(shellPaint);
+    if (hi && g === gloss) {
+      g.paint((x, y, z, c) => {
+        const a = Math.atan2(x / 1.05, z / 0.82);
+        const y0 = y / 0.96;
+        const ff = faceFade(a);
+        // the bevel: a lit edge along the top of the lip, a shadowed tuck under it, a dark groove above
+        c.multiplyScalar(1 + ff * (0.13 * bump(y0, 0.522, 0.018) - 0.22 * bump(y0, 0.448, 0.024) - 0.26 * bump(y0, 0.59, 0.015)));
+        // soft mottling over the dome (the speckles are real dots, below)
+        if (mottle) c.multiplyScalar(1 + (vnoise(x * 6 + 3.1, y * 6, z * 6) - 0.5) * 0.32 * smooth01((y0 - 0.56) / 0.1));
+      });
+    } else if (g === gloss) {
+      // Low: the rim reads as a darker line in the paint
+      g.paint((x, y, z, c) => c.multiplyScalar(1 - 0.16 * bump(y, 0.47, 0.035)));
+    }
   });
   if (deco) {
-  // rim ridge and top bumps
-  gloss.bone(B_BODY).geo(new THREE.TorusGeometry(0.648, 0.022, 4, seg(28)), dark, [0, 0.5, 0], [Math.PI / 2, 0, 0], [1, 0.8, 1]);
+  // top bumps (Update 9: the rim ridge is sculpted into the High shell and painted on Low)
   for (const [x, z, r] of [[-0.3, -0.12, 0.1], [0.3, -0.12, 0.1], [0, -0.28, 0.085], [-0.16, 0.12, 0.06], [0.16, 0.12, 0.06]] as V3[]) {
     ball(gloss.bone(B_BODY), dark, r, [x, 0.86 - Math.abs(x) * 0.15 + (z < 0 ? 0 : -0.02), z], [1, 0.45, 1], 8);
   }
@@ -1830,7 +2109,9 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     // side spines along the rim
     for (let k = 0; k < (hi ? 3 : 2); k++) {
       const a = 0.55 + k * 0.38;
-      gloss.bone(B_BODY).cone(dark, 0.03, 0.09, [sx * Math.sin(a) * 0.69, 0.51, Math.cos(a) * 0.57], [Math.PI / 2, 0, -sx * (Math.PI / 2 - 0.15) + 0], seg(6));
+      // High: seated on the sculpted lip
+      const at: V3 = hi ? onShell(0.53, sx * a, 0.018) : [sx * Math.sin(a) * 0.69, 0.51, Math.cos(a) * 0.57];
+      gloss.bone(B_BODY).cone(dark, 0.03, 0.09, at, [Math.PI / 2, 0, -sx * (Math.PI / 2 - 0.15) + 0], seg(6));
     }
   }
   // spots and stars are real little shapes on the shell (vertex paint is too coarse for them)
@@ -1844,6 +2125,48 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
       const p = onShell(y, a, star ? 0.006 : 0.002);
       ball(gloss.bone(B_BODY), star ? 0xfff6c8 : dark, r, p, star ? [1, 1, 1] : [1, 0.35, 1], 6, [-(y - 0.6) * 2 * Math.cos(a), a, 0]);
     }
+  }
+  // Update 9 speckles (High): small flat freckles over the sides and back of the dome, darker than
+  // the shell (lighter flecks on gold); the face and the busy painted patterns stay clean
+  if (hi && mottle && skin.pattern !== 'stars') {
+    const fleck = new THREE.Color(body).lerp(_cb.set(skin.pattern === 'gold' ? 0xffffff : dark), skin.pattern === 'gold' ? 0.55 : 0.75).getHex();
+    const want = skin.pattern === 'spots' ? 16 : 30;
+    for (let i = 0, n = 0; n < want && i < 400; i++) {
+      const a = (hash3(i, 11, 5) * 2 - 1) * Math.PI;
+      const y = 0.62 + hash3(i, 2, 9) * 0.22;
+      // not on the face, the eye-stalk roots or under the hat's front
+      if (Math.abs(a) < 0.85) continue;
+      n++;
+      const p = onShell(y, a, 0.004);
+      const disc = new THREE.CircleGeometry(0.013 + hash3(i, 7, 3) * 0.016, 6).rotateX(-Math.PI / 2);
+      gloss.bone(B_BODY).geo(disc, fleck, p, shellTilt(p), [1, 1, 0.8 + hash3(i, 4, 4) * 0.4]);
+    }
+  }
+  // Update 9 belly plate (High): a raised plate on the lower front in three pillowed segments with
+  // grooves between them, its edges tucked into the shell
+  if (hi) {
+    const ys = [0.16, 0.175, 0.198, 0.217, 0.23, 0.243, 0.265, 0.287, 0.3, 0.313, 0.335, 0.354, 0.37];
+    const A = 0.8;
+    const gy = ys.length - 1;
+    const plate = new THREE.PlaneGeometry(1, 1, 10, gy);
+    const pa = plate.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pa.count; i++) {
+      const a = (pa.getX(i) * 2) * A;
+      const y = ys[gy - Math.round((0.5 - pa.getY(i)) * gy)] as number;
+      const edge = smooth01((A - Math.abs(a)) / 0.2) * smooth01((y - 0.16) / 0.03) * smooth01((0.37 - y) / 0.03);
+      const f = ((y - 0.16) / 0.07) % 1;
+      const p = onShell(y, a, 0.003 + edge * (0.004 + 0.009 * Math.sin(Math.PI * f)));
+      pa.setXYZ(i, p[0], p[1], p[2]);
+    }
+    plate.computeVertexNormals();
+    gloss.bone(B_BODY).geo(plate, belly);
+    gloss.paint((x, y, z, c) => {
+      const a = Math.atan2(x / 1.05, z / 0.82);
+      const y0 = y / 0.96;
+      const groove = Math.max(bump(y0, 0.23, 0.009), bump(y0, 0.3, 0.009));
+      const edge = 1 - smooth01((A - Math.abs(a)) / 0.2) * smooth01((y0 - 0.16) / 0.03) * smooth01((0.37 - y0) / 0.03);
+      c.multiplyScalar((1 - 0.26 * groove) * (1 - 0.22 * edge) * (0.9 + 0.1 * smooth01((y0 - 0.16) / 0.2)));
+    });
   }
   // back plates: grooves following the shell over the back, and a little tail flap underneath
   // (Update 4: the run camera now sees the back, so the plates are bolder: deeper grooves, raised
@@ -1871,8 +2194,6 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     shellPaint(x, y, z, c);
     c.multiplyScalar(0.88);
   });
-  // mouthparts: two small plates under the mouth
-  if (hi) for (const sx of SIDES) ball(clay.bone(B_BODY), belly, 0.05, [sx * 0.055, 0.37, onShell(0.38, 0)[2] + 0.004], [1, 0.75, 0.35], 6, [0.3, sx * 0.3, 0]);
   // mouth expressions, each on its own bone (scale 0 hides it). v3: bigger, filled shapes that read at game distance
   const mz = onShell(0.46, 0)[2] + 0.008;
   const grin = new THREE.Shape();
@@ -1881,7 +2202,21 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
   grin.quadraticCurveTo(0.09, -0.1, 0, -0.105);
   grin.quadraticCurveTo(-0.09, -0.1, -0.11, 0.0);
   clay.bone(B_MOUTH[0] as number).geo(new THREE.ShapeGeometry(grin, hi ? 6 : 3), 0x4a0f18, [0, 0.49, mz], [-0.12, 0, 0]);
+  // Update 9: the inside of the mouth is darker at the top, warmer down by the tongue
+  clay.paint((x, y, z, c) => c.lerp(_cb.set(0x24060c), smooth01((y - 0.43) / 0.06) * 0.6));
   ball(clay.bone(B_MOUTH[0] as number), 0xff6f8a, 0.05, [0, 0.415, mz + 0.004], [1, 0.45, 0.25], 6);
+  if (hi) {
+    // two little buck teeth under the lip
+    const tooth = new THREE.Shape();
+    tooth.moveTo(-0.014, 0);
+    tooth.lineTo(0.014, 0);
+    tooth.lineTo(0.014, -0.02);
+    tooth.quadraticCurveTo(0.014, -0.03, 0.005, -0.03);
+    tooth.lineTo(-0.005, -0.03);
+    tooth.quadraticCurveTo(-0.014, -0.03, -0.014, -0.02);
+    tooth.lineTo(-0.014, 0);
+    for (const tx of [-0.0155, 0.0155]) clay.bone(B_MOUTH[0] as number).geo(new THREE.ShapeGeometry(tooth, 2), 0xfffaf0, [tx, 0.488, mz + 0.0035], [-0.12, 0, 0]);
+  }
   clay.bone(B_MOUTH[0] as number).tube(0x3a1010, [[-0.115, 0.495, mz + 0.004], [0, 0.483, mz + 0.012], [0.115, 0.495, mz + 0.004]], 0.01, 4, tub(6), true);
   clay.bone(B_MOUTH[1] as number).geo(new THREE.TorusGeometry(0.06, 0.022, 4, seg(12)), 0x3a1010, [0, 0.44, mz], [0.15, 0, 0]);
   ball(clay.bone(B_MOUTH[1] as number), 0x5a0f1c, 0.06, [0, 0.44, mz - 0.01], [1, 1.1, 0.3], 8);
@@ -1926,24 +2261,32 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     // angle instead of floating in front of it like flat discs
     const EYE_C: V3 = [ex, 0.9, 0.35];
     const cap = (r: number, theta: number, w: number): THREE.SphereGeometry => new THREE.SphereGeometry(r, seg(w), Math.max(3, Math.round(seg(w) / 3)), 0, Math.PI * 2, 0, theta);
-    gloss.bone(B_EYE[si] as number).geo(cap(0.1725, 0.6, 14), skin.iris, EYE_C, [Math.PI / 2, 0, 0], [1, 1.05, 1]);
+    // Update 9: a bigger iris, lighter at the bottom and shaded under the lid, with a dark rim
+    const IRIS = 0.72;
+    const irisR = 0.1725 * Math.sin(IRIS);
+    gloss.bone(B_EYE[si] as number).geo(cap(0.1725, IRIS, hi ? 18 : 14), skin.iris, EYE_C, [Math.PI / 2, 0, 0], [1, 1.05, 1]);
     gloss.paint((x, y, z, c) => {
-      const r = Math.hypot(x - ex, y - 0.9);
-      if (r > 0.075) c.multiplyScalar(0.62);
-      else c.lerp(_cb.set(0xffffff), Math.max(0, 0.06 - r) * 2.5);
+      const dy = (y - 0.9) / 1.05;
+      const r = Math.hypot(x - ex, dy) / irisR;
+      c.lerp(_cb.set(0xffffff), smooth01((-dy / irisR + 0.15) / 0.85) * 0.3);
+      c.multiplyScalar(1 - 0.28 * smooth01((dy / irisR - 0.05) / 0.7));
+      c.multiplyScalar(1 - 0.42 * smooth01((r - 0.74) / 0.22));
     });
-    gloss.bone(B_EYE[si] as number).geo(cap(0.175, 0.32, 10), 0x0e0e16, EYE_C, [Math.PI / 2, 0, 0], [1, 1.05, 1]);
+    gloss.bone(B_EYE[si] as number).geo(cap(0.175, 0.36, hi ? 12 : 10), 0x0e0e16, EYE_C, [Math.PI / 2, 0, 0], [1, 1.05, 1]);
     // two catch-lights sitting on the surface, upper-outer and lower-inner
     const hl = (dx: number, dy: number, rr: number, w: number): void => {
-      const n = new THREE.Vector3(dx, dy, 1).normalize().multiplyScalar(0.176);
+      const n = new THREE.Vector3(dx, dy, 1).normalize().multiplyScalar(0.177);
       ball(gloss.bone(B_EYE[si] as number), 0xffffff, rr, [ex + n.x, 0.9 + n.y * 1.05, 0.35 + n.z], [1, 1, 0.45], w, [Math.atan2(-n.y, n.z), Math.atan2(n.x, n.z), 0]);
     };
-    hl(-0.22, 0.3, 0.032, 6);
-    hl(0.18, -0.2, 0.016, 5);
+    hl(-0.24, 0.3, 0.042, 7);
+    hl(0.2, -0.22, 0.02, 5);
     // eyelid: a hemispherical cap tilted back (open); the lid bone rotates it down over the eye
     const lid = new THREE.SphereGeometry(0.182, seg(12), seg(5), 0, Math.PI * 2, 0, Math.PI / 2);
     gloss.bone(B_LID[si] as number).geo(lid, dark, [ex, 0.9, 0.35], [-0.95, 0, 0], [1, 1.05, 1]);
     gloss.paint((x, y, z, c) => c.lerp(_cb.set(body), 0.5));
+    // Update 9: a dark lid line along the front of the lid's edge (it rides the lid bone, so it
+    // sweeps down with every blink)
+    gloss.bone(B_LID[si] as number).geo(new THREE.TorusGeometry(0.184, hi ? 0.011 : 0.013, 3, hi ? 12 : 6, Math.PI), lidLine, [ex, 0.9, 0.35], [Math.PI / 2 - 0.95, 0, 0]);
     // Update 7: a shell-coloured cup holds the back of the eyeball and runs down into the stalk, so
     // from the side and the back the eye sits in its stalk instead of reading as a loose white ball
     const cupG = new THREE.SphereGeometry(0.176, seg(10), hi ? 3 : 2, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -1960,32 +2303,71 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     const px = s * 0.9;
     // shoulder: a ball joint of shell centred on the pivot, so the arm swivels inside it at any raise
     if (deco) socket(B_SH[si] as number, [s * 0.55, 0.55, 0.3], hi ? 0.1 : 0.095, 0.8);
+    // fixed finger (on the forearm bone) and the moving jaw
+    const FIX: V3[] = [[px, 0.77, 0.9], [px + s * 0.01, 0.8, 1.02], [px - s * 0.04, 0.75, 1.12]];
+    const JAW: V3[] = [[px, 0.64, 0.9], [px, 0.62, 1.0], [px - s * 0.03, 0.65, 1.08]];
+    const fixR = (t: number): number => 0.075 * (1 - t) + 0.016;
+    const jawR = (t: number): number => 0.06 * (1 - t) + 0.014;
+    /** Update 9 fingers: the edge facing the other finger is cream, the tip near-black */
+    const fingerPaint = (pts: V3[], toward: number) => (x: number, y: number, z: number, c: THREE.Color): void => {
+      const t = nearestOn(pts, x, y, z);
+      c.lerp(_cb.set(cream), smooth01((toward * _no.y + 0.05) / 0.55) * 0.75);
+      c.lerp(_cb.set(tipCol), smooth01((t - 0.55) / 0.4) * 0.9);
+    };
     both(gloss, (g) => {
       ball(g.bone(B_EL[si] as number), body, 0.17, [px, 0.71, 0.8], [0.92, 0.82, 1.15], 12);
       if (g === gloss) {
-        g.paint((x, y, z, c) => c.lerp(_cb.set(dark), smooth01((z - 0.82) / 0.15) * 0.4 + smooth01((0.66 - y) / 0.1) * 0.2));
-        // the inner face of the palm is lighter (two-tone claws)
-        g.paint((x, y, z, c) => c.lerp(_cb.set(belly), smooth01((s * (px - x) - 0.03) / 0.1) * 0.55));
+        // two-tone claws (Update 9: a cleaner split): the outer top in the body colour, the inner face
+        // and the underside cream, darker toward the fingers
+        g.paint((x, y, z, c) => {
+          const inner = smooth01((s * (px - x) - 0.015) / 0.08);
+          const under = smooth01((0.69 - y) / 0.07);
+          c.lerp(_cb.set(cream), Math.max(inner, under * 0.85) * 0.72);
+          c.lerp(_cb.set(dark), smooth01((z - 0.84) / 0.14) * 0.35);
+        });
       }
-      g.bone(B_EL[si] as number).tube(body, [[px, 0.77, 0.9], [px + s * 0.01, 0.8, 1.02], [px - s * 0.04, 0.75, 1.12]], (t) => 0.075 * (1 - t) + 0.016, seg(8), tub(6), 'end');
-      if (g === gloss) g.paint((x, y, z, c) => c.lerp(_cb.set(dark), smooth01((z - 0.98) / 0.12)));
-      g.bone(B_JAW[si] as number).tube(body, [[px, 0.64, 0.9], [px, 0.62, 1.0], [px - s * 0.03, 0.65, 1.08]], (t) => 0.06 * (1 - t) + 0.014, seg(8), tub(6), 'end');
-      if (g === gloss) g.paint((x, y, z, c) => c.lerp(_cb.set(dark), smooth01((z - 0.95) / 0.12)));
+      g.bone(B_EL[si] as number);
+      tubeP(g, body, FIX, fixR, seg(8), tub(6), 'end', g === gloss ? fingerPaint(FIX, -1) : null);
+      g.bone(B_JAW[si] as number);
+      tubeP(g, body, JAW, jawR, seg(8), tub(6), 'end', g === gloss ? fingerPaint(JAW, 1) : null);
     });
     if (deco && hi) {
-      // knuckle bumps on the palm and a ring at the wrist
-      for (const [dy, dz] of [[0.13, 0.78], [0.1, 0.88]] as [number, number][]) ball(gloss.bone(B_EL[si] as number), dark, 0.034, [px + s * 0.04, 0.71 + dy, dz], [1, 0.7, 1], 6);
+      // knuckle bumps in a row along the top of the palm, and a ring at the wrist
+      const knob = new THREE.Color(body).lerp(_cb.set(dark), 0.45).getHex();
+      for (let k = 0; k < 3; k++) {
+        _tv.set(s * 0.5, 0.86, (k - 1) * 0.62).normalize();
+        ball(gloss.bone(B_EL[si] as number), knob, 0.031 - Math.abs(k - 1) * 0.005, [px + _tv.x * 0.151, 0.71 + _tv.y * 0.135, 0.8 + _tv.z * 0.19], [1, 0.7, 1], 6);
+      }
       gloss.bone(B_EL[si] as number).geo(new THREE.TorusGeometry(0.085, 0.016, 4, seg(12)), dark, [px - s * 0.005, 0.68, 0.66], [0.25, 0, 0]);
     }
-    // serrations on the inner edges
-    for (let k = 0; k < (deco ? (hi ? 4 : 2) : 0); k++) {
-      const z = 0.94 + k * 0.045;
-      gloss.bone(B_EL[si] as number).cone(belly, 0.014, 0.035, [px - s * 0.005 * k, 0.74 - k * 0.004, z], [Math.PI, 0, 0], 5);
-      gloss.bone(B_JAW[si] as number).cone(belly, 0.012, 0.03, [px - s * 0.005 * k, 0.665, z - 0.01], [0, 0, 0], 5);
+    // serrations: ivory teeth along the inner edges of both fingers, smaller toward the tips
+    if (deco) {
+      const nT = hi ? 5 : 2;
+      const fc = new THREE.CatmullRomCurve3(FIX.map((p) => new THREE.Vector3(p[0], p[1], p[2])), false, 'centripetal');
+      const jc = new THREE.CatmullRomCurve3(JAW.map((p) => new THREE.Vector3(p[0], p[1], p[2])), false, 'centripetal');
+      for (let k = 0; k < nT; k++) {
+        const t = 0.2 + (k / (nT - 1)) * 0.56;
+        const hF = 0.036 - t * 0.014;
+        fc.getPointAt(t, _tv);
+        gloss.bone(B_EL[si] as number).cone(ivory, hF * 0.42, hF, [_tv.x, _tv.y - fixR(t) * 0.8, _tv.z], [Math.PI, 0, 0], 5);
+        const hJ = 0.031 - t * 0.012;
+        jc.getPointAt(t, _tv);
+        gloss.bone(B_JAW[si] as number).cone(ivory, hJ * 0.42, hJ, [_tv.x, _tv.y + jawR(t) * 0.8, _tv.z], [0, 0, 0], 5);
+      }
     }
   }
 
-  // legs: three segments each (hip, knee, foot), lighter tips
+  // legs: three segments each (hip, knee, foot). Update 9: each segment swells a little in the middle
+  // and is shaded toward its joints, the undersides are pale, and (High) the foot is a curved,
+  // tapered dactyl with a dark point
+  const legPaint = (pts: V3[], s: number, foot: boolean) => (x: number, y: number, z: number, c: THREE.Color): void => {
+    const t = nearestOn(pts, x, y, z);
+    // facing down and in, toward the body
+    const under = (-_no.y * 0.9 - s * _no.x * 0.45) / 1.007;
+    c.lerp(_cb.set(belly), smooth01((under + 0.05) / 0.6) * 0.6);
+    c.multiplyScalar(1 - (foot ? 0.1 : 0.17) * Math.max(bump(t, 0, 0.14), bump(t, 1, 0.14)));
+    if (foot) c.lerp(_cb.set(tipCol), smooth01((t - 0.45) / 0.45) * 0.85);
+  };
   for (let l = 0; l < 6; l++) {
     const s = l < 3 ? -1 : 1;
     const z = LEG_Z[l % 3] as number;
@@ -1993,13 +2375,21 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
     const knee: V3 = [s * 0.86, 0.6, z * 1.25];
     const ankle: V3 = [s * 1.08, 0.24, z * 1.45];
     const tip: V3 = [s * 1.13, 0.01, z * 1.55];
+    const upper: V3[] = [hip, [s * 0.68, 0.57, z * 1.12], knee];
+    const lower: V3[] = [knee, [s * 1.0, 0.46, z * 1.36], ankle];
+    const footPts: V3[] = hi ? [ankle, [s * 1.125, 0.12, z * 1.5], tip] : [ankle, tip];
+    const footR = hi ? (t: number): number => 0.047 * (1 - t) ** 0.9 + 0.004 : (t: number): number => 0.045 - t * 0.033;
     both(clay, (g) => {
-      g.bone(B_HIP(l)).tube(dark, [hip, [s * 0.68, 0.57, z * 1.12], knee], (t) => 0.075 - t * 0.014, seg(6), hi ? 4 : 3, false);
-      g.bone(B_KNEE(l)).tube(dark, [knee, [s * 1.0, 0.46, z * 1.36], ankle], (t) => 0.06 - t * 0.016, seg(6), hi ? 4 : 3, false);
-      g.bone(B_FOOT(l)).tube(dark, [ankle, tip], (t) => 0.045 - t * 0.033, seg(6), hi ? 3 : 2, 'start');
+      const pp = deco && g === clay;
+      g.bone(B_HIP(l)).tube(dark, upper, (t) => 0.075 - t * 0.014 + (hi ? 0.009 * Math.sin(Math.PI * t) : 0), seg(6), hi ? 6 : 3, false);
+      if (pp) g.paint(legPaint(upper, s, false));
+      g.bone(B_KNEE(l)).tube(dark, lower, (t) => 0.06 - t * 0.016 + (hi ? 0.007 * Math.sin(Math.PI * t) : 0), seg(6), hi ? 6 : 3, false);
+      if (pp) g.paint(legPaint(lower, s, false));
+      g.bone(B_FOOT(l)).tube(dark, footPts, footR, seg(6), hi ? 5 : 2, false);
+      if (pp) g.paint(legPaint(footPts, s, true));
+      // Low and the outline close the ankle with a cap; High has a joint knob there
+      if (!hi) g.geo(new THREE.SphereGeometry(0.045, seg(6), Math.max(3, Math.ceil(seg(6) / 2))), dark, ankle);
     });
-    // dark glossy tips
-    if (!outlineOnly) clay.paint((x, y, zz, c) => c.lerp(_cb.set(0x2a0e08), smooth01((0.14 - y) / 0.12) * 0.75));
     if (deco) {
       // coxa: a shell socket where the leg leaves the rim; it rides the hip bone, whose pivot is inside
       // the shell, so it slides along the rim as the leg swings and never opens a gap (Update 7)
@@ -2007,8 +2397,8 @@ export function buildCrab(skin: CrabSkin, hi: boolean, clay: GeoBuilder, gloss: 
       // a few bristles on the middle segment (High only)
       if (hi) for (let k = 0; k < 2; k++) clay.bone(B_KNEE(l)).cone(dark, 0.008, 0.05, [s * (0.9 + k * 0.07), 0.58 - k * 0.12, z * (1.28 + k * 0.06)], [0, 0, s * 0.9], 3);
     }
-    // joints
+    // joints: a shell-coloured knee and a dark ankle knob
     ball(clay.bone(B_KNEE(l)), body, 0.068, knee, [1, 1, 1], 6);
-    if (deco) ball(clay.bone(B_FOOT(l)), dark, 0.037, ankle, [1, 1, 1], 5);
+    if (deco) ball(clay.bone(B_FOOT(l)), dark, hi ? 0.054 : 0.037, ankle, [1, 1, 1], hi ? 6 : 5);
   }
 }

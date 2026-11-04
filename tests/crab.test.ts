@@ -19,8 +19,9 @@ describe('crab v3 model', () => {
       const gl = gloss.build();
       const total = (c.attributes.position!.count + gl.attributes.position!.count) / 3;
       if (process.env.CRAB) console.log(hi ? 'high' : 'low', 'crab tris', total, 'outline', tris(line));
-      // Crab v3 budgets (UPDATE3_PLAN.md §4)
-      expect(total).toBeLessThanOrEqual(hi ? 9000 : 3500);
+      // Crab v3 budgets (UPDATE3_PLAN.md §4); Update 9 raised High from 9000 to 11000 for the
+      // detail pass (bevelled rim, belly plate, speckles, segmented legs, claw teeth, lid lines)
+      expect(total).toBeLessThanOrEqual(hi ? 11000 : 3500);
       for (const g of [c, gl]) {
         const si = g.attributes.skinIndex!;
         const sw = g.attributes.skinWeight!;

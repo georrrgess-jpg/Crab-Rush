@@ -4,6 +4,12 @@
  *
  *   . empty   B block   L low (hop or dodge)   W sweep (always the whole row)   R roller   G gull
  *   s shell path   S big shell   P power-up slot   l / r / w = low / roller / sweep with a shell arc over it
+ *
+ * Update 9: shell marks in consecutive rows (same or next lane) join into one shell line, and a line
+ * runs on through an arc (l, r, the lanes of a www row next to it, a scuttler's landing lane next to
+ * it). Lines are laid by the spawner (lean shells for lane changes, arcs shaped like the real hop);
+ * tests/lines.test.ts checks every line is a fair path at its tier's speeds and is collected whole by
+ * a player who follows it.
  */
 import { CFG } from '../config';
 import { Cell, emptyRow, hopWindow, type SolverRow } from './solver';
@@ -117,7 +123,7 @@ export const PATTERN_DEFS: PatternDef[] = [
   // ---------------- tier 2: gulls & tighter lines ----------------
   p('gull-solo', 2, 3, 12, `
     s..
-    .G.
+    sG.
     s..`),
   p('gull-pair', 2, 3, 10, `
     G.s
@@ -138,10 +144,10 @@ export const PATTERN_DEFS: PatternDef[] = [
     .ll
     .s.`),
   p('slalom-4', 2, 3, 9, `
-    B.B
-    .BB
-    B.B
-    BB.`),
+    BsB
+    sBB
+    BsB
+    BBs`),
   p('hop-chain', 2, 2, 12, `
     .l.
     .l.
@@ -163,10 +169,10 @@ export const PATTERN_DEFS: PatternDef[] = [
     .r.
     .s.`),
   p('tight-slalom', 3, 3, 8.5, `
-    B.B
-    .BB
-    B.B
-    BB.`),
+    BsB
+    sBB
+    BsB
+    BBs`),
   p('hop-then-dodge', 3, 3, 10, `
     sB.
     .s.
@@ -187,38 +193,38 @@ export const PATTERN_DEFS: PatternDef[] = [
 
   // ---------------- tier 4 ----------------
   p('chicane', 4, 3, 9, `
-    BB.
-    B.B
-    .BB
-    B.B
-    BB.`),
+    BBs
+    BsB
+    sBB
+    BsB
+    BBs`),
   p('wave-ball-castle', 4, 3, 12, `
     .s.
     sBB
-    .r.
+    sR.
     www
     .s.`),
   p('gauntlet-a', 4, 3, 11, `
-    .B.
+    sB.
     l.l
-    .r.
+    sR.
     www
     .s.`),
   p('gauntlet-b', 4, 3, 10, `
     G.s
     .l.
-    B.B
+    BsB
     .s.`),
 
   // ---------------- Update 4: scuttlers (< > cross one lane) and double waves ----------------
   p('scuttle-intro', 2, 3, 12, `
     .s.
-    .>.
-    ...
+    s>.
+    s..
     s..`),
   p('scuttle-cross', 2, 2, 11, `
     ..s
-    >..
+    >.s
     ..s`),
   p('scuttle-castle', 3, 3, 11, `
     .s.
@@ -227,7 +233,7 @@ export const PATTERN_DEFS: PatternDef[] = [
   p('double-wave', 3, 3, 9, `
     .s.
     www
-    ...
+    .s.
     www
     .s.`),
   p('wave-scuttle', 3, 2, 12, `
@@ -243,37 +249,58 @@ export const PATTERN_DEFS: PatternDef[] = [
     ..s`),
   p('triple-threat', 4, 2, 11, `
     .s.
-    B.B
-    .>.
+    BsB
+    s>.
     www
+    .s.`),
+  // ---------------- Update 9: hop and lane change in sequence (the shell line shows the way) ----------------
+  p('hop-step', 1, 1, 10, `
+    sB.
+    s..
+    .l.
+    .s.`),
+  p('step-hop', 1, 1, 10, `
+    .s.
+    .l.
+    s..
+    sB.`),
+  p('slide-wave', 2, 1, 12, `
+    s..
+    www
+    s..
+    .sB`),
+  p('ball-weave', 2, 1, 12, `
+    ..s
+    B.s
+    .r.
     .s.`),
   // ---------------- tier 5: Riptide (4 km+) ----------------
   p('riptide-a', 5, 3, 10, `
     .s.
-    G.B
-    .<.
+    GsB
+    .<s
     www
-    l.l
+    LsL
     .s.`),
   p('riptide-b', 5, 3, 10, `
     s..
-    .BB
-    >..
-    ...
-    BB.
+    sBB
+    >s.
+    .s.
+    BBs
     ..s`),
   p('riptide-c', 5, 3, 9, `
     .s.
     www
-    ...
+    .s.
     www
-    B.B
+    BsB
     .s.`),
   p('riptide-d', 5, 2, 10, `
     ..s
-    .r.
+    .Rs
     B>.
-    ...
+    .s.
     .lB
     s..`),
 ];

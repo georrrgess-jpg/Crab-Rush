@@ -29,14 +29,29 @@ export interface PilotProfile {
 
 export const PERFECT: PilotProfile = { reaction: 0, horizon: 3.2, hopNoise: 0 };
 
+/** Update 9 line following: a lane change is pressed this long (s) before the lean shell it aims for */
+const LEAN_LEAD = 0.09;
+/** ...but never later than this long before a row that blocks the lane being left */
+const LANE_LATEST = 0.25;
+const NO_SCORES: readonly number[] = [0, 0, 0];
+
 export class Autopilot {
   private tick = 0;
   private targetLane = 1;
+  /** time (world.time) from which the lane change toward targetLane may be pressed */
+  private laneAt = -Infinity;
   private hopAt = Infinity; // time (world.time) at which to hop
-  private pending: { at: number; lane: number; hopAt: number }[] = [];
+  private pending: { at: number; lane: number; laneAt: number; hopAt: number }[] = [];
   private seed = 12345;
   /** when set, shells are ignored (pure survival mode used by the fairness test) */
   seekShells = true;
+  /**
+   * Update 9: follow shell lines like a player reading the track: plan each row toward the lane its
+   * shells are in, and time lane changes to the line's lean shells instead of moving at once.
+   */
+  followLines = false;
+  /** tests: with followLines, chase this one line (its shells outweigh every other) */
+  preferLine = 0;
 
   constructor(private w: World, private every = 3, private profile: PilotProfile = PERFECT) {}
 
@@ -55,10 +70,11 @@ export class Autopilot {
     if (this.tick++ % this.every === 0) {
       this.replan();
       if (this.profile.reaction > 0) {
-        this.pending.push({ at: w.time + this.profile.reaction, lane: this.targetLane, hopAt: this.hopAt });
+        this.pending.push({ at: w.time + this.profile.reaction, lane: this.targetLane, laneAt: this.laneAt, hopAt: this.hopAt });
       }
     }
     let lane = this.targetLane;
+    let laneAt = this.laneAt;
     let hopAt = this.hopAt;
     if (this.profile.reaction > 0) {
       // act on the decision made `reaction` seconds ago
@@ -66,10 +82,11 @@ export class Autopilot {
       const d = this.pending[0];
       if (!d || d.at > w.time) return;
       lane = d.lane;
+      laneAt = d.laneAt;
       hopAt = d.hopAt;
     }
     const p = w.player;
-    if (p.lane !== lane && p.bumpT <= 0) w.act(lane < p.lane ? 'left' : 'right');
+    if (p.lane !== lane && p.bumpT <= 0 && w.time >= laneAt) w.act(lane < p.lane ? 'left' : 'right');
     if (w.time >= hopAt && p.grounded) {
       w.act('hop');
       this.hopAt = Infinity;
@@ -172,20 +189,108 @@ export class Autopilot {
     return sc;
   }
 
+  /**
+   * Update 9: for each row, the shell value in each lane around the time the row arrives (lines are
+   * followed row by row); a lane with nothing there scores 0. Null when line following is off.
+   */
+  private rowScores(rows: Row[]): number[][] | null {
+    if (!this.followLines || !this.seekShells) return null;
+    const w = this.w;
+    const v = Math.max(1, w.speed);
+    const out = rows.map(() => [0, 0, 0]);
+    for (const s of w.shells) {
+      if (s.dead || s.magnet) continue;
+      const t = (s.wz - w.dist) / v;
+      if (t < 0 || t > this.profile.horizon + 0.5) continue;
+      const lane = Math.max(0, Math.min(2, Math.round((s.x - (CFG.laneX[0] as number)) / 2.2)));
+      for (let i = 0; i < rows.length; i++) {
+        const dt = Math.abs((rows[i] as Row).tt - t);
+        const wt = this.preferLine === 0 ? (s.big ? 5 : 1) : s.line === this.preferLine ? 1 : 0;
+        if (dt < 0.3) (out[i] as number[])[lane] = ((out[i] as number[])[lane] as number) + wt * (1 - dt / 0.3);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Update 9: when moving one lane over (from → to), the moment to press: just before the first shell
+   * (of `line`, if given) reachable only from the new lane, provided a line still runs in this lane
+   * until then; at the latest `latest` s from now (the deadline a blocked lane sets). Shells up to
+   * `byT` s ahead count. Null when there is no such lean ahead.
+   */
+  private leanTime(from: number, to: number, byT: number, latest: number, line = 0): number | null {
+    const w = this.w;
+    const v = Math.max(1, w.speed);
+    const xf = CFG.laneX[from] as number;
+    const xt = CFG.laneX[to] as number;
+    const want = this.preferLine || line;
+    let tTo = Infinity;
+    let tLine = 0;
+    for (const s of w.shells) {
+      if (s.dead || s.magnet || s.line === 0 || (want !== 0 && s.line !== want)) continue;
+      const t = (s.wz - w.dist) / v;
+      if (t <= 0 || t > byT) continue;
+      if (Math.abs(s.x - xt) < 0.9 && Math.abs(s.x - xf) > 0.9 && t < tTo) {
+        tTo = t;
+        tLine = s.line;
+      }
+    }
+    if (!Number.isFinite(tTo) || tLine === 0) {
+      // no lean ahead: pick up the line's last shells in this lane first, then go
+      if (want === 0 && w.followingLine === 0) return null;
+      let tLast = -1;
+      for (const s of w.shells) {
+        if (s.dead || s.magnet || s.line === 0 || s.line !== (want || w.followingLine)) continue;
+        const t = (s.wz - w.dist) / v;
+        if (t > 0 && t < latest && Math.abs(s.x - xf) < 0.9 && t > tLast) tLast = t;
+      }
+      return tLast > 0 ? Math.min(tLast, latest) : null;
+    }
+    // the line must still run in this lane right up to it, or be the line just picked up (else just go now)
+    let onLine = w.followingLine === tLine;
+    for (const s of w.shells) {
+      if (s.dead || s.magnet || s.line === 0 || (want !== 0 && s.line !== want)) continue;
+      const t = (s.wz - w.dist) / v;
+      if (t > 0 && t < tTo && Math.abs(s.x - xf) < 0.9) onLine = true;
+    }
+    if (!onLine) return null;
+    return Math.max(0, Math.min(tTo - LEAN_LEAD, latest));
+  }
+
+  /** the line of the next shell ahead within reach of this lane (0 = none) */
+  private lineAhead(lane: number): number {
+    const w = this.w;
+    const x = CFG.laneX[lane] as number;
+    let best = Infinity;
+    let line = 0;
+    for (const s of w.shells) {
+      if (s.dead || s.magnet || s.line === 0) continue;
+      const rel = s.wz - w.dist;
+      if (rel > 0 && rel < best && Math.abs(s.x - x) < 0.9) {
+        best = rel;
+        line = s.line;
+      }
+    }
+    return line;
+  }
+
   private replan(): void {
     const w = this.w;
     const p = w.player;
     const rows = this.collectRows();
     const scores = this.shellScore();
-    const order = (cur: number): number[] => {
+    const perRow = this.rowScores(rows);
+    const order = (cur: number, i: number): number[] => {
+      const sc = perRow && (perRow[i] as number[]).some((x) => x > 0) ? (perRow[i] as number[]) : this.preferLine !== 0 ? NO_SCORES : scores;
       const lanes = [0, 1, 2];
-      lanes.sort((a, b) => (scores[b] as number) - (scores[a] as number) + (b === cur ? 0.001 : 0) - (a === cur ? 0.001 : 0));
+      lanes.sort((a, b) => (sc[b] as number) - (sc[a] as number) + (b === cur ? 0.001 : 0) - (a === cur ? 0.001 : 0));
       return lanes;
     };
 
     const start: SolverState = p.grounded
       ? { lane: p.lane, grp: false, lo: 0, hi: 0, last: 5, moved: w.time - p.laneChangeAt < 0.3 }
-      : { lane: p.lane, grp: true, lo: -p.airTime, hi: -p.airTime, last: 0, moved: w.time - p.laneChangeAt < 0.3 };
+      : // (Update 9, line following: the row this hop clears passed about half an airtime after take-off)
+        { lane: p.lane, grp: true, lo: -p.airTime, hi: -p.airTime, last: this.followLines ? Math.max(0, p.airTime - CFG.hop.airtime / 2) : 0, moved: w.time - p.laneChangeAt < 0.3 };
 
     const path: Step[] = [];
     const dfs = (i: number, s: SolverState, T: number): boolean => {
@@ -193,7 +298,7 @@ export class Autopilot {
       const r = rows[i] as Row;
       const dt = r.tt - T;
       const nexts = advance([s], r.row, dt, i === 0 ? 0.0 : undefined);
-      const ord = order(s.lane);
+      const ord = order(s.lane, i);
       nexts.sort((a, b) => ord.indexOf(a.lane) - ord.indexOf(b.lane) || (a.grp ? 1 : 0) - (b.grp ? 1 : 0));
       for (const n of nexts) {
         path.push({ s: n, T: r.tt });
@@ -214,6 +319,7 @@ export class Autopilot {
         if (alt !== undefined) lane = alt;
       }
       this.targetLane = lane;
+      this.laneAt = -Infinity;
       // best effort hop: centre the hop on the next hop obstacle in that lane
       this.hopAt = Infinity;
       for (const r of rows) {
@@ -229,6 +335,36 @@ export class Autopilot {
 
     // target lane: the lane required at the first row, but when free, drift toward the best shell lane
     this.targetLane = path[0] ? path[0].s.lane : p.lane;
+    this.laneAt = -Infinity;
+    if (this.followLines && this.seekShells) {
+      const r0 = rows[0];
+      if (path[0] && this.targetLane !== p.lane && r0) {
+        // the plan moves: one lane at a time, each at the line's lean shells rather than at once
+        // (by a deadline only when something at the next row blocks this lane)
+        const two = Math.abs(this.targetLane - p.lane) === 2;
+        const step = p.lane + Math.sign(this.targetLane - p.lane);
+        const blocked = r0.row.cells[p.lane] !== Cell.Free;
+        const t = this.leanTime(p.lane, step, r0.tt + 0.05, two ? r0.tt - LANE_LATEST - 0.2 : blocked ? r0.tt - LANE_LATEST : r0.tt);
+        if (t !== null) {
+          this.targetLane = step;
+          this.laneAt = w.time + t;
+        }
+      } else if (this.targetLane === p.lane) {
+        // nothing to dodge before the line turns: follow it (back in time for the next row)
+        const line = this.lineAhead(p.lane) || w.followingLine;
+        const limit = r0 ? r0.tt - 0.6 : this.profile.horizon;
+        let best: number | null = null;
+        for (const nb of [p.lane - 1, p.lane + 1]) {
+          if (nb < 0 || nb > 2 || line === 0) continue;
+          const t = this.leanTime(p.lane, nb, limit, limit, line);
+          if (t !== null && (best === null || t < best)) {
+            best = t;
+            this.targetLane = nb;
+          }
+        }
+        if (best !== null) this.laneAt = w.time + best;
+      }
+    }
 
     // hop timing: find the first hop group not already in flight
     this.hopAt = Infinity;

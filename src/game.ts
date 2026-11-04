@@ -48,6 +48,7 @@ import { pickQuality } from './render/renderer';
 import { BODY_SKINS, CRAB_SKINS } from './render/models/crab';
 import { GameView, type CamMode } from './render/view';
 import { UI, type GoalView } from './ui/ui';
+import { COACH_RUNS, setInputMode } from './ui/kit';
 import { fmt } from './ui/dom';
 import { ICON } from './ui/icons';
 import type { PowerKind } from './sim/events';
@@ -57,7 +58,7 @@ type State = 'boot' | 'title' | 'intro' | 'running' | 'paused' | 'countdown' | '
 
 const INTRO_TIME = 0.8;
 const COUNTDOWN_STEP = 0.4;
-const WHATS_NEW_KEY = 'crabdash.new.u5';
+const WHATS_NEW_KEY = 'crabdash.new.u9';
 
 export class Game {
   state: State = 'boot';
@@ -405,7 +406,7 @@ export class Game {
       },
     });
     this.ui.addScreen(this.trophyScreen.el);
-    this.whatsNew = new WhatsNewSheet({ visit: () => this.openDig() });
+    this.whatsNew = new WhatsNewSheet({ visit: () => this.onPlay() });
     this.ui.mountOverlay(this.whatsNew.el);
     this.ui.addScreen(this.passScreen.el);
     this.ui.addScreen(this.dailyScreen.el);
@@ -419,6 +420,15 @@ export class Game {
     if (this.flags.shots) this.reviveOn = false;
     this.input.attachSurface(this.touchLayer);
     this.input.onAction = (a, c) => this.onAction(a, !!c);
+    // Backspace backs out of menus like Esc (not on the run, and never inside a text field)
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'Backspace' || e.repeat || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (this.state === 'running' || this.state === 'intro' || this.state === 'countdown' || this.state === 'paused') return;
+      e.preventDefault();
+      this.onAction('back', false);
+    });
     this.haptics.pad = () => this.input.activePad();
     this.loop = new Loop({ step: (dt) => this.step(dt), render: (a, dt) => this.render(a, dt) }, CFG.simHz);
     if (this.flags.debug) this.debug = new DebugOverlay(app);
@@ -545,13 +555,13 @@ export class Game {
     if (this.state !== 'title') return;
     this.whatsNew.show(
       [
-        { icon: DIG_ICON, title: 'Treasure Dig', text: 'Every run earns spades. Dig sand sites for shells, pearls and relics — holes glow hotter near treasure.' },
-        { icon: ICON.flame, title: 'Shell Fever & Second Chance', text: 'Fill the Fever meter for 2× shells, and keep a great run going once a day for free.' },
-        { icon: ICON.sparkle, title: 'Sand Slam', text: 'Hop, then swipe down: a shockwave pulls nearby shells straight to you.' },
-        { icon: ICON.crab, title: 'Smoother crab', text: 'Cleaner eyes, softer lane changes and a juicier shell pickup.' },
-        { icon: ICON.island, title: 'A brighter beach', text: 'A vibrant new look, more detail on every beach and a roomier Wardrobe on phones.' },
+        { icon: ICON.sparkle, title: 'Shell lines', text: 'Shells now trace the way: arcs over hops, zig-zags into lane changes. Grab a whole line for a Perfect Line bonus and build combos.' },
+        { icon: ICON.crab, title: 'A more detailed crab', text: 'A sculpted shell, new eyes, jointed legs and toothy claws, with smoother hops, landings and lane changes.' },
+        { icon: ICON.flame, title: 'Close calls pay', text: 'Perfect hops and last-moment dodges earn bonus shells.' },
+        { icon: ICON.island, title: 'A livelier beach', text: 'Swaying palms, rolling waves, gulls, hermit crabs, sparkling shells and a rebuilt blue rock crab.' },
+        { icon: DIG_ICON, title: 'Easier to play', text: 'Control hints for your device, keyboard shortcuts on PC and a clearer pause and results screen.' },
       ],
-      { tag: 'Update 5', tagline: 'Treasure Tide is here!', visitIcon: DIG_ICON, visitLabel: 'Start digging' },
+      { tag: 'Update 9', tagline: 'Big Splash is here!', visitIcon: ICON.crab, visitLabel: 'Try a run' },
     );
   }
 
@@ -663,6 +673,8 @@ export class Game {
     this.runStartedWithTutorial = this.world.tutorialActive;
     this.view.resetRun(opts.best);
     this.autopilot = this.flags.autopilot ? new Autopilot(this.world) : null;
+    // the ?autopilot demo reads the shell lines like a player would (Update 9)
+    if (this.autopilot) this.autopilot.followLines = true;
     this.ui.resetHUD();
     this.ui.setRunBest(this.dailyRun ? 0 : opts.best);
     this.ui.setRacing(false);
@@ -680,6 +692,7 @@ export class Game {
     this.introT = withIntro ? 0 : 1;
     this.state = withIntro ? 'intro' : 'running';
     this.audio.setMusicMode('run');
+    this.maybeCoach();
     if (this.runBoost) this.ui.toast('Golden Shell!', { kind: 'gold', sub: '2× shells this run', life: 2 });
     if (this.runModifier) {
       const m = MODIFIERS.find((x) => x.id === this.runModifier)!;
@@ -689,6 +702,12 @@ export class Game {
     st.runs++;
     const body = this.save.data.wardrobe.equipped.body;
     st.runsByCrab[body] = (st.runsByCrab[body] ?? 0) + 1;
+  }
+
+  /** The controls card along the bottom at the start of a player's first few runs (not with the tutorial or autopilot). */
+  private maybeCoach(): void {
+    if (this.world.tutorialActive || this.autopilot || this.flags.autopilot) return;
+    if (this.save.data.stats.runs < COACH_RUNS) this.ui.showCoach();
   }
 
   /** Data for the Home screen. */
@@ -1060,9 +1079,10 @@ export class Game {
     this.startRun(true);
   }
 
-  /** Which control hints to show: touch on phones/tablets, keyboard on computers. */
-  private promptDevice(): 'touch' | 'keyboard' | 'mouse' {
-    if (this.input.lastDevice === 'keyboard' || this.input.lastDevice === 'gamepad') return 'keyboard';
+  /** Which control hints to show: touch on phones/tablets, keyboard on computers, pad buttons with a controller. */
+  private promptDevice(): 'touch' | 'keyboard' | 'mouse' | 'gamepad' {
+    if (this.input.lastDevice === 'gamepad') return 'gamepad';
+    if (this.input.lastDevice === 'keyboard') return 'keyboard';
     if (this.input.usedTouch) return 'touch';
     const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
     return coarse ? 'touch' : 'keyboard';
@@ -1268,6 +1288,7 @@ export class Game {
     this.state = withIntro ? 'intro' : 'running';
     this.audio.setMusicMode('run');
     this.audio.setTrack(cl.def.chase ? 'chase' : 'island');
+    this.maybeCoach();
     this.save.data.stats.runs++;
     this.ui.toast(this.levelRush ? `Tide Rush: ${cl.def.name}` : cl.def.name, { sub: this.levelRush ? 'No bumps for the crown!' : cl.def.chase ? 'Outrun the Great Wave!' : 'Grab all 3 sand dollars', kind: 'gold', life: 2.2 });
   }
@@ -1485,6 +1506,7 @@ export class Game {
     this.audio.setTrack('chase');
     this.audio.setZone(this.world.zone);
     this.audio.setRumble(0);
+    this.maybeCoach();
     d.stats.runs++;
     this.updateRaceHud();
     this.ui.toast(`${cup.name}: ${def.name}`, { kind: 'gold', sub: `Race ${cup.races.indexOf(def) + 1} of 3 · beat 3 rivals to the flag`, life: 2.4 });
@@ -1859,6 +1881,8 @@ export class Game {
 
   // ------------------------------------------------------------------ input
   private onAction(a: Action, alsoConfirm: boolean): void {
+    // hints follow the device: a pad press switches them to pad buttons (keys and pointers set it in kit)
+    if (this.input.lastDevice === 'gamepad') setInputMode('pad');
     const s = this.state;
     if (s === 'running' || s === 'intro') {
       if (a === 'pause' || a === 'back') return this.pause();
@@ -1866,6 +1890,7 @@ export class Game {
       if (this.autopilot) return;
       // Mirror Beach: the picture is flipped, so are the controls
       if (this.runModifier === 'mirror' && (a === 'left' || a === 'right')) a = a === 'left' ? 'right' : 'left';
+      if (this.ui.coachVisible) this.ui.hideCoach();
       this.world.act(a);
       return;
     }
@@ -1929,7 +1954,8 @@ export class Game {
     }
     if (s === 'levelEnd' && this.clock - this.resultsAt > 0.6) {
       if (a === 'back') this.openMap();
-      else if (a === 'confirm' || alsoConfirm) this.retryLevel();
+      // Enter presses the big button: Next Level after a clear, Retry after a wipeout
+      else if (a === 'confirm' || alsoConfirm) this.levelEnd.primary();
     }
   }
 
@@ -2170,6 +2196,8 @@ export class Game {
       goals: this.goalViews(),
       unlock: this.nearestReward(),
       wardrobeBadge: this.anyAffordable(),
+      // what this run unlocked, named on the card next to the Wardrobe button (Update 9)
+      unlocked: [...unlocked.map((id) => this.skinOf(id).name), ...(daily?.milestone === 7 ? ['Flower Crown'] : daily?.milestone === 30 ? ['Moonscuttle'] : [])],
     });
     if (newBest) {
       this.audio.play('newBest');
@@ -2313,9 +2341,33 @@ export class Game {
           this.audio.play('crash');
           this.haptics.play('heavy');
           break;
-        case 'closeShave':
-          this.audio.play('closeShave');
-          this.ui.floater(`Close shave! +${ev.reward}`, 0.5, 0.42);
+        case 'closeShave': {
+          // Update 9: a last-moment lane dodge past the same obstacle pays on top; show one floater
+          let bonus = 0;
+          for (const o of events) if (o.t === 'laneDodge') bonus += o.reward;
+          this.audio.play('closeShave', { pan: ev.side * 0.3 });
+          this.ui.floater(`Close shave! +${ev.reward + bonus}`, 0.5, 0.42);
+          break;
+        }
+        case 'laneDodge':
+          // logs and scuttlers never pay a close shave: this is their only callout
+          if (events.some((o) => o.t === 'closeShave')) break;
+          this.audio.play('closeShave', { pan: ev.side * 0.3 });
+          this.haptics.play('light');
+          this.ui.floater(`Close dodge! +${ev.reward}`, 0.5, 0.42);
+          break;
+        case 'perfectHop':
+          this.audio.play('boing');
+          this.ui.floater(`Perfect hop! +${ev.reward}`, 0.5, 0.4);
+          break;
+        case 'perfectLine':
+          this.audio.play('bigShell');
+          if (ev.bonus > 0) this.ui.floater(`Perfect line! +${ev.bonus}`, 0.5, 0.36);
+          break;
+        case 'combo':
+          this.audio.play('streakFlame');
+          this.haptics.play('light');
+          this.ui.floater(`Combo ×${ev.n}!`, 0.5, 0.3);
           break;
         case 'powerup':
           this.audio.play(ev.kind === 'rider' ? 'rider' : 'powerup', { kind: ev.kind });
@@ -2602,22 +2654,22 @@ export class Game {
         const O = await import('./render/models/obstacles');
         const S = await import('./render/models/shell');
         const list: { id: string; geo: () => THREE.BufferGeometry; mat?: THREE.Material; yaw?: number }[] = [
-          { id: 'sandcastle', geo: () => O.sandcastle(0) },
-          { id: 'sandcastle-b', geo: () => O.sandcastle(1) },
+          { id: 'sandcastle', geo: () => O.sandcastle(0, false, true) },
+          { id: 'sandcastle-b', geo: () => O.sandcastle(1, false, true) },
           { id: 'crates', geo: () => O.crateBlock(0, false, true) },
           { id: 'fish-crate', geo: () => O.crateBlock(1, false, true) },
           { id: 'sea-stack', geo: () => O.rockBlock(0, false, true) },
           { id: 'cairn', geo: () => O.rockBlock(1, false, true) },
-          { id: 'log', geo: () => O.driftwoodLog(0) },
+          { id: 'log', geo: () => O.driftwoodLog(0, false, true) },
           { id: 'surfboard-stand', geo: () => O.lowBarrier(1, 0, false, true) },
           { id: 'cooler', geo: () => O.lowBarrier(1, 1, false, true) },
           { id: 'urchins', geo: () => O.lowBarrier(2, 0, false, true) },
           { id: 'coral', geo: () => O.lowBarrier(2, 1, false, true) },
           { id: 'scuttler', geo: () => O.obstacleModel('scuttle', 0, 0, false, true) },
-          { id: 'ball', geo: () => O.beachBall() },
+          { id: 'ball', geo: () => O.beachBall(false, true) },
           { id: 'gull', geo: () => O.gullGeometry() },
           { id: 'coconut', geo: () => O.coconut() },
-          { id: 'wave', geo: () => O.waveSweep(), yaw: -0.2 },
+          { id: 'wave', geo: () => O.waveSweep(false, true, true, true), yaw: -0.2 },
           { id: 'magnet', geo: () => O.powerupIcon('magnet') },
           { id: 'shield', geo: () => O.powerupIcon('shield') },
           { id: 'rider', geo: () => O.powerupIcon('rider') },
